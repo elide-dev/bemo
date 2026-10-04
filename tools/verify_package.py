@@ -7,7 +7,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 
-from build import BUILD, MODULES, ROOT, VERSION, classifier, classpath, compile_java, java_tool, run
+from build import BUILD, MODULES, ROOT, VERSION, classifier, classpath, compile_java, java_tool, run, netty
 
 
 def verify():
@@ -32,7 +32,9 @@ def verify():
       names = jar.namelist()
       assert "META-INF/LICENSE" in names and "META-INF/NOTICE" in names
       assert any(n.endswith(".class") for n in names)
-      assert not any(n.startswith(("org/graalvm/", "dev/elide/runtime/", "io/netty/")) for n in names)
+      assert not any(n.startswith(("org/graalvm/", "dev/elide/runtime/")) for n in names)
+      netty_classes = [n for n in names if n.startswith("io/netty/") and n.endswith(".class")]
+      assert netty_classes == (["io/netty/handler/ssl/ApplicationProtocolSslEngine.class"] if module == "netty" else [])
       for entry in names:
         if entry.endswith(".class"):
           assert int.from_bytes(jar.read(entry)[6:8], "big") <= 66, "JDK 22 baseline exceeded"
@@ -57,6 +59,16 @@ def verify():
     compile_java(output, [tests / "Contract.java", tests / "FfmContract.java"], cp)
     run(os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), "--enable-native-access=ALL-UNNAMED",
         "-ea", "-cp", classpath([output, *cp]), "dev.elide.dokar.FfmContract", binary, timeout=60)
+    transport_cp = [jars["api"], jars["ffm"], jars["netty"], *netty()]
+    transport_sources = [p for p in (ROOT / "tests/transport/java").glob("*.java") if not p.name.startswith("Capi")]
+    transport_output = BUILD / "tests/package-transport"
+    compile_java(transport_output, sorted(transport_sources), transport_cp,
+                 lint="all,-restricted,-deprecation,-try,-serial")
+    fixtures = ROOT / "crates/dokar/tests/fixtures"
+    for contract in ("StandaloneTransportCheck", "NativeTlsChannelTest"):
+      run(os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), "--enable-native-access=ALL-UNNAMED",
+          "-ea", "-cp", classpath([transport_output, *transport_cp]), contract, binary,
+          fixtures / "localhost-cert.pem", fixtures / "localhost-key.pem", timeout=90)
   print("Maven package contracts passed")
 
 

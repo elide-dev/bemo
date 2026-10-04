@@ -10,7 +10,7 @@ pub extern "C" fn dokar_abi_version() -> u32 {
   dokar::ABI_VERSION
 }
 
-/// Return implemented data-plane capability bits; zero during the foundation stage.
+/// Return implemented data-plane capability bits.
 #[unsafe(no_mangle)]
 pub extern "C" fn dokar_capabilities() -> u64 {
   dokar::CAPABILITIES
@@ -23,7 +23,7 @@ mod tests {
   #[test]
   fn boundary_matches_core() {
     assert_eq!(dokar_abi_version(), dokar::ABI_VERSION);
-    assert_eq!(dokar_capabilities(), 0, "do not advertise an unimplemented transport");
+    assert_eq!(dokar_capabilities(), dokar::CAP_TRANSPORT_V3);
   }
 }
 

@@ -18,7 +18,7 @@ BUILD = ROOT / "build"
 VERSIONS = json.loads((ROOT / "tools/versions.json").read_text())
 VERSION = (ROOT / ".version").read_text().strip()
 ELIDE = os.environ.get("ELIDE", "elide")
-MODULES = ("api", "ffm", "native-image")
+MODULES = ("api", "ffm", "native-image", "netty")
 REPOSITORY = "https://github.com/elide-dev/dokar"
 
 
@@ -39,6 +39,13 @@ def jar_dependency(group, artifact, version, classifier=""):
 def sdk():
   return [jar_dependency("org.graalvm.sdk", name, VERSIONS["graalvm_sdk"])
           for name in ("nativeimage", "word")]
+
+
+def netty():
+  return [jar_dependency("io.netty", name, VERSIONS["netty"]) for name in (
+      "netty-common", "netty-buffer", "netty-transport", "netty-resolver", "netty-handler",
+      "netty-codec-base", "netty-codec-compression", "netty-codec-http", "netty-codec-http2",
+      "netty-transport-native-unix-common")]
 
 
 def classpath(paths):
@@ -72,10 +79,10 @@ def library(release=False):
   return target_dir(release) / name[platform.system()]
 
 
-def compile_java(output, inputs, dependencies=()):
+def compile_java(output, inputs, dependencies=(), lint="all"):
   shutil.rmtree(output, ignore_errors=True)
   output.mkdir(parents=True)
-  run(ELIDE, "javac", "--", "--release", VERSIONS["jvm_release"], "-Xlint:all", "-Werror",
+  run(ELIDE, "javac", "--", "--release", VERSIONS["jvm_release"], f"-Xlint:{lint}", "-Werror",
       "-cp", classpath(dependencies) or str(output), "-d", output, *inputs)
 
 
@@ -85,7 +92,12 @@ def jvm():
     cp = [] if module == "api" else [classes("api")]
     if module == "native-image":
       cp += sdk()
+    if module == "netty":
+      cp += netty()
     compile_java(classes(module), sources(module), cp)
+    resources = ROOT / "packages" / module / "src/main/resources"
+    if resources.is_dir():
+      shutil.copytree(resources, classes(module), dirs_exist_ok=True)
 
 
 def java_tool(name):
@@ -122,6 +134,7 @@ def test_jvm():
     run(os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
         "-I", ROOT / "include", ROOT / "tests/abi.c", library(), "-o", binary)
     run(binary, timeout=30)
+  test_transport()
 
 
 def test_native_image():
@@ -141,19 +154,46 @@ def test_native_image():
       f"-H:CLibraryPath={target_dir()}", f"--native-compiler-options=-I{ROOT / 'include'}",
       *linker, "dev.elide.dokar.CapiContract", binary, timeout=900)
   run(binary, timeout=60)
+  test_transport(native_image=True)
+
+
+def test_transport(native_image=False):
+  output = BUILD / "tests/transport"
+  cp = [classes("api"), classes("ffm"), classes("netty"), *netty()]
+  compile_java(output, sorted((ROOT / "tests/transport/java").glob("*.java")),
+               [*cp, classes("native-image"), *sdk()], lint="all,-restricted,-deprecation,-try,-serial")
+  fixtures = ROOT / "crates/dokar/tests/fixtures"
+  cert, key = fixtures / "localhost-cert.pem", fixtures / "localhost-key.pem"
+  if native_image:
+    binary = BUILD / "tests" / ("transport-capi.exe" if os.name == "nt" else "transport-capi")
+    linker = ["-H:NativeLinkerOption=ntdll.lib"] if os.name == "nt" else []
+    run(java_tool("native-image"), "--no-fallback", "--enable-monitoring=jfr", "-O0",
+        "-cp", classpath([output, *cp, classes("native-image"), *sdk()]),
+        f"-H:CLibraryPath={target_dir()}", f"--native-compiler-options=-I{ROOT / 'include'}",
+        *linker, "CapiTlsChannelTest", binary, timeout=900)
+    run(binary, cert, key, timeout=180)
+  else:
+    for contract in ("FfmTransportTest", "NativeByteBufTest", "NativeChannelTest", "NativeLifecycleTest",
+                     "NativeTlsChannelTest", "NativeTlsNegativeTest", "NativeTlsOrderingTest",
+                     "NativeTransferTest", "NativeJfrTest", "NativeReentrantCloseTest",
+                     "NativeReceiveAllocatorTest", "NativeSslEngineTest", "NativeSslInteropTest",
+                     "NativeSslPolicyTest", "StandaloneTransportCheck"):
+      run(os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), "--enable-native-access=ALL-UNNAMED",
+          "-ea", "-cp", classpath([output, *cp]), contract, library(), cert, key, timeout=90)
 
 
 def fmt(check=False):
   deps()
-  run("cargo", "fmt", "--all", *(["--check"] if check else []))
+  run("cargo", "fmt", "--package", "dokar", "--package", "dokar-ffi", *(["--check"] if check else []))
   formatter = jar_dependency("com.google.googlejavaformat", "google-java-format",
                              VERSIONS["java_format"], "all-deps")
-  java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests/java").rglob("*.java"))
+  java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java"))
   flags = ["--dry-run", "--set-exit-if-changed"] if check else ["--replace"]
   run(ELIDE, "java", "--", "-jar", formatter, *flags, *java_files)
 
 
 def check():
+  run(sys.executable, ROOT / "tools/generate_exports.py", "--check")
   fmt(True)
   run("cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings")
   run("cargo", "doc", "--workspace", "--no-deps", "--locked", env={**os.environ, "RUSTDOCFLAGS": "-D warnings"})
@@ -187,7 +227,7 @@ def pom(path, artifact, dependencies):
     return node
   for name, value in (("modelVersion", "4.0.0"), ("groupId", "dev.elide"), ("artifactId", artifact),
                       ("version", VERSION), ("packaging", "jar"), ("name", artifact),
-                      ("description", "Dokar native transport foundation for JVM and Native Image"),
+                      ("description", "Dokar native transport for Netty, JVM FFM, and Native Image"),
                       ("url", REPOSITORY)):
     add(project, name, value)
   license_node = add(add(project, "licenses"), "license")
@@ -237,15 +277,20 @@ def package():
     cp = [] if module == "api" else [classes("api")]
     if module == "native-image":
       cp += sdk()
+    if module == "netty":
+      cp += netty()
     # Javadoc is run by Elide's JVM toolchain, not a second build system.
     run(ELIDE, "java", "--", "-m", "jdk.javadoc/jdk.javadoc.internal.tool.Main", "-quiet",
-        "-notimestamp", "-Werror", "--release", VERSIONS["jvm_release"], "-d", docs,
+        "-notimestamp", "-Werror", "-Xdoclint:all,-missing", "--release", VERSIONS["jvm_release"], "-d", docs,
         "-classpath", classpath(cp) or str(classes(module)), *sources(module))
     jar(f"{prefix}-javadoc.jar", docs)
     dependencies = [] if module == "api" else [("dev.elide", "dokar-api", VERSION, "compile")]
     if module == "native-image":
       dependencies += [("org.graalvm.sdk", name, VERSIONS["graalvm_sdk"], "provided")
                        for name in ("nativeimage", "word")]
+    if module == "netty":
+      dependencies += [("io.netty", name, VERSIONS["netty"], "compile") for name in (
+          "netty-transport", "netty-handler", "netty-codec-http2", "netty-transport-native-unix-common")]
     pom(f"{prefix}.pom", artifact, dependencies)
   # Attach separate dynamic and static native classifiers; keep base JARs portable.
   static_name = "dokar_ffi.lib" if os.name == "nt" else "libdokar_ffi.a"
@@ -256,6 +301,7 @@ def package():
     resource.mkdir(parents=True)
     shutil.copy2(binary, resource)
     shutil.copy2(ROOT / "include/dokar.h", resource)
+    shutil.copy2(ROOT / "include/elide_transport.h", resource)
     for name in ("LICENSE", "NOTICE"):
       shutil.copy2(ROOT / name, native / "META-INF" / name)
     prefix = stage / "dev/elide" / f"dokar-{module}" / VERSION / f"dokar-{module}-{VERSION}"

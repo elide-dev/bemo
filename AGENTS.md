@@ -3,7 +3,8 @@
 - Use `make build`, `make check`, `make test`, and `make test-native-image`.
   Cargo owns Rust; Elide owns Java compilation, dependency resolution, and JARs.
 - Keep `crates/dokar` independent of JVM, Netty, GraalVM, and Elide runtime types.
-  The C ABI belongs only in `crates/dokar-ffi` and `include/dokar.h`.
+  Unmangled C exports belong only in `crates/dokar-ffi`; shared headers live in
+  `include`. `dokar::abi` owns the Rust handle operations behind those exports.
 - ABI changes must update both Java bindings and run their shared contract.
   Never advertise a capability before its data plane and ownership tests exist.
 - API/FFM artifacts must have no GraalVM or Elide runtime dependencies.

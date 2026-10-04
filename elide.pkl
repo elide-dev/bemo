@@ -19,6 +19,7 @@ sources {
       "packages/api/src/main/java/**/*.java"
       "packages/ffm/src/main/java/**/*.java"
       "packages/native-image/src/main/java/**/*.java"
+      "packages/netty/src/main/java/**/*.java"
     }
   }
 }
@@ -26,6 +27,10 @@ sources {
 dependencies {
   maven {
     packages {
+      "io.netty:netty-transport:\(versions.netty)"
+      "io.netty:netty-handler:\(versions.netty)"
+      "io.netty:netty-codec-http2:\(versions.netty)"
+      "io.netty:netty-transport-native-unix-common:\(versions.netty)"
       "org.graalvm.sdk:nativeimage:\(versions.graalvm_sdk)"
       "org.graalvm.sdk:word:\(versions.graalvm_sdk)"
       "com.google.googlejavaformat:google-java-format:\(versions.java_format):all-deps"

@@ -9,6 +9,7 @@ staging; no task uploads or publishes anything.
 | --- | --- |
 | `dev.elide:dokar-api` | Java boundary interface |
 | `dev.elide:dokar-ffm` | FFM adapter; depends only on `dokar-api` |
+| `dev.elide:dokar-netty` | Stock Netty channels, buffer allocator, event-loop and TLS adapters |
 | `dev.elide:dokar-native-image` | C API adapter; API dependency and provided GraalVM SDK dependencies |
 | `dokar-ffm:<platform>` classifier | Cargo shared library, C header, and license notices |
 | `dokar-native-image:<platform>` classifier | Cargo static library, C header, and license notices |
@@ -24,8 +25,8 @@ from the Cargo output and repository header.
 The proposed group and repository are `dev.elide` and `elide-dev/dokar`; confirm
 the actual hosted repository and Central namespace ownership before release.
 The initial `.version` is a snapshot, intentionally unsuitable for a Central
-release. The scaffold has no usable Netty transport and should not be presented
-as one in release metadata.
+release. The transport is extracted, but cross-platform release qualification and the
+Linux compatibility floor remain prerequisites for production release.
 
 ## Release preparation
 

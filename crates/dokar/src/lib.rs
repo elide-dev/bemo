@@ -12,5 +12,7 @@ pub mod tls;
 
 /// Dokar metadata ABI (distinct from the preserved Elide transport ABI 3).
 pub const ABI_VERSION: u32 = 1;
-/// Data-plane capabilities are advertised after the binding contracts pass.
-pub const CAPABILITIES: u64 = 0;
+/// The complete Elide transport ABI 3 boundary is available.
+pub const CAP_TRANSPORT_V3: u64 = 1;
+/// Implemented data-plane capabilities.
+pub const CAPABILITIES: u64 = CAP_TRANSPORT_V3;

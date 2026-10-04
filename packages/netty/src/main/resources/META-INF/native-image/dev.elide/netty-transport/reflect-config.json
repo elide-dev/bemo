@@ -1,0 +1,14 @@
+[
+  {
+    "condition": { "typeReachable": "dev.elide.netty.v2.NativeSocketChannel" },
+    "name": "dev.elide.netty.v2.NativeSocketChannel",
+    "methods": [{ "name": "<init>", "parameterTypes": [] }]
+  },
+  {
+    "condition": {
+      "typeReachable": "dev.elide.netty.v2.NativeServerSocketChannel"
+    },
+    "name": "dev.elide.netty.v2.NativeServerSocketChannel",
+    "methods": [{ "name": "<init>", "parameterTypes": [] }]
+  }
+]

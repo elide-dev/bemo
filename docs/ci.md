@@ -9,10 +9,10 @@ cancelled dependencies. Configure branch protection to require the resulting
 
 | Job | Coverage |
 | --- | --- |
-| Check Rust | Linux/macOS/Windows; format, Clippy, tests, doctests, release build; external Git consumer on Linux |
-| Check JVM | Linux/macOS; Temurin 22/25; format, Java warning checks, Rust docs, C ABI and FFM contracts |
-| Check Native Image | Linux; GraalVM 25; compile, statically link, and execute C API contract |
-| Build | Linux/macOS; release Cargo libraries, JVM/source/Javadoc JARs, POMs, checksums, native classifiers; packaged FFM contract |
+| Check Rust | Linux/macOS/Windows; format, Clippy, tests, doctests, release build, external allocator check; forced polling and external Git consumer on Linux |
+| Check JVM | Linux/macOS; Temurin 22/25; format, Java warning checks, Rust docs, C ABI and complete Netty FFM contracts |
+| Check Native Image | Linux; GraalVM 25; compile, statically link, and execute complete Netty C API contracts |
+| Build | Linux/macOS; release Cargo libraries, JVM/source/Javadoc JARs, POMs, checksums, native classifiers; packaged Netty TCP/TLS and FFM contracts |
 
 Actions are SHA-pinned following Elide's existing pins. Linux jobs use runner
 hardening in audit mode, checkout does not persist credentials, and the default

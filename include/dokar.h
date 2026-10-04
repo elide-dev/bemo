@@ -9,9 +9,10 @@
 extern "C" {
 #endif
 #define DOKAR_ABI_VERSION 1
+#define DOKAR_CAP_TRANSPORT_V3 UINT64_C(1)
 /* Query version first. No allocation, callbacks, thread affinity, or ownership transfer. */
 uint32_t dokar_abi_version(void);
-/* Zero until the transport data plane is migrated. Unknown bits must be ignored. */
+/* Implemented data-plane capabilities. Unknown bits must be ignored. */
 uint64_t dokar_capabilities(void);
 #ifdef __cplusplus
 }

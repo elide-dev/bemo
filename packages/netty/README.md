@@ -1,10 +1,15 @@
-# Netty adapter migration boundary
+# Stock Netty adapter
 
-The stock Netty 4.2 channel/event-loop adapter will live here. No working Dokar
-channel factory is advertised until it is migrated and tested against Central's
-Netty artifacts. API, FFM, and Native Image packages do not depend on Netty.
+`dokar-netty` provides the extracted Netty 4.2 channels, event-loop handler,
+reference-counted buffers, receive allocator, and Rustls-backed TLS integration.
+It depends on `dokar-api` and stock Netty artifacts from Maven Central. Select
+`dokar-ffm` for a regular JDK 22+ JVM or `dokar-native-image` for static C linking.
 
-Migrate Elide's `packages/base/main/dev/elide/netty/v2` channel, buffer, and TLS
-adapters, excluding `NativeRegion` (Truffle interop). Preserve reference counting,
-shutdown ordering, callback reentrancy, and allocator ownership tests. See
-[the extraction guide](../../docs/extraction.md).
+The Java package remains `dev.elide.netty.v2` for migration compatibility.
+`NativeRegion` stays in Elide because it implements Truffle interop. The
+`io.netty.handler.ssl.ApplicationProtocolSslEngine` helper exposes Netty's
+package-private ALPN accessor: use the classpath, not a named Netty JPMS module.
+
+`tests/transport/java` exercises real TCP/Unix echo, native and SSLEngine TLS,
+JSSE/OpenSSL interoperability, allocation ownership, shutdown, callback
+reentrancy, and receive allocator behavior through both native bindings.

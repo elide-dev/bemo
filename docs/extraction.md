@@ -1,7 +1,8 @@
 # Elide extraction boundaries
 
 The initial structure was informed by Elide revision
-`68e31f11d9e4d194cc8b3fe4f644f9b9e5d9f155`. The Rust implementation and its regression suite have now been extracted.
+`68e31f11d9e4d194cc8b3fe4f644f9b9e5d9f155`. The Rust implementation and its
+regression suite have now been extracted.
 The Rust handle layer remains in `dokar::abi`, without unmangled exports;
 `dokar-ffi` generates the C entrypoints from that layer and checks them against
 `include/elide_transport.h`. This preserves crate-private state and ownership
@@ -10,14 +11,14 @@ invariants without exposing transport internals across crates.
 | Elide source | Dokar destination | Constraints |
 | --- | --- | --- |
 | `crates/netty-transport/src/{buffer,driver,http,tls}*` | `crates/dokar` | Preserve runtime independence and per-crate feature choices |
-| `crates/netty-transport/src/abi*` | `crates/dokar-ffi` | One foreign boundary; decide compatibility with old symbols before renaming |
+| `crates/netty-transport/src/abi*` | `dokar::abi` + generated `dokar-ffi` exports | One foreign boundary; preserve ABI 3 symbols |
 | `crates/netty-transport/include/elide_transport.h` | `include` | Preserve handle semantics, ownership rules, layouts, and workload parameters |
 | `packages/base/main/dev/elide/netty/v2/TransportNative.java` | `packages/api` | No Elide runtime dependencies |
 | `FfmTransportNative.java` | `packages/ffm` | JDK 22+ path; explicit library lifetime and ABI negotiation |
 | `svm/CapiTransportNative.java` | `packages/native-image` | Replace `StacklessExceptions`, `Unsafe`, and Truffle annotation dependencies with standalone facilities |
 | Channel, event-loop, buffer, and TLS adapters in `netty/v2` | `packages/netty` | Verify against stock Netty 4.2 from Maven Central |
 | `NativeRegion.java` | Remains in Elide | Truffle-specific interop does not belong in the standalone adapter |
-| `packages/base/main/io/netty/handler/ssl` | Evaluate with Netty TLS adapter | Package-private ALPN integration requires explicit compatibility coverage |
+| `packages/base/main/io/netty/handler/ssl` | `packages/netty` | Package-private ALPN integration requires explicit compatibility coverage |
 | `crates/netty-transport/tests` | Rust and shared binding contracts here | Preserve backend, shutdown, ownership, TLS, and reentrant-close cases |
 
 Dokar pins CompIO at `61a04b75f7c6299a41c5b3cacb17b5c2d96f824f`, based on Elide's
@@ -36,7 +37,7 @@ Apple must not link a second mimalloc into Elide; other standalone platforms
 need the appropriate dynamic TLS behavior. Do not add a global allocator here
 that overrides the embedding application.
 
-Data-plane migration should bring tests with each slice: owner/buffer accounting
+The imported regression suite covers: owner/buffer accounting
 and invalid handles; driver cancellation/completion lifetimes; Netty read/write
 and reference counts; TLS/ALPN and shutdown; HTTP and workload admission. Force
 polling and io_uring separately on Linux and exercise restricted io_uring setup
@@ -46,3 +47,27 @@ Elide cutover is a later change in Elide: pin the Dokar Git revision, depend on
 these JVM artifacts or their source during development, remove copied transport
 implementations, and leave only runtime-specific integration. Do not maintain a
 second independent copy of the transport after that cutover.
+
+## Completed JVM extraction
+
+The API, FFM, C API, Netty channel/buffer/TLS adapters, ALPN helper, reflection
+metadata, and standalone Java contracts now live here. C API byte copies use
+public GraalVM buffer views; standard exceptions replace Elide-specific helpers.
+Neither Truffle annotations nor test-only runtime shims are shipped.
+
+Both bindings pass the channel, allocator, TLS, callback, lifecycle, reentrant
+close, JFR, and JSSE/OpenSSL contracts on macOS ARM64. Rust tests cover HTTP/1,
+HTTP/2, native TLS, workload isolation, topology, and ownership behavior. CI
+must still qualify Linux and Windows after this repository is hosted.
+
+Elide's working tree has not been changed. Its cutover must remove the old Rust
+implementation and duplicate Java classes, including the ALPN helper, then
+link `dokar-ffi` and consume `dokar` for Rust APIs. The Java package and native
+symbol compatibility minimize source changes, but the native library name is
+now `dokar_ffi`. Update Elide's library discovery/link directives accordingly.
+Do not link both libraries into a process: they export identical ABI 3 symbols.
+
+Align Elide's existing CompIO and polling source identities with these exact
+revision pins during cutover; leaving old branch-based root patches can create
+a second buffer/driver type graph even when the source revisions match. Use
+`cargo tree -d` and the consumer test to verify the resulting graph.

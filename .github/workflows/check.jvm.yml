@@ -28,5 +28,5 @@ jobs:
           java: ${{ matrix.java }}
       - name: Check
         run: make check
-      - name: Test FFM and C ABI
+      - name: Test Netty FFM and C ABI
         run: make test-jvm
