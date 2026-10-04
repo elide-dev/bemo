@@ -1,0 +1,8 @@
+/target/
+/build/
+/.dev/
+/.elide/
+*.class
+.DS_Store
+__pycache__/
+*.py[cod]

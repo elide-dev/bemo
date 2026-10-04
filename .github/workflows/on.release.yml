@@ -1,0 +1,13 @@
+name: Stage Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/on.verify.yml
+# Verification uploads unsigned Maven bundles. Publishing is a separate maintainer
+# step documented in docs/publishing.md; no secrets are exposed to PR builds.

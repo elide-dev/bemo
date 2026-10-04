@@ -1,0 +1,30 @@
+name: Setup Dokar
+description: Pinned Elide, JVM, and Rust toolchains
+inputs:
+  java:
+    description: JVM version
+    default: "25"
+  distribution:
+    description: JDK distribution
+    default: temurin
+runs:
+  using: composite
+  steps:
+    - name: Read version pins
+      id: versions
+      shell: bash
+      run: |
+        python3 -c 'import json; v=json.load(open("tools/versions.json")); print("elide=" + v["elide"])' >> "$GITHUB_OUTPUT"
+    - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      with:
+        distribution: ${{ inputs.distribution }}
+        java-version: ${{ inputs.java }}
+    - uses: elide-dev/setup-elide@10fbf30cebffd3538c428369950dc2094137f02b # v4.2.0
+      with:
+        version: ${{ steps.versions.outputs.elide }}
+    - name: Check Rust and Python toolchains
+      shell: bash
+      run: |
+        cargo --version
+        rustc --version
+        python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'

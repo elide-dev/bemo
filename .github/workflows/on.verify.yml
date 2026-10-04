@@ -1,0 +1,26 @@
+name: Verify
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rust:
+    uses: ./.github/workflows/check.rust.yml
+  jvm:
+    uses: ./.github/workflows/check.jvm.yml
+  native-image:
+    uses: ./.github/workflows/check.native-image.yml
+  build:
+    uses: ./.github/workflows/job.build.yml
+  ready:
+    name: Ready
+    if: always()
+    needs: [rust, jvm, native-image, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every check
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 -c 'import json, os; assert all(j["result"] == "success" for j in json.loads(os.environ["RESULTS"]).values())'

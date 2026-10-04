@@ -1,0 +1,12 @@
+name: Push
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: push-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    uses: ./.github/workflows/on.verify.yml

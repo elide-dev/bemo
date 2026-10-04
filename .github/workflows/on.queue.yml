@@ -1,0 +1,8 @@
+name: Merge Queue
+on:
+  merge_group:
+permissions:
+  contents: read
+jobs:
+  verify:
+    uses: ./.github/workflows/on.verify.yml

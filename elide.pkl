@@ -1,0 +1,34 @@
+amends "elide:project.pkl"
+import "elide:Sources.pkl" as src
+import "pkl:json" as json
+
+local versions = new json.Parser {}.parse(read("file:tools/versions.json").text)
+name = "dokar"
+version = read("file:.version").text.trim()
+description = "Rust native transport for Netty, the JVM, and Native Image"
+
+jvm {
+  target = versions.jvm_release
+  java { release = versions.jvm_release }
+  features { testing = false }
+}
+
+sources {
+  ["main"] = new src.SourceSetSpec {
+    paths {
+      "packages/api/src/main/java/**/*.java"
+      "packages/ffm/src/main/java/**/*.java"
+      "packages/native-image/src/main/java/**/*.java"
+    }
+  }
+}
+
+dependencies {
+  maven {
+    packages {
+      "org.graalvm.sdk:nativeimage:\(versions.graalvm_sdk)"
+      "org.graalvm.sdk:word:\(versions.graalvm_sdk)"
+      "com.google.googlejavaformat:google-java-format:\(versions.java_format):all-deps"
+    }
+  }
+}
