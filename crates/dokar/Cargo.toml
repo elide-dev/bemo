@@ -5,7 +5,41 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-rust-version.workspace = true
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[features]
+default = ["bundled-mimalloc"]
+bundled-mimalloc = ["dep:libmimalloc-sys"]
+
+[dependencies]
+compio-buf = { workspace = true }
+compio-driver = { workspace = true }
+nohash-hasher = { workspace = true }
+ntex-httparse = { workspace = true }
+h2 = { workspace = true }
+http = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true }
+socket2 = { workspace = true }
+libc = { workspace = true }
+rustls = { workspace = true, features = ["std", "tls12", "aws-lc-rs"] }
+aws-lc-rs = { workspace = true }
+
+# Apple buffers use the Rust allocator (see `buffer.rs`): a second mimalloc must not be linked there.
+# `local_dynamic_tls`: the cdylib is dlopen'd by the JVM, and mimalloc's default initial-exec TLS
+# faults in `mi_thread_init` on the first allocation from a fresh thread.
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+libmimalloc-sys = { workspace = true, optional = true, features = ["local_dynamic_tls"] }
+
+[dev-dependencies]
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "buffers"
+harness = false
+
+[[bench]]
+name = "handles"
+harness = false

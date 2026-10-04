@@ -1,10 +1,16 @@
-//! Runtime-independent transport core.
+//! Runtime-independent transport implementation extracted from Elide.
 //!
-//! This foundation exposes compatibility metadata. Socket, buffer, and TLS
-//! capabilities will be advertised only after their implementation is migrated.
-#![forbid(unsafe_code)]
+//! The Rust handle API lives in [`abi`]; unmangled C exports live only in `dokar-ffi`.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("The transport ABI requires a 64-bit target");
 
-/// Version of Dokar's C ABI (independent of Elide's existing transport ABI).
+pub mod abi;
+pub mod buffer;
+pub mod driver;
+pub mod http;
+pub mod tls;
+
+/// Dokar metadata ABI (distinct from the preserved Elide transport ABI 3).
 pub const ABI_VERSION: u32 = 1;
-/// Implemented transport capabilities. Zero means no data-plane implementation.
+/// Data-plane capabilities are advertised after the binding contracts pass.
 pub const CAPABILITIES: u64 = 0;

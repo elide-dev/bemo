@@ -26,3 +26,5 @@ mod tests {
     assert_eq!(dokar_capabilities(), 0, "do not advertise an unimplemented transport");
   }
 }
+
+mod transport;

@@ -4,9 +4,10 @@ A shared Rust native transport for Elide and stock Netty, with JVM FFM and
 GraalVM Native Image C bindings. Cargo builds native code; Elide resolves JVM
 dependencies, compiles Java, and produces JARs.
 
-**Status: project foundation and tested binding skeleton.** Both bindings call
-the same native ABI. Socket, buffer, TLS, and Netty channel implementations have
-not yet been extracted from Elide. Capability bits are deliberately zero.
+**Status: native transport extracted; JVM adapter migration in progress.** The
+Rust socket, buffer, TLS, HTTP, and workload implementation now lives here.
+Existing Elide ABI 3 symbols are preserved by generated C forwarding functions.
+Capability bits remain zero until both JVM binding suites are validated.
 
 ## Layout
 

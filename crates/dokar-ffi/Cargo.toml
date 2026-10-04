@@ -5,14 +5,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-rust-version.workspace = true
 
 [lib]
 name = "dokar_ffi"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
-dokar.workspace = true
+dokar = { workspace = true, default-features = false }
+
+[features]
+default = ["bundled-mimalloc"]
+bundled-mimalloc = ["dokar/bundled-mimalloc"]
 
 [lints]
 workspace = true

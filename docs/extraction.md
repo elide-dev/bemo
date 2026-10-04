@@ -1,8 +1,11 @@
 # Elide extraction boundaries
 
 The initial structure was informed by Elide revision
-`68e31f11d9e4d194cc8b3fe4f644f9b9e5d9f155`. No transport implementation has been
-copied in this foundation pass. Recheck the source revision before extraction.
+`68e31f11d9e4d194cc8b3fe4f644f9b9e5d9f155`. The Rust implementation and its regression suite have now been extracted.
+The Rust handle layer remains in `dokar::abi`, without unmangled exports;
+`dokar-ffi` generates the C entrypoints from that layer and checks them against
+`include/elide_transport.h`. This preserves crate-private state and ownership
+invariants without exposing transport internals across crates.
 
 | Elide source | Dokar destination | Constraints |
 | --- | --- | --- |
@@ -17,7 +20,11 @@ copied in this foundation pass. Recheck the source revision before extraction.
 | `packages/base/main/io/netty/handler/ssl` | Evaluate with Netty TLS adapter | Package-private ALPN integration requires explicit compatibility coverage |
 | `crates/netty-transport/tests` | Rust and shared binding contracts here | Preserve backend, shutdown, ownership, TLS, and reentrant-close cases |
 
-Elide currently uses pinned CompIO, polling, and ntex-httparse forks. Cargo
+Dokar pins CompIO at `61a04b75f7c6299a41c5b3cacb17b5c2d96f824f`, based on Elide's
+`8feca49de69cb8090f18405741982b416a4beda9`. The two polling dependencies in that
+fork now directly pin `1198249b4e54fa430dc6f76b058ad0912bd6bbea`. No source is
+vendored. ntex-httparse is directly pinned at
+`104a6749f9b8c973e99e9f84cfd2adcfdef96bbf`. Cargo
 ignores a dependency's root `[patch]` entries when another workspace consumes
 it. Put required forks directly into dependency declarations or use fork
 releases with a consistent transitive graph. CompIO's buf/driver/log crates
