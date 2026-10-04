@@ -2504,9 +2504,9 @@ fn freed_pipeline_handles_cannot_replace_queued_responses() {
   assert_eq!(elide_transport_owner_release(h.owner), 0);
 }
 
-struct H2TlsIo(rustls::StreamOwned<rustls::ClientConnection, TcpStream>);
+struct H2TlsIo<T: Read + Write = TcpStream>(rustls::StreamOwned<rustls::ClientConnection, T>);
 
-impl tokio::io::AsyncRead for H2TlsIo {
+impl<T: Read + Write + Unpin> tokio::io::AsyncRead for H2TlsIo<T> {
   fn poll_read(
     mut self: std::pin::Pin<&mut Self>,
     _: &mut std::task::Context<'_>,
@@ -2522,7 +2522,7 @@ impl tokio::io::AsyncRead for H2TlsIo {
     }
   }
 }
-impl tokio::io::AsyncWrite for H2TlsIo {
+impl<T: Read + Write + Unpin> tokio::io::AsyncWrite for H2TlsIo<T> {
   fn poll_write(
     mut self: std::pin::Pin<&mut Self>,
     _: &mut std::task::Context<'_>,
@@ -2546,19 +2546,36 @@ impl tokio::io::AsyncWrite for H2TlsIo {
     mut self: std::pin::Pin<&mut Self>,
     cx: &mut std::task::Context<'_>,
   ) -> std::task::Poll<std::io::Result<()>> {
-    let peer_closed = self
-      .0
-      .conn
-      .process_new_packets()
-      .map_err(std::io::Error::other)?
-      .peer_has_closed();
     self.0.conn.send_close_notify();
-    // h2 has consumed the authenticated TLS EOF before calling shutdown. The
-    // server can close TCP before this reciprocal close_notify is flushed.
-    // Winsock reports ConnectionAborted/Reset where Unix reports BrokenPipe.
-    match self.poll_flush(cx) {
-      std::task::Poll::Ready(result) => std::task::Poll::Ready(tls_shutdown_result(result, peer_closed)),
-      std::task::Poll::Pending => std::task::Poll::Pending,
+    match self.as_mut().poll_flush(cx) {
+      std::task::Poll::Ready(Err(error))
+        if matches!(
+          error.kind(),
+          std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::ConnectionReset
+        ) =>
+      {
+        // H2 can finish on GOAWAY before rustls has read the peer's close_notify.
+        // A failed reciprocal write must not prevent authenticating that pending
+        // input. Never turn an unverified TCP disconnect into a clean TLS close.
+        let stream = &mut self.0;
+        loop {
+          let state = stream.conn.process_new_packets().map_err(std::io::Error::other)?;
+          if state.peer_has_closed() {
+            return std::task::Poll::Ready(tls_shutdown_result(Err(error), true));
+          }
+          if state.plaintext_bytes_to_read() != 0 {
+            return std::task::Poll::Ready(Err(error));
+          }
+          match stream.conn.read_tls(&mut stream.sock) {
+            Ok(0) => return std::task::Poll::Ready(Err(error)),
+            Ok(_) => {}
+            Err(read_error) if read_error.kind() == std::io::ErrorKind::WouldBlock => return std::task::Poll::Pending,
+            Err(read_error) if read_error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(read_error) => return std::task::Poll::Ready(Err(read_error)),
+          }
+        }
+      }
+      result => result,
     }
   }
 }
@@ -2576,6 +2593,102 @@ fn tls_shutdown_result(result: std::io::Result<()>, peer_closed: bool) -> std::i
       Ok(())
     }
     result => result,
+  }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+fn h2_tls_shutdown_authenticates_close_notify_after_a_failed_write() {
+  use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, pem::PemObject};
+  use std::sync::Arc;
+  use std::task::{Context, Poll, Waker};
+  use tokio::io::AsyncWrite;
+
+  struct DisconnectedWriter {
+    input: std::io::Cursor<Vec<u8>>,
+    eof: bool,
+    error: std::io::ErrorKind,
+  }
+  impl Read for DisconnectedWriter {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+      if self.input.position() == self.input.get_ref().len() as u64 && !self.eof {
+        return Err(std::io::ErrorKind::WouldBlock.into());
+      }
+      self.input.read(bytes)
+    }
+  }
+  impl Write for DisconnectedWriter {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+      Err(self.error.into())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+      Ok(())
+    }
+  }
+
+  for version in [&rustls::version::TLS12, &rustls::version::TLS13] {
+    for error in [
+      std::io::ErrorKind::BrokenPipe,
+      std::io::ErrorKind::ConnectionAborted,
+      std::io::ErrorKind::ConnectionReset,
+    ] {
+      for authenticated in [false, true] {
+        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let cert = CertificateDer::from_pem_slice(include_bytes!("fixtures/localhost-cert.pem")).unwrap();
+        let key = PrivateKeyDer::from_pem_slice(include_bytes!("fixtures/localhost-key.pem")).unwrap();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(cert.clone()).unwrap();
+        let client_config = rustls::ClientConfig::builder_with_provider(provider.clone())
+          .with_protocol_versions(&[version])
+          .unwrap()
+          .with_root_certificates(roots)
+          .with_no_client_auth();
+        let server_config = rustls::ServerConfig::builder_with_provider(provider)
+          .with_protocol_versions(&[version])
+          .unwrap()
+          .with_no_client_auth()
+          .with_single_cert(vec![cert], key)
+          .unwrap();
+        let mut client =
+          rustls::ClientConnection::new(Arc::new(client_config), ServerName::try_from("localhost").unwrap()).unwrap();
+        let mut server = rustls::ServerConnection::new(Arc::new(server_config)).unwrap();
+        for _ in 0..10 {
+          let mut wire = Vec::new();
+          client.write_tls(&mut wire).unwrap();
+          server.read_tls(&mut wire.as_slice()).unwrap();
+          server.process_new_packets().unwrap();
+          wire.clear();
+          server.write_tls(&mut wire).unwrap();
+          client.read_tls(&mut wire.as_slice()).unwrap();
+          client.process_new_packets().unwrap();
+          if !client.is_handshaking() && !server.is_handshaking() && !client.wants_write() && !server.wants_write() {
+            break;
+          }
+        }
+        assert!(!client.is_handshaking() && !server.is_handshaking());
+        let socket = DisconnectedWriter {
+          input: std::io::Cursor::new(Vec::new()),
+          eof: false,
+          error,
+        };
+        let mut io = H2TlsIo(rustls::StreamOwned::new(client, socket));
+        let mut cx = Context::from_waker(Waker::noop());
+        // The disconnect is not clean until the delayed TLS input authenticates it.
+        assert!(std::pin::Pin::new(&mut io).poll_shutdown(&mut cx).is_pending());
+        let mut wire = Vec::new();
+        if authenticated {
+          server.send_close_notify();
+          server.write_tls(&mut wire).unwrap();
+        }
+        io.0.sock.input = std::io::Cursor::new(wire);
+        io.0.sock.eof = true;
+        match std::pin::Pin::new(&mut io).poll_shutdown(&mut cx) {
+          Poll::Ready(result) if authenticated => result.unwrap(),
+          Poll::Ready(result) => assert_eq!(result.unwrap_err().kind(), error),
+          Poll::Pending => panic!("shutdown did not finish after TLS close or TCP EOF"),
+        }
+      }
+    }
   }
 }
 

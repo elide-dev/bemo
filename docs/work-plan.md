@@ -94,9 +94,26 @@ Benchmark workflow wiring passes Actionlint; execution will be verified in CI.
 - [x] Document unsafe test invariants in Linux-only seccomp, ABI, and serving paths.
 - [x] Replace untyped affinity-mask zeroing with an initialized word array.
 - [x] Bootstrap rustup and export Cargo's bin directory in shared setup, following Bali.
-- [ ] Confirm Linux checks and wall-time benchmarks in the next CI run.
+- [x] Confirm Linux lint and JVM checks in CI run `37234380668`.
+- [ ] Resolve wall-time benchmark manifest drift before confirming that job.
 
 Windows, macOS, Native Image, packaging, coverage, simulation benchmarks, and
 transport measurements passed in this run. Linux JVM jobs stopped at Rust
 Clippy before reaching Java checks. The wall-time runner stopped at setup before
 compiling benchmarks because Cargo was absent from PATH.
+
+## H2 shutdown follow-up: run 37234380668
+
+- [x] Investigate Linux H2 upload/expectation test failure (`BrokenPipe`).
+- [x] Correct the test adapter's assumption that H2 completion implies TLS EOF
+  has already been authenticated: GOAWAY can finish H2 first.
+- [x] After a reciprocal shutdown write fails, process pending TLS input before
+  accepting the disconnect; retain failures for unauthenticated EOF or unread data.
+- [x] Verify a deterministic fault-injection test fails before the fix and passes
+  after it for TLS 1.2/1.3 and BrokenPipe/ConnectionAborted/ConnectionReset.
+- [x] Run the Rust suite and 20 focused H2 runs without retries.
+- [ ] Confirm the fix on Linux CI.
+
+The same run completed the TLS Criterion benchmarks, then failed the end-to-end
+wall-time manifest check (`Benchmark inputs or artifacts changed`). That separate
+benchmark issue remains open; no integrity check has been disabled.
