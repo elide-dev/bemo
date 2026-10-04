@@ -95,7 +95,7 @@ Benchmark workflow wiring passes Actionlint; execution will be verified in CI.
 - [x] Replace untyped affinity-mask zeroing with an initialized word array.
 - [x] Bootstrap rustup and export Cargo's bin directory in shared setup, following Bali.
 - [x] Confirm Linux lint and JVM checks in CI run `37234380668`.
-- [ ] Resolve wall-time benchmark manifest drift before confirming that job.
+- [x] Resolve wall-time benchmark manifest drift; confirmed in run `37239018787`.
 
 Windows, macOS, Native Image, packaging, coverage, simulation benchmarks, and
 transport measurements passed in this run. Linux JVM jobs stopped at Rust
@@ -129,6 +129,18 @@ benchmark issue remains open; no integrity check has been disabled.
   source deletion, class changes, and native-library changes invalidate it.
 - [x] Run all eight transport benchmark cases as smoke tests, Python contracts,
   the external Cargo consumer, and Actionlint.
-- [ ] Confirm the wall-time job succeeds on the dedicated CI runner.
+- [x] Confirm the wall-time job succeeds on the dedicated CI runner (`37239018787`).
 
 Every other verification job passed in run `37235296694`.
+
+## Release token follow-up: run 37239018787
+
+- [x] Confirm repository immutability remains enabled with authenticated admin access.
+- [x] Remove settings-endpoint calls requiring Administration permission, which
+  the workflow GITHUB_TOKEN cannot hold, from both workflow and publisher.
+- [x] Preserve the published release check: `immutable` must explicitly be true.
+- [x] Test successful publication, false/missing immutable status, and rejection
+  before publication of incomplete signatures or mismatched uploaded digests.
+- [x] Document that repository administrators own the policy and CI's check is
+  post-publication; no administrator credential is added to workflows.
+- [ ] Confirm the corrected release job in CI.

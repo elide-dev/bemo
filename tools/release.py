@@ -83,8 +83,6 @@ def publish():
     raise RuntimeError("Incomplete signed release asset set")
   if gh("release", "view", tag, "--repo", repo, "--json", "isDraft", "--jq", ".isDraft") != "true":
     raise RuntimeError("Refusing to change a published release")
-  if not json.loads(gh("api", f"repos/{repo}/immutable-releases"))["enabled"]:
-    raise RuntimeError("Release immutability must be enabled")
   # Remove obsolete assets only from the draft on a retry. Published releases
   # are never modified. Verify uploaded digests before freezing the release.
   remote = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "assets"))["assets"]
@@ -100,7 +98,7 @@ def publish():
   if set(digests) != expected:
     raise RuntimeError("Unexpected remote release assets")
   gh("release", "edit", tag, "--draft=false", "--repo", repo)
-  if not json.loads(gh("api", f"repos/{repo}/releases/tags/{tag}"))["immutable"]:
+  if json.loads(gh("api", f"repos/{repo}/releases/tags/{tag}")).get("immutable") is not True:
     raise RuntimeError("Published release is not immutable")
 
 

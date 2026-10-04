@@ -16,11 +16,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require immutable release policy
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          test "$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases" --jq .enabled)" = true
+      # Immutability is a repository policy managed by administrators. Its
+      # settings endpoint requires Administration:read, unavailable to GITHUB_TOKEN.
+      # publish verifies the release's immutable field using Contents permission.
       - name: Create draft after verification
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:

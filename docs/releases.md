@@ -18,8 +18,14 @@ The release environment scopes publication. The job signs every platform ZIP,
 provenance bundle, and checksum list with public Sigstore keyless signing. It
 verifies each signature before upload, checks uploaded asset digests, then
 publishes the draft last. Enabling repository release immutability freezes its
-tag and assets at publication. The workflow refuses publication when that policy
-is disabled, any platform/signature is missing, or the tag points elsewhere.
+tag and assets at publication. Repository administrators must keep this policy
+enabled. Its settings endpoint requires `Administration: read`, which
+`GITHUB_TOKEN` cannot hold, so the workflow does not query it. After publication,
+it requires the release API's `immutable` field to be explicitly `true`; a missing
+or false value fails the job. This is a post-publication check, not a preflight
+guarantee if an administrator disables the policy. No admin token is stored in CI.
+The workflow refuses publication when any platform/signature is missing or the
+tag points elsewhere.
 Retry the original failed push run to resume an unpublished draft; a subsequent
 commit cannot substitute its artifacts for the original release revision.
 

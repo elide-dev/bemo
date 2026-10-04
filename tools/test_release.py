@@ -76,7 +76,7 @@ class ReleaseSafetyTest(unittest.TestCase):
       names = payload | {name + ".sigstore.json" for name in payload}
       for name in names:
         (destination / name).write_bytes(b"asset")
-      replies = ["true", '{"enabled":true}', '{"assets":[]}', "uploaded",
+      replies = ["true", '{"assets":[]}', "uploaded",
                  json.dumps({"assets": [{"name": name, "digest": "sha256:wrong"} for name in names]})]
       with patch.object(release, "ROOT", root), patch.object(release, "version", return_value="0.1.0"), \
            patch.dict(os.environ, {"GITHUB_REPOSITORY": "elide-dev/dokar", "RELEASE_TAG": "v0.1.0"}), \
@@ -84,6 +84,34 @@ class ReleaseSafetyTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
           release.publish()
         self.assertFalse(any("--draft=false" in call.args for call in gh.call_args_list))
+
+
+  def test_publish_verifies_immutable_release_without_admin_api(self):
+    for immutable in (True, False, None):
+      with self.subTest(immutable=immutable), tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        destination = root / "build/release-assets"
+        destination.mkdir(parents=True)
+        payload = release.expected_assets("0.1.0") | {"SHA256SUMS"}
+        names = payload | {name + ".sigstore.json" for name in payload}
+        for name in names:
+          (destination / name).write_bytes(b"asset")
+        digest = "sha256:" + hashlib.sha256(b"asset").hexdigest()
+        replies = ["true", '{"assets":[]}', "uploaded",
+                   json.dumps({"assets": [{"name": name, "digest": digest} for name in names]}),
+                   "published", json.dumps({} if immutable is None else {"immutable": immutable})]
+        with patch.object(release, "ROOT", root), patch.object(release, "version", return_value="0.1.0"), \
+             patch.dict(os.environ, {"GITHUB_REPOSITORY": "elide-dev/dokar", "RELEASE_TAG": "v0.1.0"}), \
+             patch.object(release, "gh", side_effect=replies) as gh:
+          if immutable is True:
+            release.publish()
+          else:
+            with self.assertRaisesRegex(RuntimeError, "not immutable"):
+              release.publish()
+          calls = [call.args for call in gh.call_args_list]
+          self.assertFalse(any("immutable-releases" in arg for call in calls for arg in call))
+          self.assertEqual(calls[-2], ("release", "edit", "v0.1.0", "--draft=false", "--repo", "elide-dev/dokar"))
+          self.assertEqual(calls[-1], ("api", "repos/elide-dev/dokar/releases/tags/v0.1.0"))
 
 
 if __name__ == "__main__":
