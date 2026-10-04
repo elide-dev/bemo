@@ -1063,8 +1063,6 @@ impl Driver {
       };
       #[cfg(unix)]
       let mut replaced_cancel = None;
-      #[cfg(not(unix))]
-      let replaced_cancel = None;
       let pending = match operation.pending {
         Pending::Connect(key, socket) => match self.proactor.pop(key) {
           PushEntry::Ready(result) => match connect_done(&mut self.proactor, &self.ready, id, result, &socket) {
@@ -1130,7 +1128,10 @@ impl Driver {
           id,
           Operation {
             pending,
+            #[cfg(unix)]
             cancel: replaced_cancel.unwrap_or(operation.cancel),
+            #[cfg(not(unix))]
+            cancel: operation.cancel,
             lane: operation.lane,
           },
         );
