@@ -34,7 +34,7 @@ aws-lc-rs = { workspace = true }
 libmimalloc-sys = { workspace = true, optional = true, features = ["local_dynamic_tls"] }
 
 [dev-dependencies]
-criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+criterion = { package = "codspeed-criterion-compat", version = "=5.0.2", default-features = false, features = ["cargo_bench_support"] }
 
 [[bench]]
 name = "buffers"
@@ -42,4 +42,12 @@ harness = false
 
 [[bench]]
 name = "handles"
+harness = false
+
+[[bench]]
+name = "http"
+harness = false
+
+[[bench]]
+name = "tls"
 harness = false

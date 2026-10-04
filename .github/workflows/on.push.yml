@@ -4,6 +4,7 @@ on:
     branches: [main]
 permissions:
   contents: read
+  id-token: write
 concurrency:
   group: push-${{ github.ref }}
   cancel-in-progress: true

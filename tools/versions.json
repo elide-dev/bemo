@@ -4,5 +4,9 @@
   "jvm_release": 22,
   "graalvm_sdk": "25.3.4.1",
   "java_format": "1.28.0",
-  "netty": "4.2.18.Final"
+  "netty": "4.2.18.Final",
+  "jacoco": "0.8.15",
+  "nextest": "0.9.135",
+  "llvm_cov": "0.8.7",
+  "codspeed": "5.0.2"
 }

@@ -3,6 +3,7 @@ on:
   merge_group:
 permissions:
   contents: read
+  id-token: write
 jobs:
   verify:
     uses: ./.github/workflows/on.verify.yml

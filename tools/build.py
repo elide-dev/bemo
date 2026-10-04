@@ -13,6 +13,8 @@ import tomllib
 import xml.etree.ElementTree as ET
 import zipfile
 
+from reports import Reports
+
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
 VERSIONS = json.loads((ROOT / "tools/versions.json").read_text())
@@ -113,7 +115,7 @@ def java_tool(name):
   return found
 
 
-def test_jvm():
+def test_jvm(coverage=False):
   rust()
   jvm()
   test_root = ROOT / "tests/java/dev/elide/dokar"
@@ -126,15 +128,29 @@ def test_jvm():
     kind = "-dynamiclib" if platform.system() == "Darwin" else "-shared"
     run(os.environ.get("CC", "cc"), kind, "-fPIC", ROOT / "tests/incompatible.c", "-o", incompatible)
     extra.append(incompatible)
+  reports = Reports(BUILD / "reports/tests/jvm")
+  agent = []
+  if coverage:
+    destination = BUILD / "reports/coverage/jvm"
+    shutil.rmtree(destination, ignore_errors=True)
+    destination.mkdir(parents=True)
+    jar = jar_dependency("org.jacoco", "org.jacoco.agent", VERSIONS["jacoco"], "runtime")
+    agent = [f"-javaagent:{jar}=destfile={destination / 'jacoco.exec'},append=true,includes=dev.elide.*:io.netty.handler.ssl.ApplicationProtocolSslEngine"]
   # Deliberately launch stock java, with no Elide or GraalVM SDK in the classpath.
-  run(os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), "--enable-native-access=ALL-UNNAMED", "-ea", "-cp",
-      classpath([output, *cp]), "dev.elide.dokar.FfmContract", library(), *extra, timeout=60)
+  reports.run("FfmContract", [os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), *agent,
+      "--enable-native-access=ALL-UNNAMED", "-ea", "-cp",
+      classpath([output, *cp]), "dev.elide.dokar.FfmContract", library(), *extra], timeout=60, cwd=ROOT)
   if os.name != "nt":
     binary = BUILD / "tests/abi"
     run(os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
         "-I", ROOT / "include", ROOT / "tests/abi.c", library(), "-o", binary)
-    run(binary, timeout=30)
-  test_transport()
+    reports.run("CAbiContract", [binary], timeout=30, cwd=ROOT)
+  try:
+    test_transport(reports=reports, agent=agent)
+  finally:
+    if coverage:
+      report_jvm_coverage()
+  reports.finish()
 
 
 def test_native_image():
@@ -153,11 +169,13 @@ def test_native_image():
   run(java_tool("native-image"), "--no-fallback", "-O0", "-cp", classpath([output, *cp]),
       f"-H:CLibraryPath={target_dir()}", f"--native-compiler-options=-I{ROOT / 'include'}",
       *linker, "dev.elide.dokar.CapiContract", binary, timeout=900)
-  run(binary, timeout=60)
-  test_transport(native_image=True)
+  reports = Reports(BUILD / "reports/tests/native-image")
+  reports.run("CapiContract", [binary], timeout=60, cwd=ROOT)
+  test_transport(native_image=True, reports=reports)
+  reports.finish()
 
 
-def test_transport(native_image=False):
+def test_transport(native_image=False, reports=None, agent=()):
   output = BUILD / "tests/transport"
   cp = [classes("api"), classes("ffm"), classes("netty"), *netty()]
   compile_java(output, sorted((ROOT / "tests/transport/java").glob("*.java")),
@@ -171,15 +189,44 @@ def test_transport(native_image=False):
         "-cp", classpath([output, *cp, classes("native-image"), *sdk()]),
         f"-H:CLibraryPath={target_dir()}", f"--native-compiler-options=-I{ROOT / 'include'}",
         *linker, "CapiTlsChannelTest", binary, timeout=900)
-    run(binary, cert, key, timeout=180)
+    reports.run("CapiTlsChannelTest", [binary, cert, key], timeout=180, cwd=ROOT)
   else:
     for contract in ("FfmTransportTest", "NativeByteBufTest", "NativeChannelTest", "NativeLifecycleTest",
                      "NativeTlsChannelTest", "NativeTlsNegativeTest", "NativeTlsOrderingTest",
                      "NativeTransferTest", "NativeJfrTest", "NativeReentrantCloseTest",
                      "NativeReceiveAllocatorTest", "NativeSslEngineTest", "NativeSslInteropTest",
                      "NativeSslPolicyTest", "StandaloneTransportCheck"):
-      run(os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), "--enable-native-access=ALL-UNNAMED",
-          "-ea", "-cp", classpath([output, *cp]), contract, library(), cert, key, timeout=90)
+      reports.run(contract, [os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), *agent,
+          "--enable-native-access=ALL-UNNAMED", "-ea", "-cp", classpath([output, *cp]),
+          contract, library(), cert, key], timeout=90, cwd=ROOT)
+
+
+def report_jvm_coverage():
+  destination = BUILD / "reports/coverage/jvm"
+  cli = jar_dependency("org.jacoco", "org.jacoco.cli", VERSIONS["jacoco"], "nodeps")
+  args = []
+  # Native Image adapter code cannot execute on a stock JVM; report it separately
+  # through the C API contracts, not as misleading JVM coverage.
+  for module in ("api", "ffm", "netty"):
+    args.extend(["--classfiles", classes(module), "--sourcefiles", ROOT / "packages" / module / "src/main/java"])
+  run(ELIDE, "java", "--", "-jar", cli, "report", destination / "jacoco.exec", *args,
+      "--xml", destination / "jacoco.xml", "--html", destination / "html")
+
+
+def test_rust(coverage=False):
+  if coverage:
+    destination = BUILD / "reports/coverage/rust"
+    destination.mkdir(parents=True, exist_ok=True)
+    run("cargo", "llvm-cov", "clean", "--workspace")
+    try:
+      run("cargo", "llvm-cov", "nextest", "--workspace", "--lib", "--tests", "--locked",
+          "--profile", "ci", "--no-report")
+    finally:
+      run("cargo", "llvm-cov", "report", "--lcov", "--ignore-filename-regex", "/(tests|benches)/",
+          "--output-path", destination / "lcov.info")
+  else:
+    run("cargo", "nextest", "run", "--workspace", "--lib", "--tests", "--locked", "--profile", "ci")
+  run("cargo", "test", "--workspace", "--doc", "--locked")
 
 
 def fmt(check=False):
@@ -187,7 +234,7 @@ def fmt(check=False):
   run("cargo", "fmt", "--package", "dokar", "--package", "dokar-ffi", *(["--check"] if check else []))
   formatter = jar_dependency("com.google.googlejavaformat", "google-java-format",
                              VERSIONS["java_format"], "all-deps")
-  java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java"))
+  java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java")) + sorted((ROOT / "benchmarks").rglob("*.java"))
   flags = ["--dry-run", "--set-exit-if-changed"] if check else ["--replace"]
   run(ELIDE, "java", "--", "-jar", formatter, *flags, *java_files)
 
@@ -322,16 +369,18 @@ def package():
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("task", choices=("deps", "build", "jvm", "test", "test-jvm", "test-native-image",
-                                       "check", "fmt", "fmt-check", "package", "clean"))
+                                       "check", "fmt", "fmt-check", "package", "clean", "test-rust", "coverage-rust", "coverage-jvm"))
   task = parser.parse_args().task
   if task == "deps": deps()
   elif task == "build": rust(); jvm()
   elif task == "jvm": jvm()
   elif task == "test":
-    run("cargo", "test", "--workspace", "--all-targets", "--locked")
-    run("cargo", "test", "--workspace", "--doc", "--locked")
+    test_rust()
     run(sys.executable, ROOT / "tools/test_git_dependency.py")
     test_jvm()
+  elif task == "test-rust": test_rust()
+  elif task == "coverage-rust": test_rust(coverage=True)
+  elif task == "coverage-jvm": test_jvm(coverage=True)
   elif task == "test-jvm": test_jvm()
   elif task == "test-native-image": test_native_image()
   elif task == "check": check()

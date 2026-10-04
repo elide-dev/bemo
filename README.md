@@ -101,3 +101,6 @@ a package-private ALPN adapter and currently requires the classpath rather than 
 [publishing](docs/publishing.md), and [CI](docs/ci.md).
 
 Licensed under Apache-2.0.
+
+Test XML, coverage, and continuous CPU/RPS/RSS benchmarks are described in
+[the measurement guide](docs/measurement.md).

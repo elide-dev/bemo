@@ -1,0 +1,125 @@
+name: Benchmarks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  simulation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-cargo-tools
+        with:
+          tools: codspeed
+      - name: Check benchmark correctness, including TLS
+        run: make bench-smoke
+      - name: Build deterministic CPU benchmarks
+        run: cargo codspeed build -p dokar --bench buffers --bench handles --bench http --locked -m simulation
+      - name: Track CPU performance
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
+        with:
+          mode: simulation
+          runner-version: '5.2.1'
+          cache-instruments: false
+          run: cargo codspeed run
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: criterion-evidence
+          path: target/criterion/
+          if-no-files-found: warn
+
+  transport:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Check report and comparison logic
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - run: make bench-prepare
+      - name: Measure RPS and whole-process RSS
+        run: make bench-transport
+      - name: Fetch most recent main baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          runs = json.loads(subprocess.check_output([
+            'gh', 'run', 'list', '--workflow', 'on.bench.yml', '--branch', 'main',
+            '--status', 'completed', '--limit', '10', '--json', 'databaseId']))
+          for run in runs:
+            if str(run['databaseId']) == os.environ['GITHUB_RUN_ID']:
+              continue
+            result = subprocess.run(['gh', 'run', 'download', str(run['databaseId']),
+              '--name', 'transport-evidence', '--dir', 'build/bench-baseline'])
+            if result.returncode == 0:
+              break
+          else:
+            print('No previous main artifact; this run establishes a baseline.')
+          PY
+      - name: Compare advisory RPS and RSS regressions
+        run: |
+          if test -f build/bench-baseline/summary-all.json; then
+            python3 tools/compare_bench.py build/reports/benchmarks/summary-all.json build/bench-baseline/summary-all.json
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: transport-evidence
+          path: build/reports/benchmarks/
+          if-no-files-found: error
+          retention-days: 30
+
+  # Match Komodo: only provisioned, trusted runners measure wall-clock regressions.
+  walltime:
+    if: vars.CODSPEED_WALLTIME_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ vars.CODSPEED_WALLTIME_RUNNER }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-cargo-tools
+        with:
+          tools: codspeed
+      - run: make bench-prepare
+      - run: cargo codspeed build -p dokar --bench tls --locked -m walltime
+      - name: Track TLS and end-to-end wall time
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
+        with:
+          mode: walltime
+          runner-version: '5.2.1'
+          run: |
+            cargo codspeed run
+            codspeed run
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: walltime-evidence
+          path: build/reports/benchmarks/
+          if-no-files-found: error

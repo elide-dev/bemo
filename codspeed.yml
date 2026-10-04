@@ -1,0 +1,20 @@
+options:
+  warmup-time: "0s"
+  max-rounds: 3
+benchmarks:
+  - name: "transport/plain-identity-1024"
+    exec: "python3 tools/bench.py run --case plain-identity-1024 --samples 1"
+  - name: "transport/plain-identity-65536"
+    exec: "python3 tools/bench.py run --case plain-identity-65536 --samples 1"
+  - name: "transport/plain-gzip-1024"
+    exec: "python3 tools/bench.py run --case plain-gzip-1024 --samples 1"
+  - name: "transport/plain-gzip-65536"
+    exec: "python3 tools/bench.py run --case plain-gzip-65536 --samples 1"
+  - name: "transport/tls-identity-1024"
+    exec: "python3 tools/bench.py run --case tls-identity-1024 --samples 1"
+  - name: "transport/tls-identity-65536"
+    exec: "python3 tools/bench.py run --case tls-identity-65536 --samples 1"
+  - name: "transport/tls-gzip-1024"
+    exec: "python3 tools/bench.py run --case tls-gzip-1024 --samples 1"
+  - name: "transport/tls-gzip-65536"
+    exec: "python3 tools/bench.py run --case tls-gzip-65536 --samples 1"

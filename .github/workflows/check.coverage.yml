@@ -1,0 +1,56 @@
+name: Check Coverage
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  coverage:
+    name: Coverage (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust, jvm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-cargo-tools
+        if: matrix.language == 'rust'
+        with:
+          tools: nextest,llvm_cov
+      - if: matrix.language == 'rust'
+        run: rustup component add llvm-tools-preview
+      - name: Test with coverage
+        run: make coverage-${{ matrix.language }}
+      - name: Archive reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ matrix.language }}
+          path: build/reports/
+          if-no-files-found: error
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() && vars.CODECOV_ENABLED == 'true' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          disable_search: true
+          fail_ci_if_error: true
+          flags: ${{ matrix.language }}
+          files: ${{ matrix.language == 'rust' && 'build/reports/coverage/rust/lcov.info' || 'build/reports/coverage/jvm/jacoco.xml' }}
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && vars.CODECOV_ENABLED == 'true' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          disable_search: true
+          fail_ci_if_error: true
+          report_type: test_results
+          flags: ${{ matrix.language }}
+          files: ${{ matrix.language == 'rust' && 'build/reports/tests/rust/ci/junit.xml' || 'build/reports/tests/jvm/junit.xml' }}

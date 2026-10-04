@@ -1,0 +1,22 @@
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+flags:
+  rust:
+    paths: [crates/]
+  jvm:
+    paths: [packages/]
+# Reports come from separate source roots in the Elide-compiled modules.
+fixes:
+  - "^dev/elide/dokar/ffm/::packages/ffm/src/main/java/dev/elide/dokar/ffm/"
+  - "^dev/elide/dokar/TransportNative.java::packages/api/src/main/java/dev/elide/dokar/TransportNative.java"
+  - "^dev/elide/netty/v2/FfmTransportNative.java::packages/ffm/src/main/java/dev/elide/netty/v2/FfmTransportNative.java"
+  - "^dev/elide/netty/v2/TransportNative.java::packages/api/src/main/java/dev/elide/netty/v2/TransportNative.java"
+  - "^dev/elide/netty/v2/Workload.java::packages/api/src/main/java/dev/elide/netty/v2/Workload.java"
+  - "^dev/elide/netty/v2/::packages/netty/src/main/java/dev/elide/netty/v2/"
+  - "^io/netty/handler/ssl/::packages/netty/src/main/java/io/netty/handler/ssl/"

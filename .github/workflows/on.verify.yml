@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write
 jobs:
   rust:
     uses: ./.github/workflows/check.rust.yml
@@ -13,10 +14,12 @@ jobs:
     uses: ./.github/workflows/check.native-image.yml
   build:
     uses: ./.github/workflows/job.build.yml
+  coverage:
+    uses: ./.github/workflows/check.coverage.yml
   ready:
     name: Ready
     if: always()
-    needs: [rust, jvm, native-image, build]
+    needs: [rust, jvm, native-image, build, coverage]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every check

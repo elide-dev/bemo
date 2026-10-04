@@ -9,9 +9,10 @@ cancelled dependencies. Configure branch protection to require the resulting
 
 | Job | Coverage |
 | --- | --- |
-| Check Rust | Linux/macOS/Windows; format, Clippy, tests, doctests, release build, external allocator check; forced polling and external Git consumer on Linux |
+| Check Rust | Linux/macOS/Windows; format, Clippy, Nextest + JUnit XML, doctests, release build, external allocator check; forced polling and external Git consumer on Linux |
 | Check JVM | Linux/macOS; Temurin 22/25; format, Java warning checks, Rust docs, C ABI and complete Netty FFM contracts |
 | Check Native Image | Linux; GraalVM 25; compile, statically link, and execute complete Netty C API contracts |
+| Coverage | Linux Rust LCOV + JVM JaCoCo XML; tests and coverage archived for Codecov |
 | Build | Linux/macOS; release Cargo libraries, JVM/source/Javadoc JARs, POMs, checksums, native classifiers; packaged Netty TCP/TLS and FFM contracts |
 
 Actions are SHA-pinned following Elide's existing pins. Linux jobs use runner
@@ -33,3 +34,6 @@ includes Native Image configuration enabling shared arenas, which Netty's Java
 It does not publish to Central or create a GitHub release. See publishing.md for
 the remaining release steps. The repository must be hosted and workflows run
 before remote CI success can be asserted.
+
+See [measurement.md](measurement.md) for report paths, Codecov activation,
+Nextest profiles, continuous CodSpeed benchmarks, and RSS/RPS interpretation.

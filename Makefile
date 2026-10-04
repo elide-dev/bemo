@@ -16,8 +16,7 @@ build-jvm:
 test:
 	$(PYTHON) tools/build.py test
 test-rust:
-	cargo test --workspace --all-targets --locked
-	cargo test --workspace --doc --locked
+	$(PYTHON) tools/build.py test-rust
 test-jvm:
 	$(PYTHON) tools/build.py test-jvm
 test-native-image:
@@ -32,3 +31,20 @@ package:
 	$(PYTHON) tools/build.py package
 clean:
 	$(PYTHON) tools/build.py clean
+
+.PHONY: coverage coverage-rust coverage-jvm
+coverage: coverage-rust coverage-jvm
+coverage-rust:
+	$(PYTHON) tools/build.py coverage-rust
+coverage-jvm:
+	$(PYTHON) tools/build.py coverage-jvm
+
+.PHONY: bench bench-smoke bench-prepare bench-transport
+bench:
+	cargo bench -p dokar --locked
+bench-smoke:
+	cargo bench -p dokar --locked -- --test
+bench-prepare:
+	$(PYTHON) tools/bench.py prepare
+bench-transport:
+	$(PYTHON) tools/bench.py run

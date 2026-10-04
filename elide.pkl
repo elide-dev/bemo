@@ -33,6 +33,8 @@ dependencies {
       "io.netty:netty-transport-native-unix-common:\(versions.netty)"
       "org.graalvm.sdk:nativeimage:\(versions.graalvm_sdk)"
       "org.graalvm.sdk:word:\(versions.graalvm_sdk)"
+      "org.jacoco:org.jacoco.agent:\(versions.jacoco):runtime"
+      "org.jacoco:org.jacoco.cli:\(versions.jacoco):nodeps"
       "com.google.googlejavaformat:google-java-format:\(versions.java_format):all-deps"
     }
   }

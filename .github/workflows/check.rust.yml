@@ -29,18 +29,29 @@ jobs:
       - name: Check generated C exports
         if: runner.os == 'Linux'
         run: python3 tools/generate_exports.py --check
+      - name: Install Nextest
+        uses: ./.github/actions/setup-cargo-tools
+        with:
+          tools: nextest
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --all-targets --locked
+      - run: cargo nextest run --workspace --lib --tests --locked --profile ci
       - run: cargo test --workspace --doc --locked
       - name: Test Linux polling backend explicitly
         if: runner.os == 'Linux'
         env:
           ELIDE_TRANSPORT_TEST_BACKEND: epoll
-        run: cargo test -p dokar --lib --tests --locked
+        run: cargo nextest run -p dokar --lib --tests --locked --profile epoll
       - name: Check external allocator embedding
         run: cargo check --workspace --no-default-features --locked
       - run: cargo build --workspace --release --locked
       - name: Test external Git dependency
         if: runner.os == 'Linux'
         run: python3 tools/test_git_dependency.py
+      - name: Upload Rust test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tests-rust-${{ matrix.os }}
+          path: build/reports/tests/
+          if-no-files-found: warn
