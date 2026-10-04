@@ -7,7 +7,7 @@ dependencies, compiles Java, and produces JARs.
 **Status: transport extracted and integration-tested on macOS ARM64.** Rust owns
 buffers, socket drivers, TLS, HTTP, and workload accounting. Stock Netty 4.2
 runs through either JVM FFM or Native Image C bindings, without an Elide runtime.
-Existing Elide transport ABI 3 symbols and Java package names are preserved.
+The Elide transport ABI 3 C symbols are preserved; Java APIs use `dev.elide.dokar`.
 Linux and Windows qualification is wired into CI; Maven artifacts remain unpublished.
 
 ## Layout
@@ -68,20 +68,19 @@ dokar = { git = "https://github.com/elide-dev/dokar", rev = "<full-commit-sha>" 
 dokar-ffi = { git = "https://github.com/elide-dev/dokar", rev = "<full-commit-sha>" }
 ```
 
-The Maven coordinates are `dev.elide:dokar-api`, `dokar-ffm`,
+The Maven coordinates are `dev.elide.dokar:dokar-api`, `dokar-ffm`,
 `dokar-native-image`, and `dokar-netty`. These are staged locally, not published. The FFM and
 Native Image artifacts depend on the API artifact. GraalVM SDK dependencies
 are confined to the Native Image artifact and marked `provided`.
 
 ```java
-import dev.elide.netty.v2.FfmTransportNative;
-import dev.elide.netty.v2.NativeIoHandler;
-import dev.elide.netty.v2.NativeServerSocketChannel;
-import dev.elide.netty.v2.Workload;
+import dev.elide.dokar.transport.FfmTransportNative;
+import dev.elide.dokar.transport.NativeIoHandler;
+import dev.elide.dokar.transport.NativeServerSocketChannel;
+import dev.elide.dokar.transport.Workload;
 import io.netty.channel.MultiThreadIoEventLoopGroup;
-import java.nio.file.Path;
 
-var transport = new FfmTransportNative(Path.of("/path/to/libdokar_ffi.so"));
+var transport = new FfmTransportNative();
 var group = new MultiThreadIoEventLoopGroup(
     2, NativeIoHandler.newFactory(transport, 0, 128, 8 * 1024 * 1024));
 // Supply group and NativeServerSocketChannel.class to a Netty ServerBootstrap.
@@ -90,13 +89,15 @@ group.shutdownGracefully().sync();
 Workload.close(transport, Workload.DEFAULT);
 ```
 
-For Native Image, construct `dev.elide.netty.v2.svm.CapiTransportNative` instead.
+For Native Image, construct `dev.elide.dokar.transport.svm.CapiTransportNative` instead.
 The transport binding retains its library for process lifetime; caller-owned
 workloads and event loops have explicit shutdown. See the executable contracts
 in `tests/transport/java` for complete TCP, Unix socket, and TLS examples.
 
-Run with `--enable-native-access=ALL-UNNAMED`. Load an explicit platform library
-path; automatic native resource extraction is not implemented. Netty TLS uses
+Run with `--enable-native-access=ALL-UNNAMED`. Include the base FFM JAR and its
+platform classifier JAR; the no-argument constructor extracts and loads the
+shared library automatically. Static archives ship in the Native Image classifier.
+See [native loading](docs/native-loading.md) for configuration. Netty TLS uses
 a package-private ALPN adapter and currently requires the classpath rather than JPMS. See [architecture](docs/architecture.md), [extraction boundaries](docs/extraction.md),
 [publishing](docs/publishing.md), and [CI](docs/ci.md).
 

@@ -1,5 +1,5 @@
-import dev.elide.netty.v2.*;
-import dev.elide.netty.v2.tls.*;
+import dev.elide.dokar.transport.*;
+import dev.elide.dokar.transport.tls.*;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;

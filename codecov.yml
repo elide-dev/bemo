@@ -15,8 +15,8 @@ flags:
 fixes:
   - "^dev/elide/dokar/ffm/::packages/ffm/src/main/java/dev/elide/dokar/ffm/"
   - "^dev/elide/dokar/TransportNative.java::packages/api/src/main/java/dev/elide/dokar/TransportNative.java"
-  - "^dev/elide/netty/v2/FfmTransportNative.java::packages/ffm/src/main/java/dev/elide/netty/v2/FfmTransportNative.java"
-  - "^dev/elide/netty/v2/TransportNative.java::packages/api/src/main/java/dev/elide/netty/v2/TransportNative.java"
-  - "^dev/elide/netty/v2/Workload.java::packages/api/src/main/java/dev/elide/netty/v2/Workload.java"
-  - "^dev/elide/netty/v2/::packages/netty/src/main/java/dev/elide/netty/v2/"
+  - "^dev/elide/dokar/transport/FfmTransportNative.java::packages/ffm/src/main/java/dev/elide/dokar/transport/FfmTransportNative.java"
+  - "^dev/elide/dokar/transport/TransportNative.java::packages/api/src/main/java/dev/elide/dokar/transport/TransportNative.java"
+  - "^dev/elide/dokar/transport/Workload.java::packages/api/src/main/java/dev/elide/dokar/transport/Workload.java"
+  - "^dev/elide/dokar/transport/::packages/netty/src/main/java/dev/elide/dokar/transport/"
   - "^io/netty/handler/ssl/::packages/netty/src/main/java/io/netty/handler/ssl/"

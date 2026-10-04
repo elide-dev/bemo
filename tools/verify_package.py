@@ -2,16 +2,17 @@
 """Validate Maven metadata, checksums, isolation, and FFM from the packaged JARs."""
 import hashlib
 import os
+import platform
 from pathlib import Path
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 
-from build import BUILD, MODULES, ROOT, VERSION, classifier, classpath, compile_java, java_tool, run, netty
+from build import MAVEN_GROUP, MAVEN_PATH, BUILD, MODULES, ROOT, VERSION, classifier, classpath, compile_java, java_tool, run, netty
 
 
 def verify():
-  stage = BUILD / "maven/dev/elide"
+  stage = BUILD / "maven" / MAVEN_PATH
   ns = {"m": "http://maven.apache.org/POM/4.0.0"}
   jars = {}
   for module in MODULES:
@@ -24,6 +25,10 @@ def verify():
         expected = Path(f"{path}.{algorithm}").read_text().strip()
         assert hashlib.new(algorithm, data).hexdigest() == expected, path
     pom = ET.parse(f"{prefix}.pom")
+    assert pom.findtext("m:groupId", namespaces=ns) == MAVEN_GROUP
+    for dep in pom.findall("m:dependencies/m:dependency", ns):
+      if dep.findtext("m:artifactId", namespaces=ns).startswith("dokar-"):
+        assert dep.findtext("m:groupId", namespaces=ns) == MAVEN_GROUP
     assert pom.findtext("m:artifactId", namespaces=ns) == name
     assert pom.findtext("m:version", namespaces=ns) == VERSION
     for field in ("licenses", "developers", "scm", "description", "url"):
@@ -43,7 +48,11 @@ def verify():
     native_jar = stage / f"dokar-{module}" / VERSION / f"dokar-{module}-{VERSION}-{classifier()}.jar"
     assert native_jar.is_file()
     with zipfile.ZipFile(native_jar) as archive:
-      assert any(name.endswith("dokar.h") for name in archive.namelist())
+      resource = f"META-INF/native/{classifier()}/"
+      assert resource + "dokar.h" in archive.namelist()
+      assert resource + "elide_transport.h" in archive.namelist()
+      for algorithm in ("md5", "sha1", "sha256", "sha512"):
+        assert hashlib.new(algorithm, native_jar.read_bytes()).hexdigest() == Path(f"{native_jar}.{algorithm}").read_text().strip()
       if module == "native-image":
         assert any(name.endswith((".a", ".lib")) for name in archive.namelist())
   ffm_jar = stage / "dokar-ffm" / VERSION / f"dokar-ffm-{VERSION}-{classifier()}.jar"
@@ -69,7 +78,54 @@ def verify():
       run(os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), "--enable-native-access=ALL-UNNAMED",
           "-ea", "-cp", classpath([transport_output, *transport_cp]), contract, binary,
           fixtures / "localhost-cert.pem", fixtures / "localhost-key.pem", timeout=90)
-  print("Maven package contracts passed")
+  # Exercise auto-loading from the classifier JAR itself, with no pre-extracted path.
+  loader_output = BUILD / "tests/package-loader"
+  cp = [jars["api"], jars["ffm"]]
+  tests = ROOT / "tests/java/dev/elide/dokar"
+  compile_java(loader_output, [tests / "Contract.java", tests / "ffm/NativeLibraryLoaderContract.java"], cp)
+  java = os.environ.get("DOKAR_TEST_JAVA", java_tool("java"))
+  with tempfile.TemporaryDirectory(prefix="dokar loader ") as tmp:
+    workdir = Path(tmp) / "native files"
+    def loader_check(extra=(), properties=(), expected=()):
+      run(java, "--enable-native-access=ALL-UNNAMED", *properties, "-ea", "-cp",
+          classpath([loader_output, *cp, *extra]), "dev.elide.dokar.ffm.NativeLibraryLoaderContract",
+          *expected, timeout=60)
+    loader_check(expected=["Missing META-INF/native/"])
+    loader_check([ffm_jar], [f"-Ddokar.native.workdir={workdir}"])
+    assert not list(workdir.iterdir()), "Extracted library was not removed at JVM exit"
+    duplicate = Path(tmp) / "duplicate.jar"
+    duplicate.write_bytes(ffm_jar.read_bytes())
+    loader_check([ffm_jar, duplicate])
+    with zipfile.ZipFile(duplicate, "w") as archive:
+      with zipfile.ZipFile(ffm_jar) as original:
+        entry = next(n for n in original.namelist() if n.endswith((".so", ".dll", ".dylib")))
+      archive.writestr(entry, b"conflicting resource")
+    loader_check([ffm_jar, duplicate], expected=["Conflicting Dokar native resources"])
+    loader_check(properties=["-Ddokar.native.path=relative-library"], expected=["existing absolute library path"])
+    # The explicit override wins even when no classifier is present.
+    with zipfile.ZipFile(ffm_jar) as archive:
+      override = Path(tmp) / Path(entry).name
+      override.write_bytes(archive.read(entry))
+    loader_check(properties=[f"-Ddokar.native.path={override}"])
+    run(java, "--enable-native-access=ALL-UNNAMED", "-ea", "-cp",
+        classpath([transport_output, *transport_cp, ffm_jar]), "AutomaticTransportCheck",
+        fixtures / "localhost-cert.pem", fixtures / "localhost-key.pem", timeout=90)
+    # Link a consumer against the actual published static classifier and its headers.
+    static_jar = stage / "dokar-native-image" / VERSION / f"dokar-native-image-{VERSION}-{classifier()}.jar"
+    static_dir = Path(tmp) / "static"
+    with zipfile.ZipFile(static_jar) as archive:
+      resource = f"META-INF/native/{classifier()}/"
+      static_dir.mkdir()
+      for entry in archive.namelist():
+        if entry.startswith(resource) and not entry.endswith("/"):
+          (static_dir / Path(entry).name).write_bytes(archive.read(entry))
+    if os.name != "nt":
+      binary = Path(tmp) / "static-contract"
+      flags = ["-ldl", "-lpthread", "-lm"] if platform.system() == "Linux" else []
+      run(os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", static_dir,
+          ROOT / "tests/static.c", static_dir / "libdokar_ffi.a", *flags, "-o", binary)
+      run(binary, timeout=30)
+  print("Maven package contracts passed (resource loading and static linkage)")
 
 
 if __name__ == "__main__":

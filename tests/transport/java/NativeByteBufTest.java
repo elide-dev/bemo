@@ -1,6 +1,6 @@
-import dev.elide.netty.v2.FfmTransportNative;
-import dev.elide.netty.v2.NativeByteBufAllocator;
-import dev.elide.netty.v2.TransportNative;
+import dev.elide.dokar.transport.FfmTransportNative;
+import dev.elide.dokar.transport.NativeByteBufAllocator;
+import dev.elide.dokar.transport.TransportNative;
 import io.netty.buffer.ByteBuf;
 import java.nio.file.Path;
 
@@ -12,7 +12,7 @@ public final class NativeByteBufTest {
   }
 
   public static void verify(TransportNative api) {
-    dev.elide.netty.v2.NativeReceivedBufferTest.verify(api);
+    dev.elide.dokar.transport.NativeReceivedBufferTest.verify(api);
     long owner = api.ownerNew(4096);
     NativeByteBufAllocator allocator = new NativeByteBufAllocator(api, owner);
     ByteBuf buffer = allocator.directBuffer(4, 64);

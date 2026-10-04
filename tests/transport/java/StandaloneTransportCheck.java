@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import dev.elide.netty.v2.DriverSelection;
-import dev.elide.netty.v2.FfmTransportNative;
+import dev.elide.dokar.transport.DriverSelection;
+import dev.elide.dokar.transport.FfmTransportNative;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;

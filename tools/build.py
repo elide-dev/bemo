@@ -21,6 +21,8 @@ VERSIONS = json.loads((ROOT / "tools/versions.json").read_text())
 VERSION = (ROOT / ".version").read_text().strip()
 ELIDE = os.environ.get("ELIDE", "elide")
 MODULES = ("api", "ffm", "native-image", "netty")
+MAVEN_GROUP = "dev.elide.dokar"
+MAVEN_PATH = MAVEN_GROUP.replace(".", "/")
 REPOSITORY = "https://github.com/elide-dev/dokar"
 
 
@@ -272,7 +274,7 @@ def pom(path, artifact, dependencies):
     node = ET.SubElement(parent, f"{{{ns}}}{name}")
     node.text = value
     return node
-  for name, value in (("modelVersion", "4.0.0"), ("groupId", "dev.elide"), ("artifactId", artifact),
+  for name, value in (("modelVersion", "4.0.0"), ("groupId", MAVEN_GROUP), ("artifactId", artifact),
                       ("version", VERSION), ("packaging", "jar"), ("name", artifact),
                       ("description", "Dokar native transport for Netty, JVM FFM, and Native Image"),
                       ("url", REPOSITORY)):
@@ -310,7 +312,7 @@ def package():
   shutil.rmtree(stage, ignore_errors=True)
   for module in MODULES:
     artifact = f"dokar-{module}"
-    destination = stage / "dev/elide" / artifact / VERSION
+    destination = stage / MAVEN_PATH / artifact / VERSION
     destination.mkdir(parents=True)
     prefix = destination / f"{artifact}-{VERSION}"
     metadata = classes(module) / "META-INF"
@@ -331,7 +333,7 @@ def package():
         "-notimestamp", "-Werror", "-Xdoclint:all,-missing", "--release", VERSIONS["jvm_release"], "-d", docs,
         "-classpath", classpath(cp) or str(classes(module)), *sources(module))
     jar(f"{prefix}-javadoc.jar", docs)
-    dependencies = [] if module == "api" else [("dev.elide", "dokar-api", VERSION, "compile")]
+    dependencies = [] if module == "api" else [(MAVEN_GROUP, "dokar-api", VERSION, "compile")]
     if module == "native-image":
       dependencies += [("org.graalvm.sdk", name, VERSIONS["graalvm_sdk"], "provided")
                        for name in ("nativeimage", "word")]
@@ -351,7 +353,7 @@ def package():
     shutil.copy2(ROOT / "include/elide_transport.h", resource)
     for name in ("LICENSE", "NOTICE"):
       shutil.copy2(ROOT / name, native / "META-INF" / name)
-    prefix = stage / "dev/elide" / f"dokar-{module}" / VERSION / f"dokar-{module}-{VERSION}"
+    prefix = stage / MAVEN_PATH / f"dokar-{module}" / VERSION / f"dokar-{module}-{VERSION}"
     jar(f"{prefix}-{classifier()}.jar", native)
   for path in sorted(stage.rglob("*")):
     if path.is_file():

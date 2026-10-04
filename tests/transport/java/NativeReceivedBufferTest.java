@@ -1,4 +1,4 @@
-package dev.elide.netty.v2;
+package dev.elide.dokar.transport;
 
 import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;

@@ -26,15 +26,15 @@ Rust can be released through C against the same handle registry.
 ## ABI and lifetime
 
 Elide transport ABI 3 (`elide_transport_*`) remains unchanged. The JVM interface
-and adapter packages remain `dev.elide.netty.v2`. This reduces the Elide cutover
-to dependency, linking, and source-ownership changes.
+and adapter packages now use `dev.elide.dokar.transport`. Elide cutover requires
+updated Java imports as well as dependency, linking, and source-ownership changes.
 
 Dokar's separate metadata ABI 1 (`dokar_abi_version`, `dokar_capabilities`) is
 retained from the foundation. Capability bit `DOKAR_CAP_TRANSPORT_V3` means the
 complete legacy transport boundary is present. It does not assert that every
 OS backend is available at runtime: AUTO selects a supported backend, and
 io_uring setup failure can fall back to polling. The `dev.elide.dokar` classes
-exercise this metadata boundary; the `dev.elide.netty.v2` classes carry traffic.
+exercise this metadata boundary; the `dev.elide.dokar.transport` classes carry traffic.
 
 The transport FFM adapter validates ABI 3 before resolving other symbols and
 retains the shared library for process lifetime. Buffers, workloads, drivers,

@@ -17,6 +17,13 @@ public final class FfmTransportNative implements TransportNative, AutoCloseable 
   private final MethodHandle capabilities;
 
   /**
+   * Loads the shared library from the matching native classifier JAR or explicit system property.
+   */
+  public FfmTransportNative() {
+    this(dev.elide.dokar.ffm.NativeLibraryLoader.libraryPath());
+  }
+
+  /**
    * Loads an explicit library path, validates its ABI, and retains it until close.
    *
    * @param library native library produced by Cargo for this platform

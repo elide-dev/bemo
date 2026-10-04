@@ -1,7 +1,7 @@
-import dev.elide.netty.v2.FfmTransportNative;
-import dev.elide.netty.v2.TransportNative;
-import dev.elide.netty.v2.tls.NativeSslContext;
-import dev.elide.netty.v2.tls.NativeSslContextBuilder;
+import dev.elide.dokar.transport.FfmTransportNative;
+import dev.elide.dokar.transport.TransportNative;
+import dev.elide.dokar.transport.tls.NativeSslContext;
+import dev.elide.dokar.transport.tls.NativeSslContextBuilder;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.util.ReferenceCountUtil;
 import java.nio.ByteBuffer;

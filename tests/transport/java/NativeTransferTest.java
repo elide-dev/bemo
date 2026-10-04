@@ -1,4 +1,4 @@
-import dev.elide.netty.v2.*;
+import dev.elide.dokar.transport.*;
 import io.netty.bootstrap.*;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
