@@ -73,7 +73,7 @@ fn closed_owner_prevents_allocations_through_retained_clones() {
   let mut buffer = Buffer::new(64, retained.clone()).unwrap();
   buffer.write(0, b"retained").unwrap();
   budget.close();
-  assert!(Buffer::new(1, retained.clone()).is_err());
+  assert!(Buffer::new(1, retained).is_err());
   assert_eq!(buffer.freeze().as_ref(), b"retained");
   assert_eq!(budget.used(), 0);
 }

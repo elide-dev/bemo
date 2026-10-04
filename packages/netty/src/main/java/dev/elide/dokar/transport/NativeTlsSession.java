@@ -9,6 +9,7 @@ import io.netty.channel.ChannelOutboundBuffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import org.jspecify.annotations.Nullable;
 
 /** TLS record progression belongs to the transport, below the application's Netty pipeline. */
 final class NativeTlsSession implements AutoCloseable {
@@ -17,8 +18,8 @@ final class NativeTlsSession implements AutoCloseable {
   private final long session;
   private final long descriptor;
   private final ByteBuffer result;
-  private io.netty.channel.ChannelPromise closePromise;
-  private io.netty.util.concurrent.ScheduledFuture<?> closeTimeout;
+  private io.netty.channel.@Nullable ChannelPromise closePromise;
+  private io.netty.util.concurrent.@Nullable ScheduledFuture<?> closeTimeout;
   private boolean closeRecord;
   private boolean outputOnly;
   private final java.util.ArrayDeque<ByteBuf> pendingReads = new java.util.ArrayDeque<>();
@@ -36,11 +37,12 @@ final class NativeTlsSession implements AutoCloseable {
   private int wireLength;
   private int applicationBytes;
 
-  NativeTlsSession(NativeStreamChannel channel, NativeTlsContext context, String peerName) {
+  NativeTlsSession(
+      NativeStreamChannel channel, NativeTlsContext context, @Nullable String peerName) {
     this.channel = channel;
-    api = channel.io.api;
-    session = context.session(api, channel.workload, channel.io.allocator.owner, peerName);
-    descriptor = api.bufferNew(channel.io.allocator.owner, 256);
+    api = channel.io().api;
+    session = context.session(api, channel.workload, channel.io().allocator().owner, peerName);
+    descriptor = api.bufferNew(channel.io().allocator().owner, 256);
     if (descriptor == 0) {
       api.tlsRelease(session);
       throw new OutOfMemoryError("TLS descriptor allocation failed");
@@ -115,11 +117,16 @@ final class NativeTlsSession implements AutoCloseable {
     wire = 0;
     if (closeRecord) {
       if (!outputOnly) {
-        channel.finishTlsClose(closePromise);
+        channel.finishTlsClose(
+            java.util.Objects.requireNonNull(
+                closePromise, "close record requires a close promise"));
         return;
       }
-      closeTimeout.cancel(false);
-      io.netty.channel.ChannelPromise promise = closePromise;
+      java.util.Objects.requireNonNull(
+              closeTimeout, "close timeout is armed before sending close_notify")
+          .cancel(false);
+      io.netty.channel.ChannelPromise promise =
+          java.util.Objects.requireNonNull(closePromise, "close record requires a close promise");
       closePromise = null;
       closeRecord = outputOnly = false;
       channel.finishTlsOutputShutdown(promise);
@@ -180,7 +187,7 @@ final class NativeTlsSession implements AutoCloseable {
               plaintext = nativeBytes.freeze();
               offset = bytes.readerIndex();
             } else {
-              plaintext = api.bufferNew(channel.io.allocator.owner, length);
+              plaintext = api.bufferNew(channel.io().allocator().owner, length);
               if (plaintext == 0) throw new OutOfMemoryError("TLS plaintext budget exhausted");
               staged = true;
               try {
@@ -223,7 +230,7 @@ final class NativeTlsSession implements AutoCloseable {
           return;
         }
         if (received != 0) {
-          ByteBuf bytes = channel.io.allocator.received(received);
+          ByteBuf bytes = channel.io().allocator().received(received);
           TransportEvents.copy(channel, "tls-read", bytes.readableBytes());
           if (channel.readRequested || channel.settings.isAutoRead()) channel.deliverTls(bytes);
           else if (closePromise != null) bytes.release();
@@ -274,7 +281,8 @@ final class NativeTlsSession implements AutoCloseable {
           return;
         }
         if (state == 3 && length == 0) {
-          if (wire == 0 && (closePromise != null || outbound != null && outbound.current() != null))
+          if (wire == 0
+              && (closePromise != null || (outbound != null && outbound.current() != null)))
             continue;
           channel.beginNativeRead();
           return;
@@ -300,7 +308,10 @@ final class NativeTlsSession implements AutoCloseable {
   public void close() {
     if (closed) return;
     closed = true;
-    if (closeTimeout != null) closeTimeout.cancel(false);
+    if (closeTimeout != null)
+      java.util.Objects.requireNonNull(
+              closeTimeout, "close timeout is armed before sending close_notify")
+          .cancel(false);
     releasePendingReads();
     if (wire != 0) {
       api.bufferRelease(wire);

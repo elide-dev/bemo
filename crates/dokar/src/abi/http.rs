@@ -558,7 +558,9 @@ impl RetainedHead {
   /// `address` must be a live blob from [`Self::retain`].
   unsafe fn len(address: u64) -> usize {
     let base = address as *const u8;
+    // SAFETY: The caller guarantees a live retained blob with its initialized eight-byte header.
     let spans = unsafe { base.cast::<u32>().read_unaligned() } as usize;
+    // SAFETY: The second u32 lies within that same initialized eight-byte header.
     let head = unsafe { base.add(4).cast::<u32>().read_unaligned() } as usize;
     Self::HEADER + spans * 4 + head
   }
@@ -1399,6 +1401,7 @@ fn with_exchange<R>(exchange: u64, f: impl FnOnce(&Exchange) -> R) -> Option<R> 
   if exchange == 0 || !exchange.is_multiple_of(align_of::<HttpExchange>() as u64) {
     return None;
   }
+  // SAFETY: ABI callers must hold a live exchange lease through this synchronous access.
   let entry = unsafe { &*(exchange as *const HttpExchange) };
   Some(f(&entry.exchange))
 }
@@ -1454,6 +1457,7 @@ pub unsafe fn elide_transport_http_view(exchange: u64, kind: u32, index: u32, ou
   });
   match span {
     Some(Some((address, length))) => {
+      // SAFETY: The ABI caller provides two writable, aligned u64 output slots.
       unsafe {
         output.write(address);
         output.add(1).write(length);
@@ -1481,6 +1485,7 @@ pub unsafe fn elide_transport_http_spans(exchange: u64, output: *mut u32, capaci
     if needed > capacity as usize || output.is_null() {
       return needed as i32;
     }
+    // SAFETY: The caller provides capacity writable u32 slots; needed was checked above.
     unsafe {
       output.write(x.method_span.start);
       output.add(1).write(x.method_span.end);
@@ -1534,10 +1539,12 @@ pub unsafe fn elide_transport_http_respond(
   let body: &[u8] = match usize::try_from(body_length) {
     _ if stream => &[],
     Ok(0) => &[],
+    // SAFETY: The ABI caller guarantees length readable bytes for the duration of this call.
     Ok(length) if !body.is_null() => unsafe { std::slice::from_raw_parts(body, length) },
     _ => return INVALID,
   };
   let headers: Vec<ResponseHeader<'_>> = (0..count as usize)
+    // SAFETY: The ABI caller supplies count four-u64 records and live name/value byte ranges.
     .map(|i| unsafe {
       let record = headers.add(i * 4);
       let name = std::slice::from_raw_parts(record.read() as *const u8, record.add(1).read() as usize);
@@ -1646,17 +1653,20 @@ pub unsafe fn elide_transport_http_chunk_prepare(exchange: u64, capacity: u64, a
   let Some(total) = capacity.checked_add(CHUNK_HEADROOM + CHUNK_TAIL) else {
     return 0;
   };
+  // SAFETY: The ABI caller retains the exchange lease throughout preparation.
   let entry = unsafe { &*(exchange as *const HttpExchange) };
   let Ok(mut buffer) = Buffer::new(total, entry.budget.clone()) else {
     return 0;
   };
   buffer.ensure_init();
+  // SAFETY: The checked allocation includes CHUNK_HEADROOM bytes before the payload.
   let payload = unsafe { buffer.buf_mut_ptr().add(CHUNK_HEADROOM) } as u64;
   let id = identity();
   if id == 0 {
     return 0;
   }
   lock(registry(id)).insert(id, Storage::Mutable(buffer));
+  // SAFETY: The ABI caller supplies a non-null, writable u64 output slot.
   unsafe { address.write(payload) };
   id
 }
@@ -1716,11 +1726,14 @@ pub fn elide_transport_http_chunk_send(driver: u64, exchange: u64, buffer: u64, 
     // response, empty non-final chunk) is queued empty so it still reports in order.
     let range = match parts.framing {
       _ if parts.bodiless || (length == 0 && !final_part) => {
+        // SAFETY: prepare initialized this headroom; capacity was checked before selecting framing.
         unsafe { storage.set_len(CHUNK_HEADROOM) };
         CHUNK_HEADROOM..CHUNK_HEADROOM
       }
-      Framing::Chunked => frame_chunk(storage, length, final_part),
+      // SAFETY: prepare initialized the full capacity and the payload length was bounded above.
+      Framing::Chunked => unsafe { frame_chunk(storage, length, final_part) },
       _ => {
+        // SAFETY: prepare initialized the capacity and length is bounded by that capacity.
         unsafe { storage.set_len(CHUNK_HEADROOM + length) };
         CHUNK_HEADROOM..CHUNK_HEADROOM + length
       }
@@ -1771,7 +1784,9 @@ pub unsafe fn elide_transport_http_head_release(head: u64) -> i32 {
   if head == 0 {
     return INVALID;
   }
+  // SAFETY: The caller transfers one live retained-head allocation to this release function.
   let length = unsafe { RetainedHead::len(head) };
+  // SAFETY: retain used Box::into_raw on this byte slice; its stored length reconstructs the layout.
   drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(head as *mut u8, length)) });
   0
 }
@@ -1790,12 +1805,14 @@ pub unsafe fn elide_transport_http_prepare(exchange: u64, capacity: u64) -> u64 
   if exchange == 0 || !exchange.is_multiple_of(align_of::<HttpExchange>() as u64) {
     return 0;
   }
+  // SAFETY: The caller holds a live exchange lease throughout response preparation.
   let entry = unsafe { &*(exchange as *const HttpExchange) };
   let Ok(mut buffer) = Buffer::response(capacity, &entry.budget) else {
     return 0;
   };
   buffer.ensure_init();
   let address = buffer.buf_mut_ptr() as u64;
+  // SAFETY: The exchange is owner-thread confined; preparation exclusively replaces its pending buffer.
   unsafe { *entry.pending.get() = Some(buffer) };
   address
 }
@@ -1833,6 +1850,7 @@ pub fn elide_transport_http_send(driver: u64, exchange: u64, length: u64, flags:
     };
     entry.responded = true;
     // All foreign-accessible capacity was initialized by prepare.
+    // SAFETY: prepare initialized all capacity, and length was checked against capacity above.
     unsafe { buffer.set_len(length) };
     let encoded = buffer.freeze();
     let close = !entry.exchange.keep_alive || flags & SEND_CLOSE != 0;
@@ -2042,6 +2060,7 @@ pub unsafe fn elide_transport_http_retain(exchange: u64, length: *mut u64) -> u6
   }
   match with_exchange(exchange, RetainedHead::retain) {
     Some((address, total)) => {
+      // SAFETY: The caller provides a non-null writable u64 slot for the retained length.
       unsafe { length.write(total as u64) };
       address
     }
@@ -2194,14 +2213,17 @@ mod tests {
       .map(|_| slots.insert(2, request(&budget), budget.clone(), 0))
       .collect();
     assert_eq!(
+      // SAFETY: first is a live slot owned by slots; insertions preserve its allocation address.
       unsafe { &*(first as *const HttpExchange) }.exchange.path_bytes(),
       b"/slot"
     );
     for other in others {
       assert!(slots.retire(other, false));
     }
+    // SAFETY: first remains a live exchange owned by slots on this thread.
     let prepared = unsafe { elide_transport_http_prepare(first, 8) };
     assert_ne!(prepared, 0);
+    // SAFETY: prepare returned an allocation of at least eight bytes and it has not been retired.
     unsafe { (prepared as *mut u8).write_bytes(0, 8) };
     assert!(slots.retire(first, true));
     assert!(slots.get(&first).is_none());
@@ -2508,13 +2530,18 @@ mod tests {
       INVALID
     );
     let batch = elide_transport_buffer_new(owner, size_of::<NativeEvent>() as u64);
+    // SAFETY: batch owns space for one event and driver is live on this thread.
     assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 1) }, 1);
     let mut view = BufferView::default();
+    // SAFETY: view is an aligned writable output and batch remains live.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+    // SAFETY: poll initialized one event in the live, allocator-aligned batch.
     let event = unsafe { &*view.address.cast::<NativeEvent>() };
     assert_eq!((event.kind, event.value, event.result), (3, original, 3));
+    // SAFETY: view is an aligned writable output and original has not been released.
     assert_eq!(unsafe { elide_transport_buffer_view(original, &mut view) }, 0);
     assert_eq!(
+      // SAFETY: The completed receive initialized three bytes in original, which remains live.
       unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), 3) },
       b"raw"
     );

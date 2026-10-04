@@ -23,6 +23,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: '2026.9.10'
+      # Keep the stock JVM test matrix authoritative after Mise's development JDK.
       - uses: ./.github/actions/setup
         with:
           java: ${{ matrix.java }}

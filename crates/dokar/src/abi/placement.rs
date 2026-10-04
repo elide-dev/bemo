@@ -37,6 +37,7 @@ static RETIRED_MASKS: AtomicPtr<MaskNode> = AtomicPtr::new(ptr::null_mut());
 unsafe fn retain_mask(mask: *mut MaskNode) -> *mut MaskNode {
   if !mask.is_null() {
     // The owner reference prevents retirement while the parent captures its child reference.
+    // SAFETY: The owner reference prevents retirement while capturing the child reference.
     unsafe { (*mask).references.fetch_add(1, Ordering::Relaxed) };
   }
   mask
@@ -45,12 +46,14 @@ unsafe fn retain_mask(mask: *mut MaskNode) -> *mut MaskNode {
 /// # Safety
 /// Consume exactly one owned reference, or null. Never pass an already-consumed reference.
 unsafe fn release_mask(mask: *mut MaskNode) {
+  // SAFETY: The caller transfers one live reference; the null check precedes dereferencing.
   if mask.is_null() || unsafe { (*mask).references.fetch_sub(1, Ordering::AcqRel) } != 1 {
     return;
   }
   // The SVM exit hook cannot allocate, free, lock, or issue syscalls. Publish for later reclamation.
   let mut head = RETIRED_MASKS.load(Ordering::Relaxed);
   loop {
+    // SAFETY: This thread owns the final reference until it publishes the node for reclamation.
     unsafe { (*mask).next.store(head, Ordering::Relaxed) };
     match RETIRED_MASKS.compare_exchange_weak(head, mask, Ordering::Release, Ordering::Relaxed) {
       Ok(_) => break,
@@ -63,6 +66,7 @@ fn reclaim_masks() {
   let mut mask = RETIRED_MASKS.swap(ptr::null_mut(), Ordering::Acquire);
   while !mask.is_null() {
     // Only zero-reference nodes are published; exchanging the list gives this thread ownership.
+    // SAFETY: The acquired list contains only zero-reference Box allocations now owned by this thread.
     let node = unsafe { Box::from_raw(mask) };
     mask = node.next.load(Ordering::Relaxed);
   }
@@ -71,6 +75,7 @@ fn reclaim_masks() {
 pub(super) fn helper_prepare() -> u64 {
   #[cfg(target_os = "linux")]
   {
+    // SAFETY: The thread-local slot retains its owner reference through this call.
     PINNED.with(|mask| unsafe { retain_mask(mask.get()) } as u64)
   }
   #[cfg(not(target_os = "linux"))]
@@ -80,6 +85,7 @@ pub(super) fn helper_prepare() -> u64 {
 /// # Safety
 /// `token` must be zero or an unconsumed token from `helper_prepare`.
 pub(super) unsafe fn helper_release(token: u64) {
+  // SAFETY: The caller transfers a token returned by helper_prepare, or zero.
   unsafe { release_mask(token as *mut MaskNode) };
 }
 
@@ -92,8 +98,10 @@ pub(super) unsafe fn helper_consume(token: u64) -> io::Result<()> {
   let result = if node.is_null() {
     Ok(())
   } else {
+    // SAFETY: The unconsumed token owns a reference, keeping its immutable words live.
     helper_start(Some(unsafe { &(*node).words }))
   };
+  // SAFETY: Consume the owned token exactly once, after the words borrow ends.
   unsafe { release_mask(node) };
   reclaim_masks();
   result
@@ -175,7 +183,7 @@ thread_local! {
 fn mask() -> io::Result<Vec<usize>> {
   let mut words = vec![0usize; 16];
   loop {
-    // The kernel accepts a variable-length, word-aligned mask, including machines above 1024 CPUs.
+    // SAFETY: words is writable, word-aligned, and its exact byte capacity is passed to the kernel.
     let result =
       unsafe { libc::sched_getaffinity(0, std::mem::size_of_val(words.as_slice()), words.as_mut_ptr().cast()) };
     if result == 0 {
@@ -217,6 +225,7 @@ pub(super) fn allowed() -> io::Result<Vec<usize>> {
 
 #[cfg(all(test, target_os = "linux"))]
 fn helper_mask() -> Option<Vec<usize>> {
+  // SAFETY: A non-null thread-local slot owns a reference until it is removed on this thread.
   PINNED.with(|mask| unsafe { mask.get().as_ref() }.map(|node| node.words.clone()))
 }
 
@@ -226,6 +235,7 @@ pub(super) fn helper_start(allowed: Option<&[usize]>) -> io::Result<()> {
   #[cfg(target_os = "linux")]
   if PINNED.with(|mask| mask.get().is_null())
     && let Some(allowed) = allowed
+    // SAFETY: allowed is a live word-aligned slice with its exact byte length.
     && unsafe { libc::sched_setaffinity(0, std::mem::size_of_val(allowed), allowed.as_ptr().cast()) } != 0
   {
     return Err(io::Error::last_os_error());
@@ -256,6 +266,7 @@ impl Placement {
         }
         let mut selected = vec![0usize; previous.len()];
         selected[word] = bit;
+        // SAFETY: selected is a live word-aligned slice with its exact byte length.
         if unsafe { libc::sched_setaffinity(0, std::mem::size_of_val(selected.as_slice()), selected.as_ptr().cast()) }
           != 0
         {
@@ -272,6 +283,7 @@ impl Placement {
   pub(super) fn restore(&mut self) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     if self.cpu.is_some() {
+      // SAFETY: previous retains the original word-aligned mask and exact byte length.
       if unsafe {
         libc::sched_setaffinity(
           0,
@@ -282,6 +294,7 @@ impl Placement {
       {
         return Err(io::Error::last_os_error());
       }
+      // SAFETY: Replacing the thread-local slot transfers its one owned reference, or null.
       PINNED.with(|mask| unsafe { release_mask(mask.replace(ptr::null_mut())) });
       self.cpu = None;
     }
@@ -294,6 +307,7 @@ impl Drop for Placement {
   fn drop(&mut self) {
     if self.restore().is_err() {
       #[cfg(target_os = "linux")]
+      // SAFETY: Replacing the thread-local slot transfers its one owned reference, or null.
       PINNED.with(|mask| unsafe { release_mask(mask.replace(ptr::null_mut())) });
       reclaim_masks();
     }
@@ -320,11 +334,15 @@ mod tests {
   #[test]
   fn helper_token_outlives_owner_and_can_retire_on_another_thread() {
     let owner = MaskNode::new(vec![0x28, 0x400]);
+    // SAFETY: owner was just allocated and still holds its original reference.
     let child = unsafe { retain_mask(owner) } as usize;
+    // SAFETY: Release the original reference; child holds a separately retained reference.
     unsafe { release_mask(owner) };
     std::thread::spawn(move || {
       let child = child as *mut MaskNode;
+      // SAFETY: child retains a live reference across the thread transfer.
       assert_eq!(unsafe { &(*child).words }, &[0x28, 0x400]);
+      // SAFETY: Consume the child reference once after its last read.
       unsafe { release_mask(child) };
     })
     .join()
@@ -337,7 +355,9 @@ mod tests {
     let owner = MaskNode::new(vec![0x180]);
     let children: Vec<_> = (0..32)
       .map(|_| {
+        // SAFETY: owner retains its original reference until all spawned threads join.
         let token = unsafe { retain_mask(owner) } as usize;
+        // SAFETY: The spawned thread exclusively consumes its separately retained reference.
         std::thread::spawn(move || unsafe { release_mask(token as *mut MaskNode) })
       })
       .collect();
@@ -346,10 +366,13 @@ mod tests {
     }
     reclaim_masks();
     assert_eq!(
+      // SAFETY: The original owner reference remains live after all children have joined.
       unsafe { (*owner).references.load(std::sync::atomic::Ordering::Acquire) },
       1
     );
+    // SAFETY: The owner reference keeps these immutable words live.
     assert_eq!(unsafe { &(*owner).words }, &[0x180]);
+    // SAFETY: Consume the original reference once, after all reads and children finish.
     unsafe { release_mask(owner) };
     reclaim_masks();
   }
@@ -361,10 +384,14 @@ mod tests {
         std::thread::spawn(move || {
           for index in 0..64 {
             let owner = MaskNode::new(vec![worker, index]);
+            // SAFETY: owner was just allocated and still holds its original reference.
             let child = unsafe { retain_mask(owner) };
+            // SAFETY: Consume the original reference; child retains the node.
             unsafe { release_mask(owner) };
             reclaim_masks();
+            // SAFETY: child still owns a reference, preventing reclamation.
             assert_eq!(unsafe { &(*child).words }, &[worker, index]);
+            // SAFETY: Consume the child reference once after its last read.
             unsafe { release_mask(child) };
             reclaim_masks();
           }

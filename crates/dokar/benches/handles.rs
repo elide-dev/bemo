@@ -38,9 +38,11 @@ fn handles(c: &mut Criterion) {
         let mut view = MaybeUninit::<BufferView>::uninit();
         // This thread owns the live handle; output is aligned writable storage.
         assert_eq!(
+          // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
           unsafe { elide_transport_buffer_view(black_box(handle), view.as_mut_ptr()) },
           0
         );
+        // SAFETY: buffer_view succeeded and initialized every field of the output.
         let view = unsafe { view.assume_init() };
         assert_eq!(view.capacity, 4096);
         black_box(view);
@@ -57,6 +59,7 @@ fn handles(c: &mut Criterion) {
     });
     for &handle in &handles {
       // No foreign views or writers survive the buffer-view iteration.
+      // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
       assert_eq!(unsafe { elide_transport_buffer_freeze(handle, 4096) }, 0);
     }
     group.bench_function(BenchmarkId::new("slice-release", live), |b| {

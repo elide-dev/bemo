@@ -5,19 +5,21 @@
 package io.netty.handler.ssl;
 
 import javax.net.ssl.SSLEngine;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Exposes Netty's package-private ALPN accessor: {@link SslHandler#applicationProtocol()}, and so
  * {@link ApplicationProtocolNegotiationHandler}, report only engines implementing it. Lives in
  * Netty's package on the class path; a named {@code io.netty.handler} module would reject it.
  */
+@org.jspecify.annotations.NullMarked
 public abstract class ApplicationProtocolSslEngine extends SSLEngine
     implements ApplicationProtocolAccessor {
-  protected ApplicationProtocolSslEngine(String peerHost, int peerPort) {
+  protected ApplicationProtocolSslEngine(@Nullable String peerHost, int peerPort) {
     super(peerHost, peerPort);
   }
 
   /** Negotiated ALPN identifier, or null when none was negotiated. */
   @Override
-  public abstract String getNegotiatedApplicationProtocol();
+  public abstract @Nullable String getNegotiatedApplicationProtocol();
 }

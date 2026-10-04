@@ -32,8 +32,11 @@ fn frozen(owner: u64, bytes: &[u8]) -> u64 {
   let handle = elide_transport_buffer_new(owner, bytes.len() as u64);
   assert_ne!(handle, 0);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), view.address.cast(), bytes.len()) };
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(handle, bytes.len() as u64) }, 0);
   handle
 }
@@ -66,10 +69,13 @@ fn wait(driver: u64, batch: u64, accept: impl Fn(&Completion) -> bool) -> Comple
 fn poll_until(driver: u64, batch: u64, timeout_ns: u64, accept: impl Fn(&Completion) -> bool) -> Completion {
   let deadline = Instant::now() + Duration::from_secs(5);
   while Instant::now() < deadline {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, timeout_ns, batch, 8) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+    // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
     let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
     for event in events {
       let event = Completion {
@@ -196,6 +202,7 @@ fn conflicting_workloads_share_a_driver_and_close_independently() {
     0
   }
   let poll =
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     |workload| unsafe { elide_transport_driver_poll_batch_callback(workload, driver, 0, 8, Some(untouched), 0) };
   assert_eq!(poll(small), INVALID, "closed callback workload");
   assert!(poll(large) >= 0, "open callback workload");
@@ -268,7 +275,9 @@ fn accepted_sockets_keep_their_listener_workload() {
   let local = elide_transport_buffer_new(workload, 24);
   assert_eq!(elide_transport_socket_address(driver, listener, 0, local), 0);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(local, &mut view) }, 0);
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   let bytes = unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), 24) };
   let port = u16::from_ne_bytes([bytes[16], bytes[17]]);
 

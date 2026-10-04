@@ -25,6 +25,7 @@ import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@link javax.net.ssl.SSLEngine} over a Rustls connection in native code. Wrap and unwrap pass
@@ -71,12 +72,12 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
   private boolean freed;
   private boolean inboundClosed;
   private boolean outboundClosed;
-  private String endpointIdentification;
-  private List<SNIServerName> serverNames;
-  private ByteBuffer stagingInput;
-  private ByteBuffer stagingOutput;
+  private @Nullable String endpointIdentification;
+  private @Nullable List<SNIServerName> serverNames;
+  private @Nullable ByteBuffer stagingInput;
+  private @Nullable ByteBuffer stagingOutput;
 
-  NativeSslEngine(NativeSslContext context, String peerHost, int peerPort) {
+  NativeSslEngine(NativeSslContext context, @Nullable String peerHost, int peerPort) {
     super(peerHost, peerPort);
     this.context = context;
     this.api = context.api;
@@ -106,7 +107,7 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
     return handle;
   }
 
-  private String serverName() {
+  private @Nullable String serverName() {
     if (serverNames != null)
       for (SNIServerName name : serverNames)
         if (name instanceof SNIHostName host) return host.getAsciiName();
@@ -164,9 +165,12 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
   /** Read-only heap buffers expose no array; stage at most one record's worth natively. */
   private ByteBuffer stage(ByteBuffer source, int length) {
     staging();
-    stagingInput.clear();
-    stagingInput.put(0, source, source.position(), length);
-    return stagingInput;
+    ByteBuffer input =
+        java.util.Objects.requireNonNull(
+            stagingInput, "staging allocates input and output together");
+    input.clear();
+    input.put(0, source, source.position(), length);
+    return input;
   }
 
   private static SSLEngineResult result(long packed, int consumed, int produced, boolean finished) {
@@ -196,11 +200,11 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
 
   // ---- Wrap and unwrap -------------------------------------------------------------------------
 
-  private long wrapOnce(ByteBuffer source, ByteBuffer destination) throws SSLException {
+  private long wrapOnce(@Nullable ByteBuffer source, ByteBuffer destination) throws SSLException {
     long engine = handle();
     int length = source == null ? 0 : Math.min(source.remaining(), MAX_WRAP);
     ByteBuffer input = source;
-    if (length > 0 && !source.isDirect() && !source.hasArray()) {
+    if (source != null && length > 0 && !source.isDirect() && !source.hasArray()) {
       length = Math.min(length, MAX_RECORD);
       input = stage(source, length);
     }
@@ -227,7 +231,10 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
     boolean staged = room > 0 && !destination.isDirect() && handshaking;
     if (staged) {
       staging();
-      output = stagingOutput.clear();
+      output =
+          java.util.Objects.requireNonNull(
+                  stagingOutput, "staging allocates input and output together")
+              .clear();
       room = Math.min(room, MAX_RECORD);
     }
     long packed = check(api.engineUnwrap(engine, input, length, output, room));
@@ -314,7 +321,7 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
   // ---- Lifecycle -------------------------------------------------------------------------------
 
   @Override
-  public Runnable getDelegatedTask() {
+  public @Nullable Runnable getDelegatedTask() {
     return null;
   }
 
@@ -382,24 +389,24 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
   }
 
   @Override
-  public synchronized SSLSession getHandshakeSession() {
+  public synchronized @Nullable SSLSession getHandshakeSession() {
     return handle != 0 && !established ? session : null;
   }
 
   @Override
-  public String getNegotiatedApplicationProtocol() {
+  public @Nullable String getNegotiatedApplicationProtocol() {
     return session.applicationProtocol();
   }
 
   @Override
-  public synchronized String getApplicationProtocol() {
+  public synchronized @Nullable String getApplicationProtocol() {
     if (!established) return null;
     String protocol = session.applicationProtocol();
     return protocol == null ? "" : protocol;
   }
 
   @Override
-  public String getHandshakeApplicationProtocol() {
+  public @Nullable String getHandshakeApplicationProtocol() {
     return null;
   }
 
@@ -529,7 +536,7 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
   }
 
   private static boolean isIpLiteral(String host) {
-    return host.indexOf(':') >= 0 || host.chars().allMatch(c -> c == '.' || c >= '0' && c <= '9');
+    return host.indexOf(':') >= 0 || host.chars().allMatch(c -> c == '.' || (c >= '0' && c <= '9'));
   }
 
   // ---- Reference counting ----------------------------------------------------------------------

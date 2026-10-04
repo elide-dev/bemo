@@ -8,15 +8,16 @@ package dev.elide.dokar.transport;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Backend a v2 driver actually runs and, when AUTO fell back from io_uring, the refused setup's
  * error. Backend codes follow the ABI: 0 auto, 1 polling, 2 io_uring, 3 IOCP.
  */
-public record DriverSelection(int requested, int actual, String fallback) {
+public record DriverSelection(int requested, int actual, @Nullable String fallback) {
   private static final int REASON_BYTES = 512;
   private static final AtomicBoolean LOGGED = new AtomicBoolean();
-  private static volatile DriverSelection observed;
+  private static volatile @Nullable DriverSelection observed;
 
   /** Query a live driver on its owner thread; {@code owner} funds a transient reason buffer. */
   public static DriverSelection of(TransportNative api, long driver, long owner, int requested) {
@@ -24,7 +25,7 @@ public record DriverSelection(int requested, int actual, String fallback) {
   }
 
   /** Create, query and release one driver on the calling thread; null when none can be created. */
-  public static DriverSelection probe(TransportNative api, int requested) {
+  public static @Nullable DriverSelection probe(TransportNative api, int requested) {
     long owner = api.ownerNew(REASON_BYTES);
     if (owner == 0) return null;
     long driver = 0;
@@ -38,7 +39,7 @@ public record DriverSelection(int requested, int actual, String fallback) {
   }
 
   /** Latest selection made by an event loop in this process, or null before any. */
-  public static DriverSelection observed() {
+  public static @Nullable DriverSelection observed() {
     return observed;
   }
 
@@ -55,7 +56,7 @@ public record DriverSelection(int requested, int actual, String fallback) {
   }
 
   /** Publish a selection; the first fallback in the process is logged once. */
-  public static DriverSelection record(int requested, int actual, String fallback) {
+  public static DriverSelection record(int requested, int actual, @Nullable String fallback) {
     DriverSelection last = observed;
     if (fallback == null
         && last != null
@@ -95,7 +96,7 @@ public record DriverSelection(int requested, int actual, String fallback) {
     return fallback == null ? driver() : driver() + " (AUTO fallback: " + fallback + ")";
   }
 
-  private static String reason(TransportNative api, long driver, long owner) {
+  private static @Nullable String reason(TransportNative api, long driver, long owner) {
     long output = api.bufferNew(owner, REASON_BYTES);
     if (output == 0) return null;
     try {

@@ -23,6 +23,7 @@ struct Slot {
 impl Drop for Slot {
   fn drop(&mut self) {
     if self.live {
+      // SAFETY: live is set only after storage.write; drop consumes that initialized entry once.
       unsafe { self.storage.assume_init_drop() };
     }
   }
@@ -61,11 +62,13 @@ impl ExchangeStore {
 
   pub(super) fn get(&self, id: &u64) -> Option<&HttpExchange> {
     let slot = self.slots.get(id)?;
+    // SAFETY: live guarantees initialization; the returned borrow is bounded by self.
     slot.live.then(|| unsafe { slot.storage.assume_init_ref() })
   }
 
   pub(super) fn get_mut(&mut self, id: &u64) -> Option<&mut HttpExchange> {
     let slot = self.slots.get_mut(id)?;
+    // SAFETY: live guarantees initialization and the exclusive table borrow prevents aliasing.
     slot.live.then(|| unsafe { slot.storage.assume_init_mut() })
   }
 
@@ -73,6 +76,7 @@ impl ExchangeStore {
     let Some(slot) = self.slots.get_mut(&id).filter(|slot| slot.live) else {
       return false;
     };
+    // SAFETY: The live filter guarantees initialization; the table is exclusively borrowed.
     let entry = unsafe { slot.storage.assume_init_mut() };
     let mut spans = std::mem::take(&mut entry.spans);
     if spans.capacity() > CACHED_SPANS {
@@ -84,6 +88,7 @@ impl ExchangeStore {
     slot.live = false;
     slot.quarantined = quarantine;
     // Only layout storage survives: release every request/response lease immediately.
+    // SAFETY: The entry was live on entry and is dropped exactly once after clearing live.
     unsafe { slot.storage.assume_init_drop() };
     if !quarantine {
       self.cache(id);

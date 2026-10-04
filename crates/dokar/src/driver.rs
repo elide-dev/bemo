@@ -457,6 +457,7 @@ impl Driver {
 
   fn emit_diagnostics(&self) {
     #[cfg(target_os = "linux")]
+    // SAFETY: gettid takes no arguments or pointers and has no memory preconditions.
     let owner = unsafe { libc::syscall(libc::SYS_gettid) };
     #[cfg(not(target_os = "linux"))]
     let owner = format!("{:?}", std::thread::current().id());
@@ -1164,14 +1165,20 @@ impl Drop for Driver {
           if self.diagnostics {
             self.emit_diagnostics();
           }
+          // SAFETY: Retirement completed and this is the sole drop of the ManuallyDrop proactor.
           unsafe { ManuallyDrop::drop(&mut self.proactor) };
           break;
         }
         Ok(false) => continue,
         Err(_) => {
           // An unrecoverable poll failure cannot authorize freeing kernel-owned memory.
+          #[expect(clippy::mem_forget, reason = "a poll failure does not retire kernel-owned buffers")]
           std::mem::forget(std::mem::take(&mut self.pending));
           #[cfg(target_os = "linux")]
+          #[expect(
+            clippy::mem_forget,
+            reason = "persistent receives may remain kernel-owned after poll failure"
+          )]
           std::mem::forget(self.persistent.take());
           break;
         }
@@ -1268,6 +1275,7 @@ fn accepted(id: u64, BufResult(result, operation): BufResult<usize, Accept>) -> 
 fn received(id: u64, BufResult(result, operation): BufResult<usize, Receive>) -> Event {
   let mut buffer = operation.into_inner();
   // A failed receive exposes no bytes, even when reusing previously initialized storage.
+  // SAFETY: A successful completion initialized exactly result bytes; errors expose an empty prefix.
   unsafe { buffer.set_len(result.as_ref().copied().unwrap_or(0)) };
   Event::Received { id, result, buffer }
 }

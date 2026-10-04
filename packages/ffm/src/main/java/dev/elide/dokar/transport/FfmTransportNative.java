@@ -14,6 +14,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Traditional JVM bindings to the standalone library; the library remains loaded for process life.
@@ -43,7 +44,7 @@ public final class FfmTransportNative implements TransportNative {
   private final MethodHandle driverBackend;
   private final MethodHandle driverWake;
   private final MethodHandle driverRelease;
-  private final MethodHandle driverFallback;
+  private final @Nullable MethodHandle driverFallback;
 
   private final MethodHandle servingNew;
   private final MethodHandle servingSplitNew;
@@ -105,7 +106,7 @@ public final class FfmTransportNative implements TransportNative {
   private final MethodHandle tlsProtocol;
   private final MethodHandle tlsRelease;
   private final SymbolLookup symbols;
-  private volatile EngineBindings engine;
+  private volatile @Nullable EngineBindings engine;
 
   @Override
   public long servingNew(int contexts) {
@@ -1321,7 +1322,7 @@ public final class FfmTransportNative implements TransportNative {
       MethodHandle control,
       MethodHandle info,
       MethodHandle release) {
-    static EngineBindings bind(SymbolLookup symbols) {
+    static @Nullable EngineBindings bind(SymbolLookup symbols) {
       if (symbols.find("elide_transport_engine_new").isEmpty()) return null;
       ValueLayout l = ValueLayout.JAVA_LONG;
       ValueLayout i = ValueLayout.JAVA_INT;
@@ -1363,19 +1364,23 @@ public final class FfmTransportNative implements TransportNative {
     return bindings;
   }
 
-  private static MemorySegment heapSegment(ByteBuffer buffer, int length) {
-    return length == 0 ? MemorySegment.NULL : MemorySegment.ofBuffer(buffer);
+  private static MemorySegment heapSegment(@Nullable ByteBuffer buffer, int length) {
+    return length == 0
+        ? MemorySegment.NULL
+        : MemorySegment.ofBuffer(java.util.Objects.requireNonNull(buffer));
   }
 
-  private static long directAddress(ByteBuffer buffer, int length) {
-    return length == 0 ? 0 : MemorySegment.ofBuffer(buffer).address();
+  private static long directAddress(@Nullable ByteBuffer buffer, int length) {
+    return length == 0
+        ? 0
+        : MemorySegment.ofBuffer(java.util.Objects.requireNonNull(buffer)).address();
   }
 
-  private static boolean direct(ByteBuffer buffer, int length) {
-    return length == 0 || buffer.isDirect();
+  private static boolean direct(@Nullable ByteBuffer buffer, int length) {
+    return length == 0 || java.util.Objects.requireNonNull(buffer).isDirect();
   }
 
-  private static MemorySegment copy(Arena arena, byte[] bytes) {
+  private static MemorySegment copy(Arena arena, byte @Nullable [] bytes) {
     return bytes == null || bytes.length == 0
         ? MemorySegment.NULL
         : arena.allocate(bytes.length).copyFrom(MemorySegment.ofArray(bytes));
@@ -1388,7 +1393,11 @@ public final class FfmTransportNative implements TransportNative {
 
   @Override
   public long engineContextNew(
-      long workload, int flags, byte[] certificates, byte[] key, byte[] alpn) {
+      long workload,
+      int flags,
+      byte @Nullable [] certificates,
+      byte @Nullable [] key,
+      byte @Nullable [] alpn) {
     try (Arena arena = Arena.ofConfined()) {
       MemorySegment chain = copy(arena, certificates);
       MemorySegment secret = copy(arena, key);
@@ -1424,7 +1433,7 @@ public final class FfmTransportNative implements TransportNative {
   }
 
   @Override
-  public long engineNew(long workload, long context, byte[] name) {
+  public long engineNew(long workload, long context, byte @Nullable [] name) {
     try (Arena arena = Arena.ofConfined()) {
       MemorySegment bytes = copy(arena, name);
       return (long)
@@ -1437,7 +1446,7 @@ public final class FfmTransportNative implements TransportNative {
   @Override
   public long engineWrap(
       long engine,
-      ByteBuffer source,
+      @Nullable ByteBuffer source,
       int sourceLength,
       ByteBuffer destination,
       int destinationLength) {
@@ -1513,7 +1522,7 @@ public final class FfmTransportNative implements TransportNative {
   }
 
   @Override
-  public int engineInfo(long engine, int kind, int index, byte[] output) {
+  public int engineInfo(long engine, int kind, int index, byte @Nullable [] output) {
     try {
       MemorySegment target =
           output == null || output.length == 0 ? MemorySegment.NULL : MemorySegment.ofArray(output);

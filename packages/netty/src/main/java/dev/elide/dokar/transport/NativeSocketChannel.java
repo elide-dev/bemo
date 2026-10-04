@@ -9,6 +9,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.SocketChannelConfig;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import org.jspecify.annotations.Nullable;
 
 /** Completion-driven TCP channel backed by the portable Rust transport ABI. */
 public final class NativeSocketChannel extends NativeStreamChannel implements SocketChannel {
@@ -19,7 +20,7 @@ public final class NativeSocketChannel extends NativeStreamChannel implements So
   }
 
   @Override
-  public NativeSocketChannel tls(NativeTlsContext context, String peerName) {
+  public NativeSocketChannel tls(NativeTlsContext context, @Nullable String peerName) {
     super.tls(context, peerName);
     return this;
   }
@@ -46,6 +47,6 @@ public final class NativeSocketChannel extends NativeStreamChannel implements So
 
   @Override
   long endpoint(SocketAddress address) {
-    return io.endpoint((InetSocketAddress) address);
+    return io().endpoint((InetSocketAddress) address);
   }
 }

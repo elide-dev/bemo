@@ -5,6 +5,7 @@
 package dev.elide.dokar.transport;
 
 import jdk.jfr.*;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Optional profiling at the managed/native boundary; no endpoint names or payloads are recorded.
@@ -20,7 +21,7 @@ public final class TransportEvents {
   @Enabled(false)
   public static final class Batch extends Event {
     public long driverId;
-    public String backend;
+    public @Nullable String backend;
     public int capacity;
     public int completions;
     public int activeChannels;
@@ -56,12 +57,12 @@ public final class TransportEvents {
   public static final class TlsHandshake extends Event {
     public long driverId;
     public long socketId;
-    public String channelId;
-    public String role;
-    public String protocol;
+    public @Nullable String channelId;
+    public @Nullable String role;
+    public @Nullable String protocol;
 
     @Description("success, error, or closed")
-    public String outcome;
+    public @Nullable String outcome;
   }
 
   @Name("dev.elide.TransportCopy")
@@ -73,10 +74,10 @@ public final class TransportEvents {
   public static final class Copy extends Event {
     public long driverId;
     public long socketId;
-    public String channelId;
+    public @Nullable String channelId;
 
     @Description("tcp-write, tls-write, or tls-read")
-    public String reason;
+    public @Nullable String reason;
 
     @DataAmount(DataAmount.BYTES)
     public long bytes;
@@ -88,7 +89,7 @@ public final class TransportEvents {
   @StackTrace(false)
   public static final class Shutdown extends Event {
     public long driverId;
-    public String backend;
+    public @Nullable String backend;
     public int busyRetries;
     public int status;
 
@@ -97,7 +98,7 @@ public final class TransportEvents {
     public long retainedBytes;
   }
 
-  static Batch batch(long driver, String backend, int capacity, long timeout) {
+  static @Nullable Batch batch(long driver, String backend, int capacity, long timeout) {
     if (!FlightRecorder.isInitialized()) return null;
     Batch event = new Batch();
     if (!event.isEnabled()) return null;
@@ -109,11 +110,11 @@ public final class TransportEvents {
     return event;
   }
 
-  static TlsHandshake handshake(NativeStreamChannel channel) {
+  static @Nullable TlsHandshake handshake(NativeStreamChannel channel) {
     if (!FlightRecorder.isInitialized()) return null;
     TlsHandshake event = new TlsHandshake();
     if (!event.isEnabled()) return null;
-    event.driverId = channel.io.driver();
+    event.driverId = channel.io().driver();
     event.socketId = channel.socket;
     event.channelId = channel.id().asLongText();
     event.role = channel.parent() == null ? "client" : "server";
@@ -121,7 +122,8 @@ public final class TransportEvents {
     return event;
   }
 
-  static void handshakeDone(TlsHandshake event, String outcome, String protocol) {
+  static void handshakeDone(
+      @Nullable TlsHandshake event, String outcome, @Nullable String protocol) {
     if (event == null) return;
     event.end();
     if (!event.shouldCommit()) return;
@@ -134,7 +136,7 @@ public final class TransportEvents {
     if (!FlightRecorder.isInitialized()) return;
     Copy event = new Copy();
     if (!event.isEnabled()) return;
-    event.driverId = channel.io.driver();
+    event.driverId = channel.io().driver();
     event.socketId = channel.socket;
     event.channelId = channel.id().asLongText();
     event.reason = reason;
@@ -142,7 +144,7 @@ public final class TransportEvents {
     event.commit();
   }
 
-  static Shutdown shutdown(long driver, String backend) {
+  static @Nullable Shutdown shutdown(long driver, String backend) {
     if (!FlightRecorder.isInitialized()) return null;
     Shutdown event = new Shutdown();
     if (!event.isEnabled()) return null;

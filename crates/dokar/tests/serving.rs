@@ -7,8 +7,11 @@ use std::time::{Duration, Instant};
 fn frozen(owner: u64, bytes: &[u8]) -> u64 {
   let buffer = elide_transport_buffer_new(owner, bytes.len() as u64);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(buffer, &mut view) }, 0);
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), view.address.cast(), bytes.len()) };
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(buffer, bytes.len() as u64) }, 0);
   buffer
 }
@@ -26,7 +29,9 @@ fn listen(driver: u64, owner: u64) -> (u64, u16) {
   let output = elide_transport_buffer_new(owner, 24);
   assert_eq!(elide_transport_socket_address(driver, listener, 0, output), 0);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(output, &mut view) }, 0);
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   let bytes = unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), 24) };
   let port = u16::from_ne_bytes(bytes[16..18].try_into().unwrap());
   elide_transport_buffer_release(output);
@@ -37,6 +42,7 @@ fn release(driver: u64, owner: u64, batch: u64) {
   let deadline = Instant::now() + Duration::from_secs(3);
   while elide_transport_driver_release(driver) == BUSY {
     assert!(Instant::now() < deadline);
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     unsafe { elide_transport_driver_poll(driver, 1_000_000, batch, 8) };
   }
   elide_transport_buffer_release(batch);
@@ -58,10 +64,13 @@ fn split_serving_hands_connections_to_a_dedicated_transport_owner() {
   let deadline = Instant::now() + Duration::from_secs(3);
   let accepted = loop {
     assert!(Instant::now() < deadline);
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 10_000_000, batch, 8) };
     assert!(count >= 0);
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+    // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
     let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
     if let Some(event) = events.iter().find(|event| event.kind == 2) {
       assert_eq!(event.result, 0);
@@ -94,15 +103,19 @@ fn native_readiness_gates_accept_and_adoption_stays_on_the_polling_thread() {
   let batch = elide_transport_buffer_new(owner, 8 * 40);
   let (listener, port) = listen(driver, owner);
   let peer = TcpStream::connect(("127.0.0.1", port)).unwrap();
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 0);
   assert_eq!(elide_transport_serving_ready(driver), 0);
   let deadline = Instant::now() + Duration::from_secs(3);
   let accepted = loop {
     assert!(Instant::now() < deadline);
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 10_000_000, batch, 8) };
     assert!(count >= 0);
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+    // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
     let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
     if let Some(event) = events.iter().find(|event| event.kind == 2) {
       assert_eq!(event.socket, listener);
@@ -148,19 +161,26 @@ fn lifecycle_notifications_do_not_require_a_listener() {
   let owner = elide_transport_owner_new(1024);
   let batch = elide_transport_buffer_new(owner, 8 * 40);
   assert_eq!(elide_transport_serving_ready(driver), 0);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 1);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+  // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
   let event = unsafe { &*view.address.cast::<NativeEvent>() };
   assert_eq!(event.kind, 12);
   assert_eq!(event.value, 1);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 0);
   assert_eq!(elide_transport_serving_close(application), 0);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 1);
+  // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
   let event = unsafe { &*view.address.cast::<NativeEvent>() };
   assert_eq!(event.kind, 12);
   assert_eq!(event.value, 2);
   assert_eq!(elide_transport_serving_ready(driver), INVALID);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 0);
   release(driver, owner, batch);
 }
@@ -387,7 +407,9 @@ fn serving_entry_points_reject_unknown_handles_and_out_of_range_indices() {
   assert_eq!(elide_transport_serving_context_enter(0, 0), INVALID);
   assert_eq!(elide_transport_last_error(), -3);
   assert_eq!(elide_transport_serving_context_leave(), INVALID, "nothing was entered");
+  // SAFETY: Zero denotes no owned helper token and is explicitly accepted by the ABI.
   assert_eq!(unsafe { elide_transport_serving_helper_release(0) }, 0);
+  // SAFETY: Zero denotes no owned helper token and is explicitly accepted by the ABI.
   assert_eq!(unsafe { elide_transport_serving_helper_start(0) }, 0);
   assert_eq!(elide_transport_serving_close(0), INVALID);
 

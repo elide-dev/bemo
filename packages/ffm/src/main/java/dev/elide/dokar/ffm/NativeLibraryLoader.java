@@ -11,10 +11,11 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import org.jspecify.annotations.Nullable;
 
 /** Resolves the platform classifier and extracts its shared library without a Netty dependency. */
 public final class NativeLibraryLoader {
-  private static Path extracted;
+  private static @Nullable Path extracted;
 
   private NativeLibraryLoader() {}
 

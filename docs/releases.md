@@ -63,11 +63,11 @@ These are unsigned Maven repositories *inside* signed release envelopes. Central
 still needs its own merged repository, PGP signatures, and namespace credentials;
 see [publishing](publishing.md). No Central credentials are used by these jobs.
 
-Release Please uses `GITHUB_TOKEN`; PRs it creates do not trigger additional
-GitHub workflows automatically. Dispatch Verify on the release branch for its
-pre-merge checks, or configure an organization-approved GitHub App token if
-automatic PR-triggered checks are required. Main publication always waits for
-verification of the merged source regardless.
+Release Please uses `GITHUB_TOKEN`; PRs it creates do not trigger PR workflows
+implicitly. The PR job explicitly dispatches the reusable verification flow via
+`on.push.yml` on the validated Release Please branch. Dispatch cannot publish a
+release: publication requires a main push and successful merged-source checks.
+No additional long-lived automation token is required.
 
 References: [GitHub immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases),
 [artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations),

@@ -13,6 +13,7 @@ import java.nio.channels.AlreadyConnectedException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.ConnectionPendingException;
 import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.Nullable;
 
 /** Shared byte-stream lifecycle for native TCP and Unix sockets. */
 @SuppressWarnings("deprecation")
@@ -21,17 +22,17 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
     INSTANCE
   }
 
-  private NativeTlsContext tlsContext;
-  private String tlsPeerName;
-  private NativeTlsSession tls;
-  private TransportEvents.TlsHandshake tlsFlight;
-  private volatile String applicationProtocol;
-  private io.netty.util.concurrent.Promise<Void> handshake;
-  private final TransportNative acceptedApi;
+  private @Nullable NativeTlsContext tlsContext;
+  private @Nullable String tlsPeerName;
+  private @Nullable NativeTlsSession tls;
+  private TransportEvents.@Nullable TlsHandshake tlsFlight;
+  private volatile @Nullable String applicationProtocol;
+  private io.netty.util.concurrent.@Nullable Promise<Void> handshake;
+  private final @Nullable TransportNative acceptedApi;
   private long accepted;
-  private ChannelPromise connectPromise;
-  private ScheduledFuture<?> connectTimeout;
-  private ScheduledFuture<?> handshakeTimeout;
+  private @Nullable ChannelPromise connectPromise;
+  private @Nullable ScheduledFuture<?> connectTimeout;
+  private @Nullable ScheduledFuture<?> handshakeTimeout;
   private long receive;
   private int receiveCapacity;
   private long send;
@@ -53,8 +54,8 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
     this.workload = parent.workload;
   }
 
-  public NativeStreamChannel tls(NativeTlsContext context, String peerName) {
-    if (tlsContext != null || active && (parent() == null || ioStarted))
+  public NativeStreamChannel tls(NativeTlsContext context, @Nullable String peerName) {
+    if (tlsContext != null || (active && (parent() == null || ioStarted)))
       throw new IllegalStateException("Configure TLS before socket I/O");
     tlsContext = java.util.Objects.requireNonNull(context);
     tlsPeerName = peerName;
@@ -63,20 +64,24 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
   }
 
   public synchronized io.netty.util.concurrent.Future<Void> handshakeFuture() {
+    initializeHandshake();
+    return java.util.Objects.requireNonNull(handshake);
+  }
+
+  private synchronized void initializeHandshake() {
     if (handshake == null) {
       handshake = eventLoop().newPromise();
       if (!open) handshake.tryFailure(new ClosedChannelException());
     }
-    return handshake;
   }
 
-  public String applicationProtocol() {
+  public @Nullable String applicationProtocol() {
     return applicationProtocol;
   }
 
   private void startTls() {
     if (tlsContext != null && tls == null) {
-      handshakeFuture();
+      initializeHandshake();
       tlsFlight = TransportEvents.handshake(this);
       tls = new NativeTlsSession(this, tlsContext, tlsPeerName);
       handshakeTimeout =
@@ -113,23 +118,24 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
     ((NativeUnsafe) unsafe()).forceClose(voidPromise());
   }
 
-  void tlsReady(String protocol) {
+  void tlsReady(@Nullable String protocol) {
     if (handshakeTimeout != null) {
       handshakeTimeout.cancel(false);
       handshakeTimeout = null;
     }
     applicationProtocol = protocol;
     finishTlsFlight("success", protocol);
-    handshake.trySuccess(null);
+    java.util.Objects.requireNonNull(handshake, "TLS handshake promise must exist")
+        .trySuccess(null);
   }
 
-  private void finishTlsFlight(String outcome, String protocol) {
+  private void finishTlsFlight(String outcome, @Nullable String protocol) {
     TransportEvents.handshakeDone(tlsFlight, outcome, protocol);
     tlsFlight = null;
   }
 
   void sendTls(long buffer, int offset, int length) {
-    send = io.api.socketSend(workload, io.driver(), socket, buffer, offset, length);
+    send = io().api.socketSend(workload, io().driver(), socket, buffer, offset, length);
     if (send == 0) throw new NativeTransportException("TLS send admission failed");
   }
 
@@ -153,18 +159,20 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
   }
 
   @Override
+  // Accepted handles must retain the identical binding instance.
+  @SuppressWarnings("ReferenceEquality")
   void registeredNative() {
     if (accepted == 0) return;
-    if (io.api != acceptedApi)
+    if (io().api != acceptedApi)
       throw new NativeTransportException("Accepted socket belongs to another native library");
     long handle = accepted;
     accepted = 0;
-    if (io.api.socketAdopt(workload, io.driver(), handle) != 0) {
-      io.api.socketDiscard(handle);
+    if (io().api.socketAdopt(workload, io().driver(), handle) != 0) {
+      io().api.socketDiscard(handle);
       throw new NativeTransportException("Native socket adoption failed");
     }
     socket = handle;
-    io.associate(socket, registration);
+    io().associate(socket, registration());
     settings.apply();
     refreshAddresses();
     active = true;
@@ -186,16 +194,16 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
     if (local != null) throw new UnsupportedOperationException("Client local bind");
     long endpoint = endpoint(remote);
     try {
-      socket = io.api.socketConnect(workload, io.driver(), endpoint);
+      socket = io().api.socketConnect(workload, io().driver(), endpoint);
     } finally {
-      io.api.bufferRelease(endpoint);
+      io().api.bufferRelease(endpoint);
     }
-    if (socket == 0) throw NativeTransportException.operation("connect", io.api.lastError());
-    io.associate(socket, registration);
+    if (socket == 0) throw NativeTransportException.operation("connect", io().api.lastError());
+    io().associate(socket, registration());
     try {
       settings.apply();
     } catch (Throwable error) {
-      io.close(socket);
+      io().close(socket);
       socket = 0;
       throw error;
     }
@@ -226,15 +234,17 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
   @Override
   void beginNativeRead() {
     if (!active
-        || tlsContext != null && tls == null
+        || (tlsContext != null && tls == null)
         || inputShutdown
         || receive != 0
-        || !(readRequested || settings.isAutoRead() || tls != null && !tls.ready())) return;
+        || !(readRequested || settings.isAutoRead() || (tls != null && !tls.ready()))) return;
     if (tls != null && tls.ready() && tls.hasPendingRead()) return;
     int capacity = Math.max(1, Math.min(1024 * 1024, unsafe().recvBufAllocHandle().guess()));
     ioStarted = true;
     receiveCapacity = capacity;
-    receive = io.api.socketReceiveNew(workload, io.driver(), socket, io.allocator.owner, capacity);
+    receive =
+        io().api
+            .socketReceiveNew(workload, io().driver(), socket, io().allocator().owner, capacity);
     if (receive == 0) {
       receiveCapacity = 0;
       throw new NativeTransportException("Native receive allocation or admission failed");
@@ -295,7 +305,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
         }
         long handle = event.value;
         event.value = 0;
-        ByteBuf bytes = io.allocator.received(handle, Math.toIntExact(event.result));
+        ByteBuf bytes = io().allocator().received(handle, Math.toIntExact(event.result));
         pipeline().fireChannelRead(bytes);
         pipeline().fireChannelReadComplete();
         beginNativeRead();
@@ -308,7 +318,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
           return;
         }
         if (stagedWrite != 0) {
-          io.api.bufferRelease(stagedWrite);
+          io().api.bufferRelease(stagedWrite);
           stagedWrite = 0;
         }
         if (event.result <= 0 || event.result > sentLength)
@@ -332,7 +342,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
   @Override
   protected void doWrite(ChannelOutboundBuffer outbound) {
     // Connect listeners may flush before TLS starts; leave those writes queued for TLS.
-    if (send != 0 || tlsContext != null && tls == null) return;
+    if (send != 0 || (tlsContext != null && tls == null)) return;
     ioStarted = true;
     if (tls != null) {
       tls.pump();
@@ -349,19 +359,19 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
       long handle;
       int offset;
       if (bytes instanceof NativeByteBuf nativeBytes
-          && nativeBytes.belongsTo(io.api)
+          && nativeBytes.belongsTo(io().api)
           && bytes.refCnt() == 1) {
         handle = nativeBytes.freeze();
         offset = bytes.readerIndex();
       } else {
-        stagedWrite = io.api.bufferNew(io.allocator.owner, sentLength);
+        stagedWrite = io().api.bufferNew(io().allocator().owner, sentLength);
         if (stagedWrite == 0) throw new OutOfMemoryError("Native send budget exhausted");
         try {
-          bytes.getBytes(bytes.readerIndex(), io.api.bufferView(stagedWrite).limit(sentLength));
-          if (io.api.bufferFreeze(stagedWrite, sentLength) != 0)
+          bytes.getBytes(bytes.readerIndex(), io().api.bufferView(stagedWrite).limit(sentLength));
+          if (io().api.bufferFreeze(stagedWrite, sentLength) != 0)
             throw new NativeTransportException("Native send freeze failed");
         } catch (Throwable error) {
-          io.api.bufferRelease(stagedWrite);
+          io().api.bufferRelease(stagedWrite);
           stagedWrite = 0;
           throw error;
         }
@@ -369,10 +379,10 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
         handle = stagedWrite;
         offset = 0;
       }
-      send = io.api.socketSend(workload, io.driver(), socket, handle, offset, sentLength);
+      send = io().api.socketSend(workload, io().driver(), socket, handle, offset, sentLength);
       if (send == 0) {
         if (stagedWrite != 0) {
-          io.api.bufferRelease(stagedWrite);
+          io().api.bufferRelease(stagedWrite);
           stagedWrite = 0;
         }
         throw new NativeTransportException("Native send admission failed");
@@ -393,7 +403,8 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
       tls = null;
     }
     if (accepted != 0) {
-      acceptedApi.socketDiscard(accepted);
+      java.util.Objects.requireNonNull(acceptedApi, "accepted sockets retain their native binding")
+          .socketDiscard(accepted);
       accepted = 0;
     }
     if (connectTimeout != null) {
@@ -405,7 +416,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
       connectPromise = null;
     }
     if (stagedWrite != 0) {
-      io.api.bufferRelease(stagedWrite);
+      io().api.bufferRelease(stagedWrite);
       stagedWrite = 0;
     }
     inputShutdown = outputShutdown = true;
@@ -420,7 +431,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
 
   @Override
   protected void doShutdownOutput() {
-    if (io.api.socketShutdown(io.driver(), socket, 1) != 0)
+    if (io().api.socketShutdown(io().driver(), socket, 1) != 0)
       throw new NativeTransportException("Native output shutdown failed");
     outputShutdown = true;
   }
@@ -480,7 +491,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
           }
           if (direction != 1
               && !inputShutdown
-              && io.api.socketShutdown(io.driver(), socket, 0) != 0) {
+              && io().api.socketShutdown(io().driver(), socket, 0) != 0) {
             promise.tryFailure(new NativeTransportException("Native shutdown failed"));
             return;
           }

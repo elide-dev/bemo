@@ -1,5 +1,7 @@
 """Exercise release rejection paths without credentials or network requests."""
 import os
+import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,6 +45,45 @@ class ReleaseSafetyTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Incomplete signed"):
           release.publish()
         gh.assert_not_called()
+
+  def test_stage_verifies_every_platform_before_copying(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      source = root / "build/release-input"
+      source.mkdir(parents=True)
+      for name in release.expected_assets("0.1.0"):
+        (source / name).write_bytes(name.encode())
+      with patch.object(release, "ROOT", root), patch.object(release, "version", return_value="0.1.0"), \
+           patch.dict(os.environ, {"GITHUB_REPOSITORY": "elide-dev/dokar", "GITHUB_SHA": "tested"}), \
+           patch.object(release, "gh", return_value="verified") as gh:
+        release.stage()
+        self.assertEqual(gh.call_count, len(release.PLATFORMS))
+        for call in gh.call_args_list:
+          self.assertIn("--source-digest", call.args)
+          self.assertIn("tested", call.args)
+          self.assertIn("--deny-self-hosted-runners", call.args)
+        destination = root / "build/release-assets"
+        for line in (destination / "SHA256SUMS").read_text().splitlines():
+          digest, name = line.split("  ")
+          self.assertEqual(digest, hashlib.sha256((destination / name).read_bytes()).hexdigest())
+
+  def test_publish_rejects_uploaded_digest_mismatch(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      destination = root / "build/release-assets"
+      destination.mkdir(parents=True)
+      payload = release.expected_assets("0.1.0") | {"SHA256SUMS"}
+      names = payload | {name + ".sigstore.json" for name in payload}
+      for name in names:
+        (destination / name).write_bytes(b"asset")
+      replies = ["true", '{"enabled":true}', '{"assets":[]}', "uploaded",
+                 json.dumps({"assets": [{"name": name, "digest": "sha256:wrong"} for name in names]})]
+      with patch.object(release, "ROOT", root), patch.object(release, "version", return_value="0.1.0"), \
+           patch.dict(os.environ, {"GITHUB_REPOSITORY": "elide-dev/dokar", "RELEASE_TAG": "v0.1.0"}), \
+           patch.object(release, "gh", side_effect=replies) as gh:
+        with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
+          release.publish()
+        self.assertFalse(any("--draft=false" in call.args for call in gh.call_args_list))
 
 
 if __name__ == "__main__":

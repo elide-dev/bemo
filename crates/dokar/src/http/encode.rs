@@ -154,10 +154,15 @@ pub const CHUNK_TAIL: usize = 7;
 /// Frame a payload already written at `CHUNK_HEADROOM..CHUNK_HEADROOM + payload_len` in
 /// place; returns the range to send. `buffer` must have room for `CHUNK_TAIL` after the
 /// payload. An empty final part yields the terminator alone.
-pub fn frame_chunk(buffer: &mut Buffer, payload_len: usize, final_part: bool) -> Range<usize> {
+///
+/// # Safety
+/// The payload range must be initialized; it may have been written through a foreign pointer.
+pub unsafe fn frame_chunk(buffer: &mut Buffer, payload_len: usize, final_part: bool) -> Range<usize> {
   const TERMINATOR: &[u8] = b"0\r\n\r\n";
+  let end = CHUNK_HEADROOM
+    .checked_add(payload_len)
+    .expect("chunk payload length overflow");
   let raw = buffer.as_uninit();
-  let end = CHUNK_HEADROOM + payload_len;
   if payload_len == 0 && final_part {
     for (slot, byte) in raw[..end].iter_mut().zip(std::iter::repeat(0u8)) {
       slot.write(byte);
@@ -165,6 +170,7 @@ pub fn frame_chunk(buffer: &mut Buffer, payload_len: usize, final_part: bool) ->
     for (slot, byte) in raw[end..end + TERMINATOR.len()].iter_mut().zip(TERMINATOR) {
       slot.write(*byte);
     }
+    // SAFETY: Both the headroom and terminator were initialized above within the checked slices.
     unsafe { buffer.set_len(end + TERMINATOR.len()) };
     return end..end + TERMINATOR.len();
   }
@@ -192,6 +198,7 @@ pub fn frame_chunk(buffer: &mut Buffer, payload_len: usize, final_part: bool) ->
     }
     stop += TERMINATOR.len();
   }
+  // SAFETY: The payload prefix was initialized on entry; framing and tail writes initialized the remainder.
   unsafe { buffer.set_len(stop) };
   start..stop
 }
@@ -582,14 +589,16 @@ mod tests {
     let mut buffer = Buffer::new(CHUNK_HEADROOM + payload.len() + CHUNK_TAIL, Budget::new(1 << 20)).unwrap();
     buffer.write(0, &[0; CHUNK_HEADROOM]).unwrap();
     buffer.write(CHUNK_HEADROOM, &payload).unwrap();
-    let range = frame_chunk(&mut buffer, payload.len(), false);
+    // SAFETY: This test initialized the payload in the owned buffer before framing it.
+    let range = unsafe { frame_chunk(&mut buffer, payload.len(), false) };
     let wire = &buffer.as_init()[range.clone()];
     assert_eq!(range.start, CHUNK_HEADROOM - 2 - 3);
     assert!(wire.starts_with(b"1ab\r\n"));
     assert_eq!(&wire[5..5 + payload.len()], &payload[..]);
     assert!(wire.ends_with(b"x\r\n"));
     assert_eq!(wire.len(), 5 + payload.len() + 2);
-    let range = frame_chunk(&mut buffer, payload.len(), true);
+    // SAFETY: This test initialized the payload in the owned buffer before framing it.
+    let range = unsafe { frame_chunk(&mut buffer, payload.len(), true) };
     let wire = &buffer.as_init()[range];
     assert!(wire.ends_with(b"x\r\n0\r\n\r\n"));
     assert_eq!(wire.len(), 5 + payload.len() + CHUNK_TAIL);
@@ -719,12 +728,14 @@ mod tests {
   #[test]
   fn frame_chunk_empty_final_is_only_the_terminator() {
     let mut buffer = Buffer::new(CHUNK_HEADROOM + CHUNK_TAIL, Budget::new(1 << 20)).unwrap();
-    let range = frame_chunk(&mut buffer, 0, true);
+    // SAFETY: This test initialized the payload in the owned buffer before framing it.
+    let range = unsafe { frame_chunk(&mut buffer, 0, true) };
     assert_eq!(&buffer.as_init()[range], b"0\r\n\r\n");
     let mut buffer = Buffer::new(CHUNK_HEADROOM + 1 + CHUNK_TAIL, Budget::new(1 << 20)).unwrap();
     buffer.write(0, &[0; CHUNK_HEADROOM]).unwrap();
     buffer.write(CHUNK_HEADROOM, b"z").unwrap();
-    let range = frame_chunk(&mut buffer, 1, false);
+    // SAFETY: This test initialized the payload in the owned buffer before framing it.
+    let range = unsafe { frame_chunk(&mut buffer, 1, false) };
     assert_eq!(&buffer.as_init()[range], b"1\r\nz\r\n");
   }
 }

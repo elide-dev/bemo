@@ -403,6 +403,7 @@ pub unsafe fn elide_transport_buffer_view(handle: u64, output: *mut BufferView) 
       flags: READ_ONLY,
     },
   };
+  // SAFETY: The caller supplies a non-null, aligned writable BufferView output.
   unsafe { output.write(view) };
   0
 }
@@ -423,6 +424,7 @@ pub unsafe fn elide_transport_buffer_freeze(handle: u64, length: u64) -> i32 {
     return INVALID;
   }
   // All foreign-accessible capacity was initialized on allocation.
+  // SAFETY: Allocation initialized all foreign-accessible capacity; length is checked above.
   unsafe { buffer.set_len(length) };
   let Some(Storage::Mutable(buffer)) = buffers.remove(&handle) else {
     return INVALID;

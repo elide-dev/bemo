@@ -164,6 +164,7 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
       };
       let mut buffer = Buffer::new(size, budget.clone())?;
       let length = encode.encode(buffer.ensure_init()).map_err(tls_error)?;
+      // SAFETY: ensure_init initialized all capacity; encode returned its written length.
       unsafe { buffer.set_len(length) };
       step.output = Some(buffer.freeze());
       step.state = State::Encoded;
@@ -202,6 +203,7 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
           match encrypt(output) {
             Ok(length) => {
               if let Some(mut buffer) = buffer {
+                // SAFETY: Encryption received fully initialized capacity and returned the length written.
                 unsafe { buffer.set_len(length) };
                 step.output = Some(buffer.freeze());
               }

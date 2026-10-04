@@ -549,6 +549,7 @@ pub(super) fn chunk(state: &mut DriverState, exchange: u64, buffer: u64, length:
   {
     return INVALID;
   }
+  // SAFETY: prepare initialized the full capacity, and the length bound was checked above.
   unsafe {
     storage.set_len(CHUNK_HEADROOM + length);
   }

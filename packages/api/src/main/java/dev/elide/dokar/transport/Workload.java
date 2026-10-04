@@ -5,8 +5,8 @@
 
 package dev.elide.dokar.transport;
 
+import java.util.EnumMap;
 import java.util.IdentityHashMap;
-import java.util.Map;
 
 /**
  * Transport workload tokens. A workload is a native owner handle named by every operation that
@@ -29,7 +29,8 @@ public final class Workload {
   // Operations charge their storage to explicit owners; profile workloads carry no bound yet.
   private static final long LIMIT = Long.MAX_VALUE;
 
-  private static final Map<TransportNative, long[]> IDS = new IdentityHashMap<>();
+  private static final IdentityHashMap<TransportNative, EnumMap<Profile, Long>> IDS =
+      new IdentityHashMap<>();
 
   private Workload() {}
 
@@ -40,12 +41,12 @@ public final class Workload {
 
   /** The workload of {@code profile} for this binding, minted on first use. */
   public static synchronized long id(TransportNative api, Profile profile) {
-    long[] ids = IDS.computeIfAbsent(api, key -> new long[Profile.values().length]);
-    long id = ids[profile.ordinal()];
+    EnumMap<Profile, Long> ids = IDS.computeIfAbsent(api, key -> new EnumMap<>(Profile.class));
+    long id = ids.getOrDefault(profile, 0L);
     if (id == 0) {
       id = api.ownerNew(LIMIT);
       if (id == 0) throw new IllegalStateException("Native workload unavailable");
-      ids[profile.ordinal()] = id;
+      ids.put(profile, id);
     }
     return id;
   }
@@ -55,9 +56,8 @@ public final class Workload {
    * fresh one.
    */
   public static synchronized void close(TransportNative api, Profile profile) {
-    long[] ids = IDS.get(api);
-    if (ids == null || ids[profile.ordinal()] == 0) return;
-    api.ownerRelease(ids[profile.ordinal()]);
-    ids[profile.ordinal()] = 0;
+    EnumMap<Profile, Long> ids = IDS.get(api);
+    if (ids == null || !ids.containsKey(profile)) return;
+    api.ownerRelease(ids.remove(profile));
   }
 }

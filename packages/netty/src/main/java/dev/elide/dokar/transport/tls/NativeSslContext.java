@@ -20,6 +20,7 @@ import java.util.List;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSessionContext;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Netty {@link SslContext} over an immutable Rustls configuration; {@link #newHandler} yields a
@@ -34,7 +35,7 @@ public final class NativeSslContext extends SslContext implements ReferenceCount
   private final List<String> protocols;
   private final List<String> enabledProtocols;
   private final List<String> cipherSuites;
-  private final byte[] localChain;
+  private final byte @Nullable [] localChain;
   private final SessionContext sessions = new SessionContext();
   private final AbstractReferenceCounted references =
       new AbstractReferenceCounted() {
@@ -49,7 +50,7 @@ public final class NativeSslContext extends SslContext implements ReferenceCount
         }
       };
   private long handle;
-  private X509Certificate[] localCertificates;
+  private X509Certificate @Nullable [] localCertificates;
 
   NativeSslContext(
       TransportNative api,
@@ -59,7 +60,7 @@ public final class NativeSslContext extends SslContext implements ReferenceCount
       List<String> protocols,
       List<String> enabledProtocols,
       List<String> cipherSuites,
-      byte[] localChain,
+      byte @Nullable [] localChain,
       boolean startTls) {
     super(startTls);
     this.api = api;
@@ -73,7 +74,7 @@ public final class NativeSslContext extends SslContext implements ReferenceCount
   }
 
   /** Native engine for {@code name} (clients) or null (servers); zero when released or invalid. */
-  synchronized long newEngine(byte[] name) {
+  synchronized long newEngine(byte @Nullable [] name) {
     return handle == 0 ? 0 : api.engineNew(workload, handle, name);
   }
 
@@ -86,7 +87,7 @@ public final class NativeSslContext extends SslContext implements ReferenceCount
   }
 
   /** Configured local identity chain, parsed on first use. */
-  synchronized X509Certificate[] localCertificates() {
+  synchronized X509Certificate @Nullable [] localCertificates() {
     if (localChain == null) return null;
     if (localCertificates == null) {
       try {
@@ -130,7 +131,7 @@ public final class NativeSslContext extends SslContext implements ReferenceCount
   }
 
   @Override
-  public SSLEngine newEngine(ByteBufAllocator alloc, String peerHost, int peerPort) {
+  public SSLEngine newEngine(ByteBufAllocator alloc, @Nullable String peerHost, int peerPort) {
     return new NativeSslEngine(this, peerHost, peerPort);
   }
 
@@ -182,7 +183,7 @@ public final class NativeSslContext extends SslContext implements ReferenceCount
     private volatile int size;
 
     @Override
-    public SSLSession getSession(byte[] sessionId) {
+    public @Nullable SSLSession getSession(byte[] sessionId) {
       return null;
     }
 

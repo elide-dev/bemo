@@ -6,18 +6,19 @@ package dev.elide.dokar.transport;
 
 import java.net.SocketAddress;
 import java.net.UnixDomainSocketAddress;
+import org.jspecify.annotations.Nullable;
 
 /** Native Unix byte-stream client; descriptor passing and local bind are not supported. */
 @SuppressWarnings("deprecation")
 public final class NativeDomainSocketChannel extends NativeStreamChannel {
-  private UnixDomainSocketAddress destination;
+  private @Nullable UnixDomainSocketAddress destination;
 
   public NativeDomainSocketChannel() {}
 
   @Override
   long endpoint(SocketAddress address) {
     destination = (UnixDomainSocketAddress) address;
-    return io.unixEndpoint(destination);
+    return io().unixEndpoint(destination);
   }
 
   @Override

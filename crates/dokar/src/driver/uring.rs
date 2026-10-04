@@ -54,6 +54,7 @@ struct BufferRing {
 impl BufferRing {
   fn new(proactor: &mut Proactor, group: u16, entries: u16) -> io::Result<Self> {
     // Registration requires page-aligned descriptor storage; payload is separately budgeted.
+    // SAFETY: Anonymous mmap requests a fresh page; no existing mapping or pointer is replaced.
     let pointer = unsafe {
       libc::mmap(
         std::ptr::null_mut(),
@@ -70,6 +71,7 @@ impl BufferRing {
     let pointer = NonNull::new(pointer.cast::<types::BufRingEntry>()).expect("mmap returned null");
     let mut retries = 0;
     loop {
+      // SAFETY: The page-aligned ring remains allocated until successful unregister.
       match unsafe { proactor.owner_register_buf_ring(pointer.as_ptr() as u64, entries, group) } {
         Ok(()) => break,
         // Closed rings release their pinned pages asynchronously, so a concurrent owner retiring
@@ -80,6 +82,7 @@ impl BufferRing {
           std::thread::sleep(Duration::from_millis(10));
         }
         Err(error) => {
+          // SAFETY: Registration failed; this function still exclusively owns the mapped page.
           unsafe {
             libc::munmap(pointer.as_ptr().cast(), 4096);
           }
@@ -98,17 +101,20 @@ impl BufferRing {
   }
 
   fn publish(&mut self, descriptor: crate::buffer::provided::Descriptor) {
+    // SAFETY: mask bounds the index to the mapped ring; publication is owner-thread confined.
     let entry = unsafe { &mut *self.pointer.as_ptr().add(usize::from(self.tail & self.mask)) };
     entry.set_addr(descriptor.pointer as u64);
     entry.set_len(descriptor.capacity as u32);
     entry.set_bid(descriptor.id);
     self.tail = self.tail.wrapping_add(1);
+    // SAFETY: The ring ABI tail is u16-aligned and published atomically to the kernel.
     let tail = unsafe { &*types::BufRingEntry::tail(self.pointer.as_ptr()).cast::<AtomicU16>() };
     tail.store(self.tail, Ordering::Release);
   }
 
   fn release(self, proactor: &mut Proactor, group: u16) -> io::Result<()> {
     proactor.owner_unregister_buf_ring(group)?;
+    // SAFETY: Unregister completed above, so the kernel no longer retains this mmap page.
     if unsafe { libc::munmap(self.pointer.as_ptr().cast(), 4096) } == -1 {
       return Err(io::Error::last_os_error());
     }
@@ -349,7 +355,15 @@ impl Persistent {
       send: None,
       notifications: 0,
       zero_copy_disabled: false,
-      message: Box::new(unsafe { std::mem::zeroed() }),
+      message: Box::new(libc::msghdr {
+        msg_name: std::ptr::null_mut(),
+        msg_namelen: 0,
+        msg_iov: std::ptr::null_mut(),
+        msg_iovlen: 0,
+        msg_control: std::ptr::null_mut(),
+        msg_controllen: 0,
+        msg_flags: 0,
+      }),
       vectors: Vec::with_capacity(8),
     });
     connection.persistent.set(Some(index));
@@ -570,6 +584,7 @@ impl Persistent {
         >= super::send_zc::THRESHOLD
       && self.zero_copy.retain(token, views);
     let entry = Self::send_entry(state, index, views, zero_copy);
+    // SAFETY: Slot state and send leases retain the msghdr, iovecs, and payload until retirement.
     if let Err(error) = unsafe { proactor.owner_push(entry, token) } {
       if zero_copy {
         self.zero_copy.abandon(token);
@@ -663,6 +678,7 @@ impl Persistent {
         send.token = token;
         let state = slot.state.as_mut().unwrap();
         let entry = Self::send_entry(state, index, send.buffers.views(), false);
+        // SAFETY: The slot retains send storage across retries until the submitted operation retires.
         unsafe { proactor.owner_push(entry, token) }
       })
     };
@@ -775,6 +791,7 @@ impl Persistent {
       && let Some(target) = state.receive.filter(|_| state.receive_cancel.is_none())
     {
       let token = Self::token(slot, index, CANCEL_RECEIVE)?;
+      // SAFETY: Cancellation carries only an operation token and no borrowed memory.
       match unsafe { proactor.owner_push(opcode::AsyncCancel::new((target << 1) | 1).build(), token) } {
         Ok(()) => slot.state.as_mut().unwrap().receive_cancel = Some(token),
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => self.ready.mark(index),
@@ -790,6 +807,7 @@ impl Persistent {
         .map(|send| send.token)
     {
       let token = Self::token(slot, index, CANCEL_SEND)?;
+      // SAFETY: Cancellation carries only an operation token and no borrowed memory.
       match unsafe { proactor.owner_push(opcode::AsyncCancel::new((target << 1) | 1).build(), token) } {
         Ok(()) => slot.state.as_mut().unwrap().send_cancel = Some(token),
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => self.ready.mark(index),
@@ -813,6 +831,7 @@ impl Persistent {
       group.members -= 1;
       if group.members == 0 {
         group.ring.take().unwrap().release(proactor, group_index as u16)?;
+        // SAFETY: All members retired and the ring was unregistered before freeing published buffers.
         unsafe {
           group.pool.retire_published();
         }
@@ -863,6 +882,7 @@ impl Persistent {
       };
       let group = slot.state.as_ref().unwrap().group;
       let entry = opcode::RecvMulti::new(types::Fixed(index as u32), group as u16).build();
+      // SAFETY: The registered ring, provided buffers, and fixed socket remain live until retirement.
       match unsafe { proactor.owner_push(entry, token) } {
         Ok(()) => {
           slot.state.as_mut().unwrap().receive = Some(token);
@@ -894,6 +914,7 @@ impl Persistent {
         let group = self.groups[state.group].as_mut().unwrap();
         let buffer = if let Some(id) = selected {
           let length = usize::try_from(completion.result).unwrap_or(0);
+          // SAFETY: The kernel selected this published id and reports its initialized byte count.
           let buffer = unsafe { group.pool.complete(id, length)? };
           group.published = group.published.checked_sub(1).ok_or(io::ErrorKind::InvalidData)?;
           Some(buffer)
@@ -1050,6 +1071,7 @@ fn probe(mut proactor: Proactor) -> io::Result<Proactor> {
     }
     // A real MORE+BUFFER completion verifies modifiers that opcode probing cannot establish.
     let entry = opcode::RecvMulti::new(types::Fixed(0), 0).build();
+    // SAFETY: The probe owns the fixed socket and registered pool until cancellation retirement.
     unsafe {
       proactor.owner_push(entry, 0)?;
     }
@@ -1068,6 +1090,7 @@ fn probe(mut proactor: Proactor) -> io::Result<Proactor> {
         if completion.token == 0 {
           if completion.result == 1 && cqueue::more(completion.flags) {
             let id = cqueue::buffer_select(completion.flags).ok_or(io::ErrorKind::InvalidData)?;
+            // SAFETY: This successful CQE initialized one byte in the selected published buffer.
             let lease = unsafe { pool.complete(id, 1)? };
             drop(lease);
             selected = true;
@@ -1093,6 +1116,7 @@ fn probe(mut proactor: Proactor) -> io::Result<Proactor> {
       }
       if selected && !cancel_submitted {
         // Owner token zero is encoded by CompIO as user_data 1.
+        // SAFETY: AsyncCancel carries a token only; all probe storage remains retained.
         unsafe {
           proactor.owner_push(opcode::AsyncCancel::new(1).build(), 1)?;
         }
@@ -1115,6 +1139,7 @@ fn probe(mut proactor: Proactor) -> io::Result<Proactor> {
     ));
   }
   ring.release(&mut proactor, 0)?;
+  // SAFETY: The receive retired and ring unregistration completed before releasing published slots.
   unsafe {
     pool.retire_published();
   }

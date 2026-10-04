@@ -37,3 +37,5 @@ before remote CI success can be asserted.
 
 See [measurement.md](measurement.md) for report paths, Codecov activation,
 Nextest profiles, continuous CodSpeed benchmarks, and RSS/RPS interpretation.
+
+Strictness, pinned local tools, and hook commands are described in [checks](checks.md).

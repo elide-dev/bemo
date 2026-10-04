@@ -150,6 +150,7 @@ impl Lane {
       let remaining = input.len() - step.discard;
       input.copy_within(step.discard.., 0);
       if let Some(input) = &mut self.input {
+        // SAFETY: Compaction only shortens the initialized input prefix.
         unsafe { input.set_len(remaining) };
       }
       if remaining == 0 {

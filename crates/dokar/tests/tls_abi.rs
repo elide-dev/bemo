@@ -15,15 +15,20 @@ fn frozen(owner: u64, bytes: &[u8]) -> u64 {
   let handle = elide_transport_buffer_new(owner, bytes.len() as u64);
   assert_ne!(handle, 0);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), view.address.cast::<u8>(), bytes.len()) };
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(handle, bytes.len() as u64) }, 0);
   handle
 }
 
 fn contents(handle: u64) -> Vec<u8> {
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), view.length as usize) }.to_vec()
 }
 
@@ -35,11 +40,14 @@ fn fields(descriptor: u64) -> [u64; 4] {
 
 fn completion(driver: u64, batch: u64, kind: u32) -> (u64, i64) {
   for _ in 0..64 {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 1_000_000_000, batch, 8) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let event = unsafe { &*view.address.cast::<NativeEvent>().add(index) };
       if event.kind == kind {
         return (event.value, event.result);

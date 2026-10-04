@@ -548,8 +548,14 @@ pub unsafe fn elide_transport_driver_poll(driver: u64, timeout_ns: u64, batch: u
     super::http::retry_deferred(state, &mut out);
     let count = out.len().min(maximum);
     for (index, event) in out.drain(..count).enumerate() {
-      // Buffer storage is aligned by mimalloc and all fields (including reserved) are initialized.
-      unsafe { buffer.buf_mut_ptr().cast::<NativeEvent>().add(index).write(event) };
+      // SAFETY: The buffer owns count event-sized slots; write_unaligned does not assume byte-buffer alignment.
+      unsafe {
+        buffer
+          .buf_mut_ptr()
+          .add(index * size_of::<NativeEvent>())
+          .cast::<NativeEvent>()
+          .write_unaligned(event)
+      };
     }
     state.http.overflow.extend(out);
     // An idle poll is the point at which retained receive storage is no longer earning its budget.
@@ -764,6 +770,7 @@ pub unsafe fn elide_transport_driver_poll_callback(
     return INVALID;
   };
   poll_callback(workload, driver, timeout_ns, maximum, 1, |events| {
+    // SAFETY: The caller supplies a live callback/context; this event slice stays live until it returns.
     if unsafe { callback(context, events.as_ptr()) } == 0 {
       1
     } else {
@@ -791,6 +798,7 @@ pub unsafe fn elide_transport_driver_poll_batch_callback(
   let Some(callback) = callback else {
     return INVALID;
   };
+  // SAFETY: The caller supplies a live callback/context; the batch stays live for the synchronous call.
   poll_callback(workload, driver, timeout_ns, maximum, 64, |events| unsafe {
     callback(context, events.as_ptr(), events.len() as u32)
   })

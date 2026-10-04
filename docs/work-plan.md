@@ -3,30 +3,45 @@
 Keep this checklist current as requests arrive. A configuration edit is not
 complete until its checks have been exercised; record limitations explicitly.
 
+## Before the next push
+
+- [x] Investigate the Windows failure in
+  `dokar::http native_h2_multiplexes_responses_over_verified_tls` using CI evidence.
+- [x] Fix the cause or establish a supported diagnosis, and run the relevant
+  regression checks. Do not mask the failure with retries.
+- [x] Implement and locally verify the fix before pushing the pending commits.
+
+CI recorded `ConnectionAborted` when polling H2 connection completion. The
+platform-specific reciprocal TLS shutdown is the suspected cause. The test adapter
+now accepts platform disconnect errors only after authenticated TLS close_notify;
+application reads/writes and unauthenticated EOF remain errors. Its regression
+contract and the H2 exchange passed 20 consecutive local runs without retries.
+Windows execution remains pending CI; this host is macOS.
+
 ## JVM strictness
 
 - [x] Inspect the existing Elide compilation and dependency setup.
 - [x] Resolve pinned Error Prone, NullAway, JSpecify, and Checker Framework dependencies.
-- [ ] Integrate Error Prone and NullAway into the Elide-owned compilation checks.
-- [ ] Apply JSpecify package defaults and correct nullable API contracts.
-- [ ] Integrate Checker Framework checks with an explicit, documented scope.
-- [ ] Verify analyzers reject representative invalid code.
-- [ ] Preserve published dependency isolation and validate JVM contracts.
+- [x] Integrate Error Prone and NullAway into the Elide-owned compilation checks.
+- [x] Apply JSpecify package defaults and correct nullable API contracts.
+- [x] Integrate Checker Framework checks with an explicit, documented scope.
+- [x] Verify analyzers reject representative invalid code.
+- [x] Preserve published dependency isolation and validate JVM contracts.
 
 ## Rust strictness
 
 - [x] Compare Bali's lint and dependency policies with Dokar's workspace.
-- [ ] Enable inherited workspace lints for the core and resolve findings.
-- [ ] Preserve existing documentation checks on the FFI crate.
-- [ ] Add cargo-deny policy with reviewed dependency exceptions where needed.
-- [ ] Validate Clippy, formatting, documentation, and the Git dependency consumer.
+- [x] Enable inherited workspace lints for the core and resolve findings.
+- [x] Preserve existing documentation checks on the FFI crate.
+- [x] Add cargo-deny policy with reviewed dependency exceptions where needed.
+- [x] Validate Clippy, formatting, documentation, and the Git dependency consumer.
 
 ## Toolchains, formatting, and hooks
 
-- [ ] Pin development tools with Mise and check in the tool lockfile.
-- [ ] Configure hk hooks around the same checks used in CI.
-- [ ] Wire Cargo fmt and Elide-driven Java formatting into hooks and CI.
-- [ ] Document setup and the supported check commands.
+- [x] Pin development tools with Mise and check in the tool lockfile.
+- [x] Configure hk hooks around the same checks used in CI.
+- [x] Wire Cargo fmt and Elide-driven Java formatting into hooks and CI.
+- [x] Document setup and the supported check commands.
 
 ## Continuous benchmarks
 
@@ -41,27 +56,33 @@ Benchmark workflow wiring passes Actionlint; execution will be verified in CI.
 ## Release automation and supply-chain integrity
 
 - [x] Configure Release Please for coordinated Cargo and Maven version updates.
-- [ ] Stage and verify all release artifacts before publishing an immutable release.
-- [ ] Configure SLSA Level 2 provenance and document the build trust boundary.
-- [ ] Sign release artifacts with Sigstore and document consumer verification.
+- [x] Implement staging and verification before immutable release publication.
+- [x] Configure SLSA Level 2 provenance and document the build trust boundary.
+- [x] Configure Sigstore artifact signing and document consumer verification.
+- [ ] Qualify provenance, signatures, and immutability with the first real CI release.
 - [x] Verify repository settings, workflow permissions, and release-only credentials.
 
 ## Verification and delivery
 
-- [ ] Run the relevant `make build`, `make check`, `make test`, and
+- [x] Run the relevant `make build`, `make check`, `make test`, and
   `make test-native-image` checks, recording unavailable checks explicitly.
-- [ ] Review the complete diff for consistency across local commands and CI.
-- [ ] Commit coherent changes, with verification results recorded.
+- [x] Review the complete diff for consistency across local commands and CI.
+- [x] Commit coherent changes, with verification results recorded.
 - [ ] Push authorized changes and report CI results or pending checks accurately.
 
 ## Current verification notes
 
 - Analyzer dependencies resolved successfully through `make deps`.
-- The initial stricter Clippy run failed: 188 missing unsafe-block safety comments,
-  six pointer-alignment findings, three `mem::forget` findings, and two large
-  stack-array findings. Review the ownership and alignment invariants before
-  fixing these; do not suppress them wholesale.
-- Release automation passes Actionlint and four rejection-path tests. Build
+- `make check` passed, including four analyzer rejection contracts, Clippy,
+  documentation, formatting, and cargo-deny without dependency exceptions.
+- `make test` passed: 299 Rust tests, doctests, the external Git dependency
+  contract, and the JVM/C ABI contracts.
+- `make test-native-image` passed both metadata and full Netty/TLS contracts.
+  Verification caught and corrected an unsynchronized handshake-promise initializer
+  in the pending Java strictness changes.
+- `make build`, `make package`, and `tools/verify_package.py` passed, including
+  Maven metadata, resource extraction, FFM TLS, and static linkage.
+- Release automation passes Actionlint and six staging/publication contract tests. Build
   provenance and signing require a real CI release to verify the deployed flow.
 - Repository release immutability is enabled; the release environment only
   permits deployments from `main`. No Central publishing credentials are needed.

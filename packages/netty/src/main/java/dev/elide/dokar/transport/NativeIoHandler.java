@@ -17,6 +17,7 @@ import java.nio.ByteOrder;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.jspecify.annotations.Nullable;
 
 /** Embeds one Rust completion driver on each Netty I/O thread. */
 public final class NativeIoHandler implements IoHandler {
@@ -45,10 +46,14 @@ public final class NativeIoHandler implements IoHandler {
   private long workload;
   private long owner;
   private long batch;
-  private ByteBuffer events;
-  NativeByteBufAllocator allocator;
+  private @Nullable ByteBuffer events;
+  @Nullable NativeByteBufAllocator allocator;
   private long iteration;
-  private String backendName;
+  private String backendName = "uninitialized";
+
+  NativeByteBufAllocator allocator() {
+    return java.util.Objects.requireNonNull(allocator, "native driver must be initialized");
+  }
 
   private NativeIoHandler(
       ThreadAwareExecutor executor,
@@ -142,11 +147,13 @@ public final class NativeIoHandler implements IoHandler {
     try {
       for (int i = 0; i < count; i++) {
         int offset = i * 40;
-        completion.operation = events.getLong(offset);
-        completion.socket = events.getLong(offset + 8);
-        completion.value = events.getLong(offset + 16);
-        completion.result = events.getLong(offset + 24);
-        completion.kind = events.getInt(offset + 32);
+        ByteBuffer eventBuffer =
+            java.util.Objects.requireNonNull(events, "native event storage must be initialized");
+        completion.operation = eventBuffer.getLong(offset);
+        completion.socket = eventBuffer.getLong(offset + 8);
+        completion.value = eventBuffer.getLong(offset + 16);
+        completion.result = eventBuffer.getLong(offset + 24);
+        completion.kind = eventBuffer.getInt(offset + 32);
         if (flight != null) {
           if (completion.result < 0) flight.errors++;
           switch (completion.kind) {
@@ -320,7 +327,7 @@ public final class NativeIoHandler implements IoHandler {
     }
   }
 
-  InetSocketAddress address(long socket, boolean peer) {
+  @Nullable InetSocketAddress address(long socket, boolean peer) {
     long handle = api.bufferNew(owner, 24);
     if (handle == 0) throw new OutOfMemoryError("Native endpoint budget exhausted");
     try {
@@ -357,7 +364,9 @@ public final class NativeIoHandler implements IoHandler {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "TypeParameterUnusedInFormals"})
+    // This generic signature is required by Netty IoRegistration.
+
     public <T> T attachment() {
       return (T) this;
     }

@@ -16,9 +16,24 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write
     steps:
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           skip-github-release: true
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Verify the generated release branch
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch="$(jq -r .headBranchName <<<"$RELEASE_PR")"
+          test "$(jq -r .baseBranchName <<<"$RELEASE_PR")" = main
+          test "$branch" = release-please--branches--main
+          # GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
+          # workflow_dispatch does trigger, without a second long-lived token.
+          gh workflow run on.push.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"

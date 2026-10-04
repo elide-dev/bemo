@@ -35,20 +35,21 @@ public final class NativeServerSocketChannel extends NativeChannel implements Se
 
   @Override
   protected void doBind(SocketAddress address) {
-    long endpoint = io.endpoint((InetSocketAddress) address);
+    long endpoint = io().endpoint((InetSocketAddress) address);
     try {
       socket =
-          io.api.socketListen(
-              workload,
-              io.driver(),
-              endpoint,
-              settings.getBacklog(),
-              settings.isReuseAddress() ? 1 : 0);
+          io().api
+              .socketListen(
+                  workload,
+                  io().driver(),
+                  endpoint,
+                  settings.getBacklog(),
+                  settings.isReuseAddress() ? 1 : 0);
     } finally {
-      io.api.bufferRelease(endpoint);
+      io().api.bufferRelease(endpoint);
     }
-    if (socket == 0) throw NativeTransportException.operation("bind", io.api.lastError());
-    io.associate(socket, registration);
+    if (socket == 0) throw NativeTransportException.operation("bind", io().api.lastError());
+    io().associate(socket, registration());
     settings.apply();
     refreshAddresses();
     active = true;
@@ -57,7 +58,7 @@ public final class NativeServerSocketChannel extends NativeChannel implements Se
   @Override
   void beginNativeRead() {
     if (!active || accept != 0 || !(readRequested || settings.isAutoRead())) return;
-    accept = io.api.socketAccept(workload, io.driver(), socket);
+    accept = io().api.socketAccept(workload, io().driver(), socket);
     if (accept == 0) throw new NativeTransportException("Native accept admission failed");
   }
 
@@ -67,7 +68,7 @@ public final class NativeServerSocketChannel extends NativeChannel implements Se
     accept = 0;
     if (!open) return;
     if (event.result < 0) throw NativeTransportException.operation("accept", event.result);
-    NativeSocketChannel child = new NativeSocketChannel(this, io.api, event.value);
+    NativeSocketChannel child = new NativeSocketChannel(this, io().api, event.value);
     event.value = 0;
     readRequested = false;
     pipeline().fireChannelRead(child);

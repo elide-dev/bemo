@@ -794,10 +794,13 @@ mod tests {
       } else {
         Input::Mutable(&mut wire)
       };
-      assert!(server.unwrap(input, &mut [0; MAX_RECORD]).is_err());
+      assert!(server.unwrap(input, &mut vec![0; MAX_RECORD]).is_err());
       assert!(server.failure().is_some());
       assert!(server.inbound_done());
-      assert_eq!(server.wrap(&[], &mut [0; MAX_RECORD]).unwrap().status, Status::Closed);
+      assert_eq!(
+        server.wrap(&[], &mut vec![0; MAX_RECORD]).unwrap().status,
+        Status::Closed
+      );
       assert_eq!(budget.used(), 0);
     }
   }

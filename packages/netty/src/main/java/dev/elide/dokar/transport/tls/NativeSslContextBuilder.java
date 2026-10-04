@@ -21,6 +21,7 @@ import java.util.List;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a {@link NativeSslContext} from PEM or DER inputs. JDK trust managers are read once as
@@ -32,10 +33,10 @@ public final class NativeSslContextBuilder {
   private final boolean client;
   private final ByteArrayOutputStream pem = new ByteArrayOutputStream();
   private final List<byte[]> der = new ArrayList<>();
-  private byte[] keyPem;
-  private byte[] keyDer;
-  private byte[] clientChain;
-  private byte[] clientIdentities;
+  private byte @Nullable [] keyPem;
+  private byte @Nullable [] keyDer;
+  private byte @Nullable [] clientChain;
+  private byte @Nullable [] clientIdentities;
   private List<String> protocols = List.of();
   private List<String> tlsProtocols = NativeSslSession.PROTOCOLS;
   private List<String> cipherSuites = NativeSslSession.CIPHER_SUITES;
@@ -129,7 +130,7 @@ public final class NativeSslContextBuilder {
           certificates.writeBytes(certificate.getEncoded());
         output.writeInt(certificates.size());
         certificates.writeTo(output);
-        byte[] key = identity.key().getEncoded();
+        byte @Nullable [] key = identity.key().getEncoded();
         try {
           if (key == null || !"PKCS#8".equals(identity.key().getFormat()))
             throw new IllegalArgumentException("Private key must be PKCS#8 encodable");
@@ -196,7 +197,7 @@ public final class NativeSslContextBuilder {
   }
 
   /** Add PEM trust anchors (clients). */
-  public NativeSslContextBuilder trustAnchors(byte[] certificatesPem) {
+  public NativeSslContextBuilder trustAnchors(byte @Nullable [] certificatesPem) {
     requireClient();
     pem.writeBytes(certificatesPem);
     pem.write('\n');
@@ -317,7 +318,7 @@ public final class NativeSslContextBuilder {
   public NativeSslContext build() {
     boolean derMode = pem.size() == 0 && keyPem == null;
     ByteArrayOutputStream chain = new ByteArrayOutputStream();
-    byte[] key;
+    byte @Nullable [] key;
     if (derMode) {
       der.forEach(chain::writeBytes);
       key = keyDer;
@@ -342,9 +343,10 @@ public final class NativeSslContextBuilder {
       alpn.write(protocol.length());
       alpn.writeBytes(protocol.getBytes(StandardCharsets.US_ASCII));
     }
-    byte[] certificates = chain.toByteArray();
+    byte @Nullable [] certificates = chain.toByteArray();
     if (clientIdentities != null) key = clientIdentities;
     if (clientChain != null) {
+      java.util.Objects.requireNonNull(key, "client identity requires a private key");
       byte[] identity = new byte[clientChain.length + 1 + key.length];
       System.arraycopy(clientChain, 0, identity, 0, clientChain.length);
       identity[clientChain.length] = '\n';

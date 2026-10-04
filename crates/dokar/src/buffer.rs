@@ -53,11 +53,14 @@ mod rust_alloc {
   }
 
   pub(super) unsafe fn mi_malloc(size: usize) -> *mut c_void {
+    // SAFETY: layout returns a nonzero valid layout, including header space and MI_ALIGN alignment.
     let base = unsafe { alloc(layout(size)) };
     if base.is_null() {
       return std::ptr::null_mut();
     }
-    unsafe { base.cast::<usize>().write(size) };
+    // SAFETY: The allocation includes a usize-sized header; unaligned access avoids strengthening the pointer type.
+    unsafe { base.cast::<usize>().write_unaligned(size) };
+    // SAFETY: The allocation includes MI_ALIGN header bytes before its payload.
     unsafe { base.add(MI_ALIGN) }.cast::<c_void>()
   }
 
@@ -65,8 +68,11 @@ mod rust_alloc {
     if pointer.is_null() {
       return;
     }
+    // SAFETY: pointer was returned by mi_malloc; its allocation includes the preceding header.
     let base = unsafe { pointer.cast::<u8>().sub(MI_ALIGN) };
-    let size = unsafe { base.cast::<usize>().read() };
+    // SAFETY: mi_malloc initialized this header; use an unaligned read from the byte pointer.
+    let size = unsafe { base.cast::<usize>().read_unaligned() };
+    // SAFETY: base and the recovered layout match the original alloc call exactly.
     unsafe { dealloc(base, layout(size)) };
   }
 }
@@ -159,7 +165,9 @@ struct Allocation {
 }
 
 // Mutable Buffer regions never overlap; FrozenBuffer shares only immutable regions.
+// SAFETY: Mutable Buffer regions never overlap; FrozenBuffer shares only immutable regions.
 unsafe impl Send for Allocation {}
+// SAFETY: Shared allocations expose mutation only through disjoint, exclusively owned Buffer regions.
 unsafe impl Sync for Allocation {}
 
 impl Drop for Allocation {
@@ -178,6 +186,7 @@ impl Drop for Allocation {
     {
       return;
     }
+    // SAFETY: The final owner releases the mi_malloc allocation exactly once after pool return was declined.
     unsafe { mi_free(self.pointer.as_ptr().cast::<c_void>()) };
     self.budget.0.used.fetch_sub(self.capacity, Ordering::AcqRel);
   }
@@ -208,6 +217,7 @@ thread_local! {
 
 impl Pool {
   fn discard(entry: Pooled) {
+    // SAFETY: This pool entry exclusively owns a mi_malloc allocation with no outstanding buffer leases.
     unsafe { mi_free(entry.pointer.as_ptr().cast::<c_void>()) };
   }
 
@@ -410,6 +420,7 @@ impl Buffer {
       return Err(io::ErrorKind::InvalidInput.into());
     }
     budget.reserve(capacity)?;
+    // SAFETY: capacity is nonzero and within isize::MAX; the paired free retains this allocator identity.
     let pointer = NonNull::new(unsafe { mi_malloc(capacity) }.cast::<u8>());
     let Some(pointer) = pointer else {
       budget.0.used.fetch_sub(capacity, Ordering::AcqRel);
@@ -439,12 +450,14 @@ impl Buffer {
     let Some(end) = end.filter(|_| offset <= self.length) else {
       return Err(io::ErrorKind::InvalidInput.into());
     };
+    // SAFETY: Bounds were checked; exclusive ownership of this Buffer region prevents overlap with bytes.
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.pointer().add(offset), bytes.len()) };
     self.length = self.length.max(end);
     Ok(())
   }
 
   fn pointer(&self) -> *mut u8 {
+    // SAFETY: Buffer geometry confines offset to its live allocation, including one-past-end empty regions.
     unsafe { self.allocation.pointer.as_ptr().add(self.offset) }
   }
 
@@ -497,6 +510,7 @@ impl Buffer {
 
 impl IoBuf for Buffer {
   fn as_init(&self) -> &[u8] {
+    // SAFETY: length covers only initialized bytes in this live owned region.
     unsafe { std::slice::from_raw_parts(self.pointer(), self.length) }
   }
 }
@@ -510,6 +524,7 @@ impl SetLen for Buffer {
 
 impl IoBufMut for Buffer {
   fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    // SAFETY: This Buffer exclusively owns capacity bytes; MaybeUninit permits unread initialization state.
     unsafe { std::slice::from_raw_parts_mut(self.pointer().cast(), self.capacity) }
   }
 }
@@ -580,6 +595,7 @@ impl FrozenBuffer {
 
 impl AsRef<[u8]> for FrozenBuffer {
   fn as_ref(&self) -> &[u8] {
+    // SAFETY: FrozenBuffer retains the allocation and its initialized immutable subrange.
     unsafe { std::slice::from_raw_parts(self.allocation.pointer.as_ptr().add(self.offset), self.length) }
   }
 }

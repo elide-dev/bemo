@@ -23,19 +23,25 @@ fn freeze_and_slice_preserve_allocation_and_bounds() {
   let owner = elide_transport_owner_new(16);
   let buffer = elide_transport_buffer_new(owner, 16);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(buffer, &mut view) }, 0);
   assert_eq!(view.capacity, 16);
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(b"hello".as_ptr(), view.address.cast::<u8>(), 5) };
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(buffer, 17) }, INVALID);
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(buffer, 5) }, 0);
   let slice = elide_transport_buffer_slice(buffer, 1, 3);
   assert_ne!(slice, 0);
   assert_eq!(elide_transport_buffer_slice(buffer, u64::MAX, 3), 0);
   assert_eq!(elide_transport_buffer_release(buffer), 0);
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(slice, &mut view) }, 0);
   assert_eq!(view.length, 3);
   assert_eq!(view.flags, READ_ONLY);
   assert_eq!(
+    // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
     unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), 3) },
     b"ell"
   );
@@ -78,7 +84,9 @@ fn driver_fallback_reports_the_refused_io_uring_setup() {
   assert_ne!(driver, 0);
   let length = elide_transport_driver_fallback(driver, output);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(output, &mut view) }, 0);
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   let reason = unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), length as usize) };
   let reason = std::str::from_utf8(reason).unwrap();
   match elide_transport_driver_backend(driver) {
@@ -143,8 +151,10 @@ fn foreign_threads_reach_handles_minted_in_another_domain() {
   let (remote, frozen) = std::thread::spawn(move || {
     let remote = elide_transport_buffer_new(owner, 16);
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(buffer, &mut view) }, 0);
     assert_eq!(view.capacity, 16);
+    // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
     assert_eq!(unsafe { elide_transport_buffer_freeze(buffer, 4) }, 0);
     (remote, elide_transport_buffer_slice(buffer, 0, 2))
   })
@@ -175,23 +185,29 @@ fn endpoint(owner: u64, address: std::net::SocketAddr) -> u64 {
   };
   let handle = elide_transport_buffer_new(owner, 24);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
   let mut bytes = [0u8; 24];
   bytes[..4].copy_from_slice(&v4.ip().octets());
   bytes[16..18].copy_from_slice(&address.port().to_ne_bytes());
   bytes[18..20].copy_from_slice(&4u16.to_ne_bytes());
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), view.address.cast::<u8>(), 24) };
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(handle, 24) }, 0);
   handle
 }
 
 fn completion(driver: u64, batch: u64, kind: u32) -> (u64, i64) {
   for _ in 0..64 {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 1_000_000_000, batch, 8) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let event = unsafe { &*view.address.cast::<NativeEvent>().add(index) };
       if event.kind == kind {
         return (event.value, event.result);
@@ -203,6 +219,7 @@ fn completion(driver: u64, batch: u64, kind: u32) -> (u64, i64) {
 
 fn payload(handle: u64) -> (*const u8, u64) {
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
   (view.address.cast::<u8>(), view.length)
 }
@@ -264,8 +281,10 @@ fn callback_batch_retirement_reclaims_an_unconsumed_receive() {
     statuses: Vec<i32>,
   }
   unsafe extern "C" fn retire(context: u64, events: *const NativeEvent, count: u32) -> i32 {
+    // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut State) };
     assert_eq!(count, 1);
+    // SAFETY: The driver supplies a live initialized event for this synchronous callback.
     let event = unsafe { &*events };
     assert_eq!(event.kind, 3);
     state.value = event.value;
@@ -296,6 +315,7 @@ fn callback_batch_retirement_reclaims_an_unconsumed_receive() {
   };
   let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
   while state.value == 0 && std::time::Instant::now() < deadline {
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     let result = unsafe {
       elide_transport_driver_poll_batch_callback(
         common::workload(),

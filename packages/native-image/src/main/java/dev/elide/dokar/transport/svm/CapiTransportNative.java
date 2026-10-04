@@ -27,6 +27,7 @@ import org.graalvm.nativeimage.c.type.VoidPointer;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.PointerBase;
 import org.graalvm.word.WordFactory;
+import org.jspecify.annotations.Nullable;
 
 /** Direct Native Image bindings; no FFM lookup or JNI transition on this path. */
 @CContext(CapiTransportNative.Headers.class)
@@ -411,8 +412,8 @@ public final class CapiTransportNative implements TransportNative {
           CapiTransportNative.class, "pollEvent", IsolateThread.class, Pointer.class, int.class);
 
   private static final class PollState {
-    EventCallback callback;
-    Throwable failure;
+    @Nullable EventCallback callback;
+    @Nullable Throwable failure;
   }
 
   private static final ThreadLocal<PollState> POLL_STATE = ThreadLocal.withInitial(PollState::new);
@@ -425,12 +426,14 @@ public final class CapiTransportNative implements TransportNative {
       while (consumed < count) {
         Pointer event = events.add(consumed * 40);
         consumed++;
-        if (!state.callback.event(
-            event.readLong(0),
-            event.readLong(8),
-            event.readLong(16),
-            event.readLong(24),
-            event.readInt(32))) return -consumed;
+        if (!java.util.Objects.requireNonNull(
+                state.callback, "poll callback is installed before entering native code")
+            .event(
+                event.readLong(0),
+                event.readLong(8),
+                event.readLong(16),
+                event.readLong(24),
+                event.readInt(32))) return -consumed;
       }
       return consumed;
     } catch (Throwable failure) {
@@ -895,25 +898,34 @@ public final class CapiTransportNative implements TransportNative {
   private static native int engineRelease0(long engine);
 
   /** Heap arrays stay pinned for the call; direct buffers pass their position's address. */
-  private static PinnedObject pin(ByteBuffer buffer, int length) {
-    return length == 0 || buffer.isDirect() ? null : PinnedObject.create(buffer.array());
+  // address() applies arrayOffset and position after pinning the entire backing array.
+  @SuppressWarnings("ByteBufferBackingArray")
+  private static @Nullable PinnedObject pin(@Nullable ByteBuffer buffer, int length) {
+    return length == 0 || java.util.Objects.requireNonNull(buffer).isDirect()
+        ? null
+        : PinnedObject.create(buffer.array());
   }
 
-  private static long address(ByteBuffer buffer, int length, PinnedObject pinned) {
+  private static long address(
+      @Nullable ByteBuffer buffer, int length, @Nullable PinnedObject pinned) {
     if (length == 0) return 0;
-    if (pinned == null) return MemorySegment.ofBuffer(buffer).address();
-    return pinned.addressOfArrayElement(buffer.arrayOffset() + buffer.position()).rawValue();
+    if (pinned == null)
+      return MemorySegment.ofBuffer(java.util.Objects.requireNonNull(buffer)).address();
+    return pinned
+        .addressOfArrayElement(
+            java.util.Objects.requireNonNull(buffer).arrayOffset() + buffer.position())
+        .rawValue();
   }
 
-  private static PinnedObject pin(byte[] bytes) {
+  private static @Nullable PinnedObject pin(byte @Nullable [] bytes) {
     return bytes == null || bytes.length == 0 ? null : PinnedObject.create(bytes);
   }
 
-  private static long address(PinnedObject pinned) {
+  private static long address(@Nullable PinnedObject pinned) {
     return pinned == null ? 0 : pinned.addressOfArrayElement(0).rawValue();
   }
 
-  private static void unpin(PinnedObject pinned) {
+  private static void unpin(@Nullable PinnedObject pinned) {
     if (pinned != null) pinned.close();
   }
 
@@ -924,7 +936,11 @@ public final class CapiTransportNative implements TransportNative {
 
   @Override
   public long engineContextNew(
-      long workload, int flags, byte[] certificates, byte[] key, byte[] alpn) {
+      long workload,
+      int flags,
+      byte @Nullable [] certificates,
+      byte @Nullable [] key,
+      byte @Nullable [] alpn) {
     PinnedObject chain = pin(certificates), secret = pin(key), protocols = pin(alpn);
     try {
       return engineContextNew0(
@@ -949,8 +965,8 @@ public final class CapiTransportNative implements TransportNative {
   }
 
   @Override
-  public long engineNew(long workload, long context, byte[] name) {
-    PinnedObject pinned = pin(name);
+  public long engineNew(long workload, long context, byte @Nullable [] name) {
+    @Nullable PinnedObject pinned = pin(name);
     try {
       return engineNew0(workload, context, address(pinned), name == null ? 0 : name.length);
     } finally {
@@ -961,7 +977,7 @@ public final class CapiTransportNative implements TransportNative {
   @Override
   public long engineWrap(
       long engine,
-      ByteBuffer source,
+      @Nullable ByteBuffer source,
       int sourceLength,
       ByteBuffer destination,
       int destinationLength) {
@@ -1007,8 +1023,8 @@ public final class CapiTransportNative implements TransportNative {
   }
 
   @Override
-  public int engineInfo(long engine, int kind, int index, byte[] output) {
-    PinnedObject pinned = pin(output);
+  public int engineInfo(long engine, int kind, int index, byte @Nullable [] output) {
+    @Nullable PinnedObject pinned = pin(output);
     try {
       return engineInfo0(engine, kind, index, address(pinned), output == null ? 0 : output.length);
     } finally {

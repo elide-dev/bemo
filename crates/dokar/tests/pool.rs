@@ -42,7 +42,7 @@ fn only_receive_storage_is_admitted() {
 fn retained_leases_prevent_admission() {
   drain();
   let budget = Budget::new(1024 * 1024);
-  let mut buffer = Buffer::receive(4096, budget.clone()).unwrap();
+  let mut buffer = Buffer::receive(4096, budget).unwrap();
   buffer.write(0, b"hello").unwrap();
   let frozen = buffer.freeze();
   let slice = FrozenBuffer::slice(&frozen, 1..4).unwrap();
@@ -58,7 +58,7 @@ fn retained_leases_prevent_admission() {
 fn a_different_owner_cannot_take_pooled_storage() {
   drain();
   let budget = Budget::new(1024 * 1024);
-  drop(Buffer::receive(4096, budget.clone()).unwrap());
+  drop(Buffer::receive(4096, budget).unwrap());
   assert_eq!(pool_retained(), 4096);
   let other = Budget::new(1024 * 1024);
   let buffer = Buffer::receive(4096, other.clone()).unwrap();

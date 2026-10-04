@@ -1,6 +1,8 @@
 //! The single C boundary consumed by FFM and Native Image.
 //! No JVM, JNI, GraalVM, or Elide runtime dependency belongs here.
 
+#![deny(missing_docs)]
+
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("Dokar's ABI requires a 64-bit target");
 

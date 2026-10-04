@@ -6,8 +6,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[lints.rust]
-unsafe_op_in_unsafe_fn = "deny"
+[lints]
+workspace = true
 
 [features]
 default = ["bundled-mimalloc"]

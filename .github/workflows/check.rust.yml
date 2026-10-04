@@ -29,6 +29,17 @@ jobs:
       - name: Check generated C exports
         if: runner.os == 'Linux'
         run: python3 tools/generate_exports.py --check
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        if: runner.os == 'Linux'
+        with:
+          version: '2026.9.10'
+          install_args: aqua:EmbarkStudios/cargo-deny hk pkl
+          env: false
+          export_path: false
+          add_shims_to_path: false
+      - name: Audit dependencies across every supported target
+        if: runner.os == 'Linux'
+        run: '"$(mise which cargo-deny)" --locked --workspace check'
       - name: Install Nextest
         uses: ./.github/actions/setup-cargo-tools
         with:

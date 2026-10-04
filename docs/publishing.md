@@ -7,8 +7,8 @@ staging; no task uploads or publishes anything.
 
 | Artifact | Contents |
 | --- | --- |
-| `dev.elide.dokar:dokar-api` | Java boundary interface |
-| `dev.elide.dokar:dokar-ffm` | FFM adapter; depends only on `dokar-api` |
+| `dev.elide.dokar:dokar-api` | Java boundary interface and JSpecify nullness annotations |
+| `dev.elide.dokar:dokar-ffm` | FFM adapter; depends on `dokar-api` (which exposes JSpecify) |
 | `dev.elide.dokar:dokar-netty` | Stock Netty channels, buffer allocator, event-loop and TLS adapters |
 | `dev.elide.dokar:dokar-native-image` | C API adapter; API dependency and provided GraalVM SDK dependencies |
 | `dokar-ffm:<platform>` classifier | Cargo shared library, C header, and license notices |

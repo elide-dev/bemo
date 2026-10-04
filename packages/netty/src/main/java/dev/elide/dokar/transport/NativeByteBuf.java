@@ -9,11 +9,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.UnpooledDirectByteBuf;
 import io.netty.util.internal.CleanableDirectBuffer;
 import java.nio.ByteBuffer;
+import org.jspecify.annotations.Nullable;
 
 /** Netty reference counting owns the native handle; all storage is freed by Rust. */
 final class NativeByteBuf extends UnpooledDirectByteBuf {
   private final NativeByteBufAllocator allocator;
-  private Allocation initial;
+  private @Nullable Allocation initial;
   private Allocation current;
   private boolean frozen;
 
@@ -53,6 +54,8 @@ final class NativeByteBuf extends UnpooledDirectByteBuf {
     return current.handle;
   }
 
+  // Native handles belong to this binding instance, regardless of value equality.
+  @SuppressWarnings("ReferenceEquality")
   boolean belongsTo(TransportNative api) {
     return allocator.api == api;
   }

@@ -6,6 +6,7 @@
 package dev.elide.dokar.transport;
 
 import java.nio.ByteBuffer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Low-level native ABI. Handles own storage; ByteBuffer views do not. Callers must stop using all
@@ -469,7 +470,11 @@ public interface TransportNative {
 
   /** Immutable Rustls context; inputs are read during the call only. Zero on invalid input. */
   default long engineContextNew(
-      long workload, int flags, byte[] certificates, byte[] key, byte[] alpn) {
+      long workload,
+      int flags,
+      byte @Nullable [] certificates,
+      byte @Nullable [] key,
+      byte @Nullable [] alpn) {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
 
@@ -478,7 +483,7 @@ public interface TransportNative {
   }
 
   /** Clients pass a UTF-8 DNS name or IP literal; servers pass null. Zero on invalid input. */
-  default long engineNew(long workload, long context, byte[] name) {
+  default long engineNew(long workload, long context, byte @Nullable [] name) {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
 
@@ -491,7 +496,7 @@ public interface TransportNative {
    */
   default long engineWrap(
       long engine,
-      ByteBuffer source,
+      @Nullable ByteBuffer source,
       int sourceLength,
       ByteBuffer destination,
       int destinationLength) {
@@ -516,7 +521,7 @@ public interface TransportNative {
   }
 
   /** Copy up to {@code output.length} bytes of one session detail; returns its full length. */
-  default int engineInfo(long engine, int kind, int index, byte[] output) {
+  default int engineInfo(long engine, int kind, int index, byte @Nullable [] output) {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
 

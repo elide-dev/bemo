@@ -318,6 +318,7 @@ pub fn elide_transport_tls_step(
     input.copy_within(step.discard.., 0);
     tls.length -= step.discard;
     if let Some(buffer) = &mut tls.input {
+      // SAFETY: Compaction retains only the initialized suffix, within the original capacity.
       unsafe { buffer.set_len(tls.length) };
     }
     let state = match step.state {

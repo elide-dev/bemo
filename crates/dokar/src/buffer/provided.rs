@@ -65,6 +65,7 @@ impl Drop for ReturnSlot {
   fn drop(&mut self) {
     let pointer = *self.pointer.get_mut();
     if !pointer.is_null() {
+      // SAFETY: The last ReturnSlot owns this mi_malloc allocation, returned to the paired allocator.
       unsafe { mi_free(pointer.cast::<c_void>()) };
       self.budget.0.used.fetch_sub(SLOT_BYTES, Ordering::AcqRel);
     }
@@ -280,6 +281,10 @@ impl Drop for SharedReceivePool {
   fn drop(&mut self) {
     for slot in &mut self.slots {
       if let Some(buffer) = slot.published.take() {
+        #[expect(
+          clippy::mem_forget,
+          reason = "published buffers cannot be freed before kernel retirement"
+        )]
         std::mem::forget(buffer);
       }
     }
@@ -314,18 +319,22 @@ mod tests {
     let descriptor = pool.publish(0).unwrap();
     assert_eq!(descriptor.id, 0);
     assert_eq!(descriptor.capacity, SLOT_BYTES);
+    // SAFETY: The published descriptor owns at least one writable byte and no kernel operation is active.
     unsafe {
       descriptor.pointer.write(b'a');
     }
+    // SAFETY: This test initialized one byte and simulates completion without an active kernel operation.
     let mut a = unsafe { pool.complete(0, 1) }.unwrap();
     let credit = first.attach(&mut a).unwrap();
     assert!(a.receive_credit().is_some());
     assert!(!first.available());
     let replacement = pool.publish(0).unwrap();
     assert_ne!(replacement.pointer, descriptor.pointer);
+    // SAFETY: The replacement descriptor owns one writable byte and no kernel operation is active.
     unsafe {
       replacement.pointer.write(b'b');
     }
+    // SAFETY: The replacement byte was initialized above; no kernel operation remains active.
     let mut b = unsafe { pool.complete(0, 1) }.unwrap();
     assert!(first.attach(&mut b).is_none());
     assert!(
@@ -340,6 +349,7 @@ mod tests {
     assert_eq!(budget.used(), 3 * SLOT_BYTES);
     drop(a);
     drop(b);
+    // SAFETY: This test never submitted published buffers to the kernel; they are safe to retire.
     unsafe {
       pool.retire_published();
     }
@@ -355,6 +365,7 @@ mod tests {
     let mut pool = SharedReceivePool::new(budget.clone(), Waker::from(storage.clone())).unwrap();
     let window = ReceiveWindow::new(SLOT_BYTES, Waker::from(delivery.clone())).unwrap();
     let old = pool.publish(0).unwrap();
+    // SAFETY: A zero-byte completion exposes no uninitialized bytes; this test submits no kernel I/O.
     let mut buffer = unsafe { pool.complete(0, 0) }.unwrap();
     let credit = window.attach(&mut buffer).unwrap();
     credit.ack();
@@ -364,6 +375,7 @@ mod tests {
     std::thread::spawn(move || drop(buffer)).join().unwrap();
     assert_eq!(storage.0.load(Ordering::Relaxed), 1);
     assert_eq!(pool.publish(0).unwrap().pointer, old.pointer);
+    // SAFETY: This test never submitted these buffers to the kernel.
     unsafe {
       pool.retire_published();
     }
@@ -383,9 +395,13 @@ mod tests {
     assert_eq!(budget.used(), SHARED_SLOTS * SLOT_BYTES);
     pool.publish(0).unwrap();
     assert!(pool.publish(0).is_err());
+    // SAFETY: This invalid slot is rejected before access; the test submits no kernel I/O.
     assert!(unsafe { pool.complete(SHARED_SLOTS as u16, 0) }.is_err());
+    // SAFETY: The oversized length is rejected before access; the test submits no kernel I/O.
     assert!(unsafe { pool.complete(0, SLOT_BYTES + 1) }.is_err());
+    // SAFETY: Zero bytes require no initialization; this test submits no kernel I/O.
     let buffer = unsafe { pool.complete(0, 0) }.unwrap();
+    // SAFETY: The already-consumed slot is rejected before access; no kernel I/O exists.
     assert!(unsafe { pool.complete(0, 0) }.is_err());
     drop(pool);
     budget.close();

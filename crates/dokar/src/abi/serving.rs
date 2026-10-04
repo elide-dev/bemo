@@ -167,6 +167,7 @@ pub fn elide_transport_serving_helper_prepare() -> u64 {
 /// # Safety
 /// Pass zero or one owned token from helper_prepare. Consume each owned token exactly once.
 pub unsafe fn elide_transport_serving_helper_release(token: u64) -> i32 {
+  // SAFETY: The caller transfers one unconsumed helper token, or zero, as placement requires.
   unsafe { placement::helper_release(token) };
   0
 }
@@ -176,6 +177,7 @@ pub unsafe fn elide_transport_serving_helper_release(token: u64) -> i32 {
 /// # Safety
 /// Pass zero or one owned token from helper_prepare. The token is consumed even on failure.
 pub unsafe fn elide_transport_serving_helper_start(token: u64) -> i32 {
+  // SAFETY: The caller transfers one unconsumed helper token, including on failure.
   match unsafe { placement::helper_consume(token) } {
     Ok(()) => 0,
     Err(error) => {
@@ -757,7 +759,9 @@ mod tests {
   #[test]
   fn context_placement_rejects_invalid_and_duplicate_entry() {
     assert_eq!(elide_transport_serving_helper_prepare(), 0);
+    // SAFETY: Zero is explicitly accepted as the absent token.
     assert_eq!(unsafe { elide_transport_serving_helper_start(0) }, 0);
+    // SAFETY: Zero is explicitly accepted as the absent token.
     assert_eq!(unsafe { elide_transport_serving_helper_release(0) }, 0);
     assert!(elide_transport_serving_available_cores() > 0);
     #[cfg(not(target_os = "linux"))]
@@ -771,8 +775,10 @@ mod tests {
     {
       let token = elide_transport_serving_helper_prepare();
       assert_ne!(token, 0);
+      // SAFETY: Consume the newly prepared token exactly once.
       assert_eq!(unsafe { elide_transport_serving_helper_release(token) }, 0);
       let token = elide_transport_serving_helper_prepare();
+      // SAFETY: Consume this separately prepared token exactly once.
       assert_eq!(unsafe { elide_transport_serving_helper_start(token) }, 0);
     }
     assert_eq!(elide_transport_serving_context_enter(application, 0), INVALID);
@@ -845,6 +851,8 @@ mod tests {
       assert_ne!(driver, 0);
       assert_eq!(placement::allowed().unwrap(), vec![transport_cpu]);
       assert_eq!(
+        // SAFETY: The freshly prepared token is consumed immediately, once.
+        // SAFETY: The freshly prepared token is consumed immediately, once.
         unsafe { elide_transport_serving_helper_start(elide_transport_serving_helper_prepare()) },
         0
       );
@@ -859,6 +867,7 @@ mod tests {
     assert_eq!(elide_transport_serving_context_enter(application, 0), 0);
     assert_eq!(placement::allowed().unwrap(), vec![guest_cpu]);
     assert_eq!(
+      // SAFETY: The freshly prepared token is consumed immediately, once.
       unsafe { elide_transport_serving_helper_start(elide_transport_serving_helper_prepare()) },
       0
     );
@@ -895,17 +904,22 @@ mod tests {
       let batch = elide_transport_buffer_new(owner, 8 * 40);
       let endpoint = elide_transport_buffer_new(owner, 24);
       let mut view = BufferView::default();
+      // SAFETY: view is writable and endpoint owns the requested capacity.
       assert_eq!(unsafe { elide_transport_buffer_view(endpoint, &mut view) }, 0);
+      // SAFETY: endpoint owns 24 writable bytes and no other references access them here.
       let address = unsafe { std::slice::from_raw_parts_mut(view.address.cast::<u8>(), 24) };
       address.fill(0);
       address[..4].copy_from_slice(&[127, 0, 0, 1]);
       address[18..20].copy_from_slice(&4u16.to_ne_bytes());
+      // SAFETY: All 24 endpoint bytes were initialized above and the mutable slice is no longer used.
       assert_eq!(unsafe { elide_transport_buffer_freeze(endpoint, 24) }, 0);
       let listener = elide_transport_serving_listen(owner, driver, endpoint, endpoint, 64);
       assert_ne!(listener, 0);
       elide_transport_buffer_release(endpoint);
       assert_eq!(elide_transport_socket_address(driver, listener, 0, batch), 0);
+      // SAFETY: view is writable and batch is still owned by this fixture.
       assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+      // SAFETY: socket_address initialized the 24-byte address in the live batch.
       let address = unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), 24) };
       let port = u16::from_ne_bytes(address[16..18].try_into().unwrap());
       let peer = TcpStream::connect(("127.0.0.1", port)).unwrap();
@@ -913,8 +927,10 @@ mod tests {
       let deadline = Instant::now() + Duration::from_secs(3);
       let socket = loop {
         assert!(Instant::now() < deadline);
+        // SAFETY: batch has capacity for eight events and driver belongs to this thread.
         let count = unsafe { elide_transport_driver_poll(driver, 10_000_000, batch, 8) };
         assert!(count >= 0);
+        // SAFETY: poll initialized count events in the live, allocator-aligned batch.
         let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
         if let Some(event) = events.iter().find(|event| event.kind == 2) {
           break event.value;
@@ -933,10 +949,13 @@ mod tests {
 
     fn close_and_poll(&self) -> Vec<u32> {
       assert_eq!(elide_transport_serving_listener_close(self.driver, self.listener), 0);
+      // SAFETY: This fixture owns driver and batch, with capacity for eight events.
       let count = unsafe { elide_transport_driver_poll(self.driver, 0, self.batch, 8) };
       assert!(count > 0);
       let mut view = BufferView::default();
+      // SAFETY: view is writable and this fixture still owns batch.
       assert_eq!(unsafe { elide_transport_buffer_view(self.batch, &mut view) }, 0);
+      // SAFETY: poll initialized count events; the batch stays live during collection.
       unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) }
         .iter()
         .map(|event| event.kind)
@@ -948,6 +967,7 @@ mod tests {
     fn drop(&mut self) {
       elide_transport_serving_close(self.application);
       while elide_transport_driver_release(self.driver) == BUSY {
+        // SAFETY: The fixture retains batch and driver while pending operations retire.
         unsafe { elide_transport_driver_poll(self.driver, 1_000_000, self.batch, 8) };
       }
       elide_transport_buffer_release(self.batch);

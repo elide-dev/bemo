@@ -8,5 +8,11 @@
   "jacoco": "0.8.15",
   "nextest": "0.9.135",
   "llvm_cov": "0.8.7",
-  "codspeed": "5.0.2"
+  "codspeed": "5.0.2",
+  "error_prone": "2.50.0",
+  "nullaway": "0.14.2",
+  "jspecify": "1.0.1",
+  "checker": "4.3.0",
+  "nullaway_dataflow": "4.2.3",
+  "dataflow": "3.49.5-eisop1"
 }

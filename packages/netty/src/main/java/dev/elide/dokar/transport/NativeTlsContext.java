@@ -5,6 +5,7 @@
 package dev.elide.dokar.transport;
 
 import java.nio.charset.StandardCharsets;
+import org.jspecify.annotations.Nullable;
 
 /** Immutable Rustls/AWS-LC configuration. Sessions retain it independently of this handle. */
 public final class NativeTlsContext implements AutoCloseable {
@@ -37,7 +38,11 @@ public final class NativeTlsContext implements AutoCloseable {
   }
 
   private static NativeTlsContext create(
-      TransportNative api, long workload, byte[] certificates, byte[] key, String[] protocols) {
+      TransportNative api,
+      long workload,
+      byte[] certificates,
+      byte @Nullable [] key,
+      String[] protocols) {
     java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream();
     for (String protocol : protocols) {
       byte[] bytes = protocol.getBytes(StandardCharsets.US_ASCII);
@@ -79,7 +84,10 @@ public final class NativeTlsContext implements AutoCloseable {
     }
   }
 
-  synchronized long session(TransportNative transport, long workload, long owner, String peerName) {
+  // Handles are owned by their exact native binding instance.
+  @SuppressWarnings("ReferenceEquality")
+  synchronized long session(
+      TransportNative transport, long workload, long owner, @Nullable String peerName) {
     if (transport != api || handle == 0)
       throw new IllegalStateException("TLS context unavailable for this transport");
     long name =

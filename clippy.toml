@@ -1,0 +1,10 @@
+# Match Bali's ban on debug instrumentation and review unsafe escape hatches.
+disallowed-macros = [
+  { path = "std::dbg", reason = "remove debug instrumentation before commit" },
+]
+disallowed-methods = [
+  { path = "std::mem::uninitialized", reason = "use MaybeUninit and establish initialization before reading" },
+  { path = "std::mem::zeroed", reason = "zero is not valid for every type; use typed initialization" },
+]
+accept-comment-above-attributes = true
+stack-size-threshold = 131072

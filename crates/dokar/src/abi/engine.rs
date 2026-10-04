@@ -94,6 +94,7 @@ unsafe fn bytes<'a>(data: *const u8, length: u64) -> Option<&'a [u8]> {
   if data.is_null() {
     return None;
   }
+  // SAFETY: The caller guarantees length readable bytes; null and empty were handled above.
   Some(unsafe { std::slice::from_raw_parts(data, length) })
 }
 
@@ -107,6 +108,7 @@ unsafe fn bytes_mut<'a>(data: *mut u8, length: u64) -> Option<&'a mut [u8]> {
   if data.is_null() {
     return None;
   }
+  // SAFETY: The caller guarantees an exclusive writable range; null and empty were handled above.
   Some(unsafe { std::slice::from_raw_parts_mut(data, length) })
 }
 
@@ -332,6 +334,7 @@ pub unsafe fn elide_transport_engine_context_new(
   {
     return 0;
   }
+  // SAFETY: The ABI caller supplies live readable certificate, key, and ALPN ranges.
   let inputs = unsafe {
     (
       bytes(certificates, certificates_length),
@@ -383,6 +386,7 @@ pub unsafe fn elide_transport_engine_new(workload: u64, context: u64, name: *con
   let mut selected = None;
   let engine = match &config.config {
     Context::Client(config, identities) => {
+      // SAFETY: The ABI caller supplies a live name range for this call.
       let Some(name) = (unsafe { bytes(name, name_length) }) else {
         return 0;
       };
@@ -472,6 +476,7 @@ pub unsafe fn elide_transport_engine_wrap(
   destination: *mut u8,
   destination_length: u64,
 ) -> i64 {
+  // SAFETY: The caller guarantees non-overlapping readable source and writable destination ranges.
   let buffers = unsafe {
     (
       bytes(source, source_length.min(LENGTH_MASK)),
@@ -499,10 +504,13 @@ pub unsafe fn elide_transport_engine_unwrap(
   flags: u32,
 ) -> i64 {
   let source_length = source_length.min(LENGTH_MASK);
+  // SAFETY: The caller guarantees an exclusive writable destination for this call.
   let destination = unsafe { bytes_mut(destination, destination_length.min(LENGTH_MASK)) };
   let input = if flags & ENGINE_SOURCE_SHARED != 0 {
+    // SAFETY: The shared flag requires a readable source that does not alias destination.
     unsafe { bytes(source, source_length) }.map(Input::Shared)
   } else {
+    // SAFETY: Without the shared flag, the caller guarantees an exclusive writable source.
     unsafe { bytes_mut(source, source_length) }.map(Input::Mutable)
   };
   let (Some(input), Some(destination)) = (input, destination) else {
@@ -557,6 +565,7 @@ pub fn elide_transport_engine_control(engine: u64, operation: u32) -> i64 {
 /// # Safety
 /// A non-null `output` must be writable for `capacity` bytes.
 pub unsafe fn elide_transport_engine_info(engine: u64, kind: u32, index: u32, output: *mut u8, capacity: u64) -> i32 {
+  // SAFETY: The caller supplies capacity writable output bytes for this call.
   let Some(output) = (unsafe { bytes_mut(output, capacity) }) else {
     return INVALID;
   };

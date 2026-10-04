@@ -95,6 +95,7 @@ fn client_identity_is_separate_from_server_trust_and_required_by_peer() {
         );
       }
       assert_eq!(
+        // SAFETY: The fixture owns the engine; output is a live writable slice or null with zero capacity.
         unsafe { elide_transport_engine_info(client, 7, 0, std::ptr::null_mut(), 0) },
         i32::from(present)
       );
@@ -102,6 +103,7 @@ fn client_identity_is_separate_from_server_trust_and_required_by_peer() {
         let expected = CertificateDer::from_pem_slice(CLIENT_CERT).unwrap();
         let mut local = vec![0; expected.len()];
         assert_eq!(
+          // SAFETY: The fixture owns the engine; output is a live writable slice or null with zero capacity.
           unsafe { elide_transport_engine_info(client, 8, 0, local.as_mut_ptr(), local.len() as u64) },
           expected.len() as i32
         );
@@ -110,6 +112,7 @@ fn client_identity_is_separate_from_server_trust_and_required_by_peer() {
       let fresh = engine(owner.0, handle, Some("localhost"));
       assert_ne!(fresh, 0);
       assert_eq!(
+        // SAFETY: The fixture owns the engine; output is a live writable slice or null with zero capacity.
         unsafe { elide_transport_engine_info(fresh, 7, 0, std::ptr::null_mut(), 0) },
         0
       );
@@ -163,7 +166,7 @@ fn identity_lists_reject_truncation_trailing_data_and_conflicting_flags() {
   ] {
     assert_eq!(context(owner.0, flags, CERT, &valid), 0);
   }
-  let mut trailing = valid.clone();
+  let mut trailing = valid;
   trailing.push(0);
   assert_eq!(context(owner.0, ENGINE_CLIENT_IDENTITIES, CERT, &trailing), 0);
   assert_eq!(context(owner.0, ENGINE_CLIENT_IDENTITIES, CERT, &[1, 0, 0]), 0);
@@ -172,6 +175,7 @@ fn identity_lists_reject_truncation_trailing_data_and_conflicting_flags() {
 }
 
 fn context(workload: u64, flags: u32, certificates: &[u8], key: &[u8]) -> u64 {
+  // SAFETY: Certificate, key and ALPN pointers name live slices with their exact lengths.
   unsafe {
     elide_transport_engine_context_new(
       workload,
@@ -188,6 +192,7 @@ fn context(workload: u64, flags: u32, certificates: &[u8], key: &[u8]) -> u64 {
 
 fn engine(workload: u64, context: u64, name: Option<&str>) -> u64 {
   let name = name.unwrap_or_default().as_bytes();
+  // SAFETY: The configuration is retained; the name pointer and its exact byte length remain live for the call.
   unsafe { elide_transport_engine_new(workload, context, name.as_ptr(), name.len() as u64) }
 }
 
@@ -229,6 +234,7 @@ impl Packed {
 
 fn wrap(engine: u64, source: &[u8], wire: &mut Vec<u8>) -> Packed {
   let mut out = vec![0u8; 32 * 1024];
+  // SAFETY: Input and output are disjoint live slices, or sentinel ranges rejected before dereferencing.
   let result = unsafe {
     elide_transport_engine_wrap(
       engine,
@@ -249,6 +255,7 @@ fn unwrap(engine: u64, wire: &mut Vec<u8>, plaintext: &mut Vec<u8>, shared: bool
   let mut results = Vec::new();
   loop {
     let mut out = vec![0u8; 32 * 1024];
+    // SAFETY: Input and output are disjoint live slices, or empty ranges which require no storage.
     let result = unsafe {
       elide_transport_engine_unwrap(
         engine,
@@ -275,6 +282,7 @@ fn unwrap(engine: u64, wire: &mut Vec<u8>, plaintext: &mut Vec<u8>, shared: bool
 
 fn info(engine: u64, kind: u32, index: u32) -> (i32, Vec<u8>) {
   let mut out = vec![0u8; 4096];
+  // SAFETY: The fixture owns the engine; output is a live writable slice or null with zero capacity.
   let length = unsafe { elide_transport_engine_info(engine, kind, index, out.as_mut_ptr(), out.len() as u64) };
   out.truncate(length.max(0) as usize);
   (length, out)
@@ -412,10 +420,12 @@ fn engine_abi_rejects_invalid_inputs_and_reports_failures() {
     Some(ENGINE_FAILED)
   );
   assert_eq!(
+    // SAFETY: Input and output are disjoint live slices, or sentinel ranges rejected before dereferencing.
     unsafe { elide_transport_engine_wrap(client, std::ptr::null(), 1, std::ptr::null_mut(), 0) },
     INVALID as i64
   );
   assert_eq!(
+    // SAFETY: Input and output are disjoint live slices, or sentinel ranges rejected before dereferencing.
     unsafe { elide_transport_engine_wrap(0, std::ptr::null(), 0, std::ptr::null_mut(), 0) },
     INVALID as i64
   );
@@ -454,10 +464,12 @@ fn engine_workloads_reject_cross_owner_use_and_close_independently() {
   assert_eq!(engine(first.0, config, Some("localhost")), 0);
   assert_eq!(elide_transport_engine_control(active, 1), ENGINE_FAILED);
   assert_eq!(
+    // SAFETY: Input and output are disjoint live slices, or sentinel ranges rejected before dereferencing.
     unsafe { elide_transport_engine_wrap(active, std::ptr::null(), 0, std::ptr::null_mut(), 0) },
     ENGINE_FAILED
   );
   assert_eq!(
+    // SAFETY: Input and output are disjoint live slices, or empty ranges which require no storage.
     unsafe { elide_transport_engine_unwrap(active, std::ptr::null_mut(), 0, std::ptr::null_mut(), 0, 0) },
     ENGINE_FAILED
   );
@@ -503,6 +515,7 @@ fn explicitly_insecure_engine_needs_no_trust_anchors_and_accepts_a_name_mismatch
 fn policy_context(workload: u64, flags: u32, policy: &[u8]) -> u64 {
   let mut alpn = policy.to_vec();
   alpn.extend_from_slice(ALPN);
+  // SAFETY: Certificate, key and ALPN pointers name live slices with their exact lengths.
   unsafe {
     elide_transport_engine_context_new(
       workload,

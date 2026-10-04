@@ -6,24 +6,34 @@ package dev.elide.dokar.transport;
 
 import io.netty.channel.*;
 import java.net.SocketAddress;
+import org.jspecify.annotations.Nullable;
 
 @SuppressWarnings("deprecation")
 abstract class NativeChannel extends AbstractChannel {
   final NativeChannelConfig settings = new NativeChannelConfig(this);
-  NativeIoHandler io;
-  IoRegistration registration;
+  @Nullable NativeIoHandler io;
+  @Nullable IoRegistration registration;
   volatile long socket;
 
   /** Owning workload, fixed at registration; accepted children inherit their listener's. */
   long workload;
 
-  SocketAddress local;
-  SocketAddress remote;
+  @Nullable SocketAddress local;
+  @Nullable SocketAddress remote;
   volatile boolean open = true;
   volatile boolean active;
   boolean readRequested;
 
-  NativeChannel(Channel parent) {
+  final NativeIoHandler io() {
+    return java.util.Objects.requireNonNull(io, "channel must be registered before native I/O");
+  }
+
+  final IoRegistration registration() {
+    return java.util.Objects.requireNonNull(
+        registration, "channel must have an active registration");
+  }
+
+  NativeChannel(@Nullable Channel parent) {
     super(parent);
   }
 
@@ -49,16 +59,16 @@ abstract class NativeChannel extends AbstractChannel {
 
   @Override
   protected boolean isCompatible(EventLoop loop) {
-    return loop instanceof IoEventLoop && ((IoEventLoop) loop).isCompatible(NativeUnsafe.class);
+    return loop instanceof IoEventLoop ioLoop && ioLoop.isCompatible(NativeUnsafe.class);
   }
 
   @Override
-  protected SocketAddress localAddress0() {
+  protected @Nullable SocketAddress localAddress0() {
     return local;
   }
 
   @Override
-  protected SocketAddress remoteAddress0() {
+  protected @Nullable SocketAddress remoteAddress0() {
     return remote;
   }
 
@@ -74,9 +84,9 @@ abstract class NativeChannel extends AbstractChannel {
               }
               registration = (IoRegistration) future.getNow();
               io = ((NativeIoHandler.Registration) registration.attachment()).owner;
-              if (workload == 0) workload = io.workload();
+              if (workload == 0) workload = io().workload();
               try {
-                settings.installAllocator(io.allocator);
+                settings.installAllocator(io().allocator());
                 registeredNative();
                 promise.trySuccess();
               } catch (Throwable error) {
@@ -87,8 +97,8 @@ abstract class NativeChannel extends AbstractChannel {
   }
 
   void refreshAddresses() {
-    local = io.address(socket, false);
-    remote = io.address(socket, true);
+    local = io().address(socket, false);
+    remote = io().address(socket, true);
     invalidateLocalAddress();
     invalidateRemoteAddress();
   }
@@ -115,7 +125,7 @@ abstract class NativeChannel extends AbstractChannel {
     open = false;
     active = false;
     if (socket != 0) {
-      io.close(socket);
+      io().close(socket);
       socket = 0;
     }
   }

@@ -4,7 +4,6 @@ on:
     secrets:
       CODECOV_TOKEN:
         required: false
-  workflow_dispatch:
 jobs:
   rust:
     uses: ./.github/workflows/check.rust.yml

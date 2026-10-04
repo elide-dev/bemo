@@ -83,17 +83,21 @@ def library(release=False):
   return target_dir(release) / name[platform.system()]
 
 
+def jspecify():
+  return jar_dependency("org.jspecify", "jspecify", VERSIONS["jspecify"])
+
+
 def compile_java(output, inputs, dependencies=(), lint="all"):
   shutil.rmtree(output, ignore_errors=True)
   output.mkdir(parents=True)
   run(ELIDE, "javac", "--", "--release", VERSIONS["jvm_release"], f"-Xlint:{lint}", "-Werror",
-      "-cp", classpath(dependencies) or str(output), "-d", output, *inputs)
+      "-cp", classpath([*dependencies, jspecify()]), "-d", output, *inputs)
 
 
 def jvm():
   deps()
   for module in MODULES:
-    cp = [] if module == "api" else [classes("api")]
+    cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
     if module == "native-image":
       cp += sdk()
     if module == "netty":
@@ -251,7 +255,10 @@ def check():
     raise RuntimeError("Cargo.toml and .version disagree")
   if (ROOT / ".elide-version").read_text().strip() != VERSIONS["elide"]:
     raise RuntimeError("Elide version pins disagree")
+  deny = subprocess.check_output(["mise", "which", "cargo-deny"], cwd=ROOT, text=True).strip()
+  run(deny, "--locked", "--workspace", "check")
   jvm()
+  run(sys.executable, ROOT / "tools/check_java.py")
 
 
 def classifier():
@@ -323,7 +330,7 @@ def package():
     jar(f"{prefix}-sources.jar", ROOT / "packages" / module / "src/main/java")
     docs = BUILD / "javadoc" / module
     shutil.rmtree(docs, ignore_errors=True)
-    cp = [] if module == "api" else [classes("api")]
+    cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
     if module == "native-image":
       cp += sdk()
     if module == "netty":
@@ -333,7 +340,7 @@ def package():
         "-notimestamp", "-Werror", "-Xdoclint:all,-missing", "--release", VERSIONS["jvm_release"], "-d", docs,
         "-classpath", classpath(cp) or str(classes(module)), *sources(module))
     jar(f"{prefix}-javadoc.jar", docs)
-    dependencies = [] if module == "api" else [(MAVEN_GROUP, "dokar-api", VERSION, "compile")]
+    dependencies = [("org.jspecify", "jspecify", VERSIONS["jspecify"], "compile")] if module == "api" else [(MAVEN_GROUP, "dokar-api", VERSION, "compile")]
     if module == "native-image":
       dependencies += [("org.graalvm.sdk", name, VERSIONS["graalvm_sdk"], "provided")
                        for name in ("nativeimage", "word")]

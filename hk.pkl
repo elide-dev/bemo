@@ -1,0 +1,30 @@
+amends "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Config.pkl"
+
+// One step owns the shared build outputs. Check the whole project when any
+// build input changes, including compiler policy and generated ABI inputs.
+local checks = new Mapping<String, Step> {
+  ["project"] {
+    glob = List("crates/**", "packages/**", "tests/**", "benchmarks/**", "tools/**",
+                "include/**", "*.toml", "*.lock", "*.pkl", ".version", "Makefile")
+    check = "make check"
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    // Preserve the staged version of partially staged files; never auto-format
+    // unrelated user changes during a commit.
+    stash = "git"
+    steps = checks
+  }
+  ["check"] { steps = checks }
+  ["fix"] {
+    fix = true
+    steps {
+      ["format"] {
+        glob = List("crates/**/*.rs", "**/*.java")
+        fix = "make fmt"
+      }
+    }
+  }
+}

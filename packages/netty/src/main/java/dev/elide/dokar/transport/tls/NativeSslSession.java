@@ -19,6 +19,7 @@ import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSessionBindingEvent;
 import javax.net.ssl.SSLSessionBindingListener;
 import javax.net.ssl.SSLSessionContext;
+import org.jspecify.annotations.Nullable;
 
 /** Negotiated parameters of one engine, read from Rustls once the handshake completes. */
 final class NativeSslSession implements SSLSession {
@@ -51,12 +52,12 @@ final class NativeSslSession implements SSLSession {
   private final Map<String, Object> values = new ConcurrentHashMap<>();
   private volatile long accessed = created;
   private volatile boolean valid = true;
-  private String protocol;
-  private String cipherSuite;
-  private String applicationProtocol;
-  private byte[] id;
-  private X509Certificate[] peer;
-  private X509Certificate[] local;
+  private @Nullable String protocol;
+  private @Nullable String cipherSuite;
+  private @Nullable String applicationProtocol;
+  private byte @Nullable [] id;
+  private X509Certificate @Nullable [] peer;
+  private X509Certificate @Nullable [] local;
 
   NativeSslSession(NativeSslEngine engine) {
     this.engine = engine;
@@ -88,7 +89,7 @@ final class NativeSslSession implements SSLSession {
     accessed();
     protocol = protocolName(api.engineInfo(handle, TransportNative.ENGINE_INFO_PROTOCOL, 0, null));
     cipherSuite = suiteName(api.engineInfo(handle, TransportNative.ENGINE_INFO_SUITE, 0, null));
-    byte[] alpn = NativeSslEngine.info(api, handle, TransportNative.ENGINE_INFO_ALPN, 0);
+    byte @Nullable [] alpn = NativeSslEngine.info(api, handle, TransportNative.ENGINE_INFO_ALPN, 0);
     applicationProtocol =
         alpn.length == 0 ? null : new String(alpn, java.nio.charset.StandardCharsets.US_ASCII);
     id = NativeSslEngine.info(api, handle, TransportNative.ENGINE_INFO_SESSION_ID, 0);
@@ -128,7 +129,7 @@ final class NativeSslSession implements SSLSession {
     } else local = engine.context.localCertificates();
   }
 
-  String applicationProtocol() {
+  @Nullable String applicationProtocol() {
     synchronized (engine) {
       return applicationProtocol;
     }
@@ -183,7 +184,7 @@ final class NativeSslSession implements SSLSession {
   }
 
   @Override
-  public Object getValue(String name) {
+  public @Nullable Object getValue(String name) {
     return values.get(name);
   }
 
@@ -208,7 +209,7 @@ final class NativeSslSession implements SSLSession {
   }
 
   @Override
-  public Certificate[] getLocalCertificates() {
+  public Certificate @Nullable [] getLocalCertificates() {
     synchronized (engine) {
       X509Certificate[] local =
           engine.context.isClient() ? this.local : engine.context.localCertificates();
@@ -225,7 +226,7 @@ final class NativeSslSession implements SSLSession {
   }
 
   @Override
-  public Principal getLocalPrincipal() {
+  public @Nullable Principal getLocalPrincipal() {
     synchronized (engine) {
       X509Certificate[] local =
           engine.context.isClient() ? this.local : engine.context.localCertificates();

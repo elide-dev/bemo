@@ -25,12 +25,15 @@ fn endpoint(owner: u64, address: std::net::SocketAddr) -> u64 {
   };
   let handle = elide_transport_buffer_new(owner, 24);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
   let mut bytes = [0u8; 24];
   bytes[..4].copy_from_slice(&v4.ip().octets());
   bytes[16..18].copy_from_slice(&address.port().to_ne_bytes());
   bytes[18..20].copy_from_slice(&4u16.to_ne_bytes());
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), view.address.cast::<u8>(), 24) };
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(handle, 24) }, 0);
   handle
 }
@@ -39,11 +42,14 @@ fn endpoint(owner: u64, address: std::net::SocketAddr) -> u64 {
 fn events(driver: u64, batch: u64, kind: u32, want: usize) -> Vec<(u64, u64, i64)> {
   let mut found = Vec::new();
   for _ in 0..64 {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 200_000_000, batch, 8) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let event = unsafe { &*view.address.cast::<NativeEvent>().add(index) };
       if event.kind == kind {
         found.push((event.socket, event.value, event.result));
@@ -59,12 +65,14 @@ fn events(driver: u64, batch: u64, kind: u32, want: usize) -> Vec<(u64, u64, i64
 fn view(exchange: u64, kind: u32, index: u32) -> Vec<u8> {
   let mut out = [0u64; 2];
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); output is writable or null for validation.
     unsafe { elide_transport_http_view(exchange, kind, index, out.as_mut_ptr()) },
     0
   );
   if out[0] == 0 {
     return Vec::new();
   }
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   unsafe { std::slice::from_raw_parts(out[0] as *const u8, out[1] as usize) }.to_vec()
 }
 
@@ -74,6 +82,7 @@ fn respond(driver: u64, exchange: u64, status: u32, headers: &[(&[u8], &[u8])], 
     .flat_map(|(n, v)| [n.as_ptr() as u64, n.len() as u64, v.as_ptr() as u64, v.len() as u64])
     .collect();
   assert_eq!(
+    // SAFETY: The exchange lease and any header/body storage remain live; null invalid ranges are rejected.
     unsafe {
       elide_transport_http_respond(
         driver,
@@ -98,6 +107,7 @@ fn respond_stream(driver: u64, exchange: u64, status: u32, headers: &[(&[u8], &[
     .flat_map(|(n, v)| [n.as_ptr() as u64, n.len() as u64, v.as_ptr() as u64, v.len() as u64])
     .collect();
   assert_eq!(
+    // SAFETY: The exchange lease and any header/body storage remain live; null invalid ranges are rejected.
     unsafe {
       elide_transport_http_respond(
         driver,
@@ -117,9 +127,11 @@ fn respond_stream(driver: u64, exchange: u64, status: u32, headers: &[(&[u8], &[
 /// Prepare a part, fill it with `payload`, and queue it; returns the send status and the handle.
 fn chunk(driver: u64, exchange: u64, payload: &[u8], final_part: bool) -> (i32, u64) {
   let mut address = 0u64;
+  // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
   let handle = unsafe { elide_transport_http_chunk_prepare(exchange, payload.len() as u64, &mut address) };
   assert_ne!(handle, 0, "chunk_prepare failed");
   assert_ne!(address, 0);
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(payload.as_ptr(), address as *mut u8, payload.len()) };
   let flags = if final_part { CHUNK_FINAL } else { 0 };
   let status = elide_transport_http_chunk_send(driver, exchange, handle, payload.len() as u64, flags);
@@ -165,11 +177,14 @@ struct Harness {
 impl Harness {
   /// One poll; appends every event to `pending` and returns how many arrived.
   fn poll(&mut self, timeout_ns: u64) -> usize {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(self.driver, timeout_ns, self.batch, 8) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(self.batch, &mut view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let e = unsafe { &*view.address.cast::<NativeEvent>().add(index) };
       self.pending.push(Ev {
         operation: e.operation,
@@ -296,7 +311,9 @@ impl Harness {
 
 /// Read a segment's bytes in place through its 16-byte layout, with its data address.
 fn segment(handle: u64) -> (u64, Vec<u8>) {
+  // SAFETY: The retained body handle begins with two aligned, initialized u64 descriptor words.
   let layout = unsafe { &*(handle as *const [u64; 2]) };
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   let bytes = unsafe { std::slice::from_raw_parts(layout[0] as *const u8, layout[1] as usize) };
   (layout[0], bytes.to_vec())
 }
@@ -315,11 +332,13 @@ fn body_of(segments: &[Ev]) -> Vec<u8> {
 
 /// The exchange layout's flags byte (offset 31 of 32).
 fn flags(exchange: u64) -> u8 {
+  // SAFETY: The caller holds the exchange lease; offset 31 lies in its initialized ABI header.
   unsafe { *(exchange as *const u8).add(31) }
 }
 
 /// Head address of an exchange; the head is a slice of the receive it arrived in.
 fn head_ptr(exchange: u64) -> u64 {
+  // SAFETY: The caller holds the exchange lease; the ABI header begins with an aligned u64.
   unsafe { *(exchange as *const u64) }
 }
 
@@ -371,7 +390,9 @@ struct CallbackState {
 }
 
 unsafe extern "C" fn on_request(context: u64, event: *const NativeEvent) -> i32 {
+  // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
   let state = unsafe { &mut *(context as *mut CallbackState) };
+  // SAFETY: The driver supplies a live initialized event for this synchronous callback.
   let event = unsafe { &*event };
   if event.kind != EVENT_REQUEST {
     return 0;
@@ -381,6 +402,7 @@ unsafe extern "C" fn on_request(context: u64, event: *const NativeEvent) -> i32 
   // Polling recursively would reorder completions; ordinary response/close reentry is legal.
   state
     .statuses
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     .push(unsafe { elide_transport_driver_poll(state.driver, 0, state.batch, 8) });
   if state.close {
     state
@@ -390,6 +412,7 @@ unsafe extern "C" fn on_request(context: u64, event: *const NativeEvent) -> i32 
       .statuses
       .push(elide_transport_http_release(state.driver, event.value));
   } else {
+    // SAFETY: The exchange lease and any header/body storage remain live; null invalid ranges are rejected.
     state.statuses.push(unsafe {
       elide_transport_http_respond(
         state.driver,
@@ -426,6 +449,7 @@ fn callback_request(close: bool) {
     .unwrap();
   let deadline = Instant::now() + Duration::from_secs(5);
   while state.requests == 0 && Instant::now() < deadline {
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     let count = unsafe {
       elide_transport_driver_poll_callback(
         common::workload(),
@@ -479,6 +503,7 @@ fn callback_poll_retains_pipeline_after_callback_stops() {
   let deadline = Instant::now() + Duration::from_secs(5);
   while state.requests < 3 && Instant::now() < deadline {
     let previous = state.requests;
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     let count = unsafe {
       elide_transport_driver_poll_callback(
         common::workload(),
@@ -507,10 +532,12 @@ fn callback_batch_request(stop: bool) {
     stop: bool,
   }
   unsafe extern "C" fn consume(context: u64, events: *const NativeEvent, count: u32) -> i32 {
+    // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut BatchState) };
     state.offered.push(count);
     let consumed = if state.stop { 1 } else { count };
     for i in 0..consumed {
+      // SAFETY: The loop stays within the batch and passes the live nested callback context synchronously.
       unsafe { on_request(&mut state.callback as *mut CallbackState as u64, events.add(i as usize)) };
     }
     if state.stop {
@@ -538,6 +565,7 @@ fn callback_batch_request(stop: bool) {
   let deadline = Instant::now() + Duration::from_secs(5);
   while state.callback.requests < 3 && Instant::now() < deadline {
     let previous = state.callback.requests;
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     let count = unsafe {
       elide_transport_driver_poll_batch_callback(
         common::workload(),
@@ -582,11 +610,14 @@ fn callback_batch_consumes_pipeline_in_one_upcall() {
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn callback_poll_revalidates_after_driver_release() {
   unsafe extern "C" fn release(context: u64, event: *const NativeEvent) -> i32 {
+    // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut (u64, Vec<i32>)) };
+    // SAFETY: The driver supplies a live initialized event for this synchronous callback.
     let event = unsafe { &*event };
     state.1.push(event.result as i32);
     state
       .1
+      // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
       .push(unsafe { elide_transport_driver_poll_callback(common::workload(), state.0, 0, 1, Some(release), context) });
     state.1.push(elide_transport_socket_close(state.0, event.socket));
     state.1.push(elide_transport_driver_release(state.0));
@@ -602,6 +633,7 @@ fn callback_poll_revalidates_after_driver_release() {
   let mut state = (driver, Vec::<i32>::new());
   let deadline = Instant::now() + Duration::from_secs(5);
   while state.1.is_empty() && Instant::now() < deadline {
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     let status = unsafe {
       elide_transport_driver_poll_callback(
         common::workload(),
@@ -632,7 +664,9 @@ fn callback_batch_releases_unconsumed_requests_with_driver() {
   }
 
   unsafe extern "C" fn release(context: u64, events: *const NativeEvent, count: u32) -> i32 {
+    // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut ReleaseState) };
+    // SAFETY: The driver supplies a live initialized event for this synchronous callback.
     let first = unsafe { &*events };
     if first.kind != EVENT_REQUEST {
       return count as i32;
@@ -667,6 +701,7 @@ fn callback_batch_releases_unconsumed_requests_with_driver() {
   h.peer.write_all(b"GET /1 HTTP/1.1\r\nHost: test\r\n\r\nGET /2 HTTP/1.1\r\nHost: test\r\n\r\nGET /3 HTTP/1.1\r\nHost: test\r\n\r\n").unwrap();
   let deadline = Instant::now() + Duration::from_secs(5);
   while !state.released && Instant::now() < deadline {
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     let status = unsafe {
       elide_transport_driver_poll_batch_callback(
         common::workload(),
@@ -765,14 +800,17 @@ fn pipelined_requests_are_exposed_and_answered_in_order() {
   let head = view(first, VIEW_HEAD, 0);
   assert!(head.starts_with(b"GET /first?x=1 HTTP/1.1\r\n") && head.ends_with(b"\r\n\r\n"));
   let mut spans = [0u32; 32];
+  // SAFETY: The exchange is live (or a rejected sentinel); the declared output capacity fits the array.
   let needed = unsafe { elide_transport_http_spans(first, spans.as_mut_ptr(), 32) };
   assert_eq!(needed, 4 + 2 * 4);
   assert_eq!(&head[spans[0] as usize..spans[1] as usize], b"GET");
   assert_eq!(&head[spans[2] as usize..spans[3] as usize], b"/first?x=1");
   assert_eq!(&head[spans[8] as usize..spans[9] as usize], b"X-Trace");
   assert_eq!(&head[spans[10] as usize..spans[11] as usize], b"t1");
+  // SAFETY: The exchange is live (or a rejected sentinel); the declared output capacity fits the array.
   assert_eq!(unsafe { elide_transport_http_spans(first, spans.as_mut_ptr(), 4) }, 12);
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); output is writable or null for validation.
     unsafe { elide_transport_http_view(first, VIEW_HEADER_NAME, 9, [0u64; 2].as_mut_ptr()) },
     INVALID
   );
@@ -1138,6 +1176,7 @@ fn encoding_failure_abandons_pending_exchange() {
   let exchange = events(h.driver, h.batch, EVENT_REQUEST, 1)[0].1;
   let body = vec![0u8; 4 * 1024 * 1024];
   assert_ne!(
+    // SAFETY: The exchange lease and any header/body storage remain live; null invalid ranges are rejected.
     unsafe {
       elide_transport_http_respond(
         h.driver,
@@ -1275,11 +1314,14 @@ fn socket_http_budget_refusal_rolls_back_and_allows_retry() {
 fn events3(driver: u64, batch: u64, kind: u32, want: usize) -> Vec<(u64, u64, i64)> {
   let mut found = Vec::new();
   for _ in 0..64 {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 200_000_000, batch, 3) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let event = unsafe { &*view.address.cast::<NativeEvent>().add(index) };
       if event.kind == kind {
         found.push((event.socket, event.value, event.result));
@@ -1362,11 +1404,14 @@ fn op_limit_during_send_keeps_connection_alive() {
   let mut got_b = Vec::new();
   let mut closed = 0;
   for _ in 0..64 {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 100_000_000, batch, 3) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let event = unsafe { &*view.address.cast::<NativeEvent>().add(index) };
       if event.kind == EVENT_CLOSED {
         closed += 1;
@@ -1469,10 +1514,13 @@ fn callback_cork_coalesces_the_initial_pipeline_send() {
     statuses: Vec<i32>,
   }
   unsafe extern "C" fn reply(context: u64, event: *const NativeEvent) -> i32 {
+    // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let replies = unsafe { &mut *(context as *mut Replies) };
+    // SAFETY: The driver supplies a live initialized event for this synchronous callback.
     let event = unsafe { &*event };
     if event.kind == EVENT_REQUEST {
       replies.exchanges.push(event.value);
+      // SAFETY: The exchange lease and any header/body storage remain live; null invalid ranges are rejected.
       replies.statuses.push(unsafe {
         elide_transport_http_respond(
           replies.driver,
@@ -1501,6 +1549,7 @@ fn callback_cork_coalesces_the_initial_pipeline_send() {
   let deadline = Instant::now() + Duration::from_secs(5);
   while replies.exchanges.is_empty() && Instant::now() < deadline {
     assert!(
+      // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
       unsafe {
         elide_transport_driver_poll_callback(
           common::workload(),
@@ -1655,6 +1704,7 @@ fn response_window_rejects_parts_until_earlier_ones_are_sent() {
   assert_eq!(status, BUSY);
   // A refused part stays with the caller.
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(held, &mut view) }, 0);
   let mut got = h.read_while_polling(|got| got.len() > 200 * 1024);
   let sent = h.take(EVENT_PART_SENT, 2);
@@ -1836,11 +1886,14 @@ fn arm_receive_failure_leaves_socket_dormant() {
   // never re-arms, so /c must not appear yet — pinning the bug condition we are fixing.
   let mut saw_c = false;
   for _ in 0..40 {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(h.driver, 50_000_000, h.batch, 8) };
     assert!(count >= 0, "poll failed");
     let mut batch_view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(h.batch, &mut batch_view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let event = unsafe { &*batch_view.address.cast::<NativeEvent>().add(index) };
       if event.kind == EVENT_REQUEST && view(event.value, VIEW_PATH, 0) == b"/c" {
         saw_c = true;
@@ -2140,10 +2193,13 @@ fn tls_fixture_with_protocol(
   let frozen = |data: &[u8]| {
     let handle = elide_transport_buffer_new(owner, data.len() as u64);
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
+    // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
     unsafe {
       std::ptr::copy_nonoverlapping(data.as_ptr(), view.address.cast::<u8>(), data.len());
     }
+    // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
     assert_eq!(unsafe { elide_transport_buffer_freeze(handle, data.len() as u64) }, 0);
     handle
   };
@@ -2490,14 +2546,61 @@ impl tokio::io::AsyncWrite for H2TlsIo {
     mut self: std::pin::Pin<&mut Self>,
     cx: &mut std::task::Context<'_>,
   ) -> std::task::Poll<std::io::Result<()>> {
+    let peer_closed = self
+      .0
+      .conn
+      .process_new_packets()
+      .map_err(std::io::Error::other)?
+      .peer_has_closed();
     self.0.conn.send_close_notify();
-    // The server may have closed its socket after sending close_notify. A failed
-    // reciprocal notification does not invalidate the responses already read.
+    // h2 has consumed the authenticated TLS EOF before calling shutdown. The
+    // server can close TCP before this reciprocal close_notify is flushed.
+    // Winsock reports ConnectionAborted/Reset where Unix reports BrokenPipe.
     match self.poll_flush(cx) {
-      std::task::Poll::Ready(Err(error)) if error.kind() == std::io::ErrorKind::BrokenPipe => {
-        std::task::Poll::Ready(Ok(()))
-      }
-      result => result,
+      std::task::Poll::Ready(result) => std::task::Poll::Ready(tls_shutdown_result(result, peer_closed)),
+      std::task::Poll::Pending => std::task::Poll::Pending,
+    }
+  }
+}
+
+fn tls_shutdown_result(result: std::io::Result<()>, peer_closed: bool) -> std::io::Result<()> {
+  use std::io::ErrorKind;
+  match result {
+    Err(error)
+      if peer_closed
+        && matches!(
+          error.kind(),
+          ErrorKind::BrokenPipe | ErrorKind::ConnectionAborted | ErrorKind::ConnectionReset
+        ) =>
+    {
+      Ok(())
+    }
+    result => result,
+  }
+}
+
+#[test]
+fn h2_tls_shutdown_requires_authenticated_close_before_accepting_disconnect() {
+  use std::io::{Error, ErrorKind};
+  for kind in [
+    ErrorKind::BrokenPipe,
+    ErrorKind::ConnectionAborted,
+    ErrorKind::ConnectionReset,
+  ] {
+    assert!(tls_shutdown_result(Err(Error::from(kind)), true).is_ok());
+    assert_eq!(
+      tls_shutdown_result(Err(Error::from(kind)), false).unwrap_err().kind(),
+      kind
+    );
+  }
+  for peer_closed in [false, true] {
+    for kind in [ErrorKind::InvalidData, ErrorKind::UnexpectedEof, ErrorKind::WouldBlock] {
+      assert_eq!(
+        tls_shutdown_result(Err(Error::from(kind)), peer_closed)
+          .unwrap_err()
+          .kind(),
+        kind
+      );
     }
   }
 }
@@ -2760,8 +2863,10 @@ fn parsed_header_metadata_is_advertised_and_preserves_first_host() {
       "extended metadata must be advertised before reading it"
     );
     let ptr = exchange as *const u8;
-    assert_eq!(unsafe { ptr.add(32).cast::<i64>().read() }, length);
-    assert_eq!(unsafe { ptr.add(40).cast::<i32>().read() }, host);
+    // SAFETY: The live exchange ABI header contains the initialized i64 at offset 32.
+    assert_eq!(unsafe { ptr.add(32).cast::<i64>().read_unaligned() }, length);
+    // SAFETY: The live exchange ABI header contains the initialized i32 at offset 40.
+    assert_eq!(unsafe { ptr.add(40).cast::<i32>().read_unaligned() }, host);
     if host >= 0 {
       assert_eq!(view(exchange, VIEW_HEADER_VALUE, host as u32), b"first");
     }
@@ -2770,8 +2875,10 @@ fn parsed_header_metadata_is_advertised_and_preserves_first_host() {
 
 /// Prepare the exchange's response buffer with `capacity` bytes and fill it with `wire`.
 fn prepare(exchange: u64, capacity: usize, wire: &[u8]) {
+  // SAFETY: The fixture holds the exchange lease; sentinel handles and invalid capacities are rejected.
   let address = unsafe { elide_transport_http_prepare(exchange, capacity as u64) };
   assert_ne!(address, 0, "prepare failed");
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(wire.as_ptr(), address as *mut u8, wire.len()) };
 }
 
@@ -2784,14 +2891,19 @@ fn retained_heads_copy_spans_and_bytes_out_of_the_receive() {
     .unwrap();
   let exchange = h.take(EVENT_REQUEST, 1)[0].value;
   assert_eq!(
+    // SAFETY: The exchange lease is held; null or misaligned sentinel arguments are rejected before access.
     unsafe { elide_transport_http_retain(exchange, std::ptr::null_mut()) },
     0
   );
   let mut length = 0u64;
+  // SAFETY: The exchange lease is held; null or misaligned sentinel arguments are rejected before access.
   assert_eq!(unsafe { elide_transport_http_retain(0, &mut length) }, 0);
+  // SAFETY: The exchange lease is held; null or misaligned sentinel arguments are rejected before access.
   assert_eq!(unsafe { elide_transport_http_retain(exchange + 1, &mut length) }, 0);
+  // SAFETY: The exchange lease is held; null or misaligned sentinel arguments are rejected before access.
   let blob = unsafe { elide_transport_http_retain(exchange, &mut length) };
   assert_ne!(blob, 0);
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   let bytes = unsafe { std::slice::from_raw_parts(blob as *const u8, length as usize) }.to_vec();
   let head = view(exchange, VIEW_HEAD, 0);
   let spans = u32::from_ne_bytes(bytes[0..4].try_into().unwrap()) as usize;
@@ -2810,7 +2922,9 @@ fn retained_heads_copy_spans_and_bytes_out_of_the_receive() {
   assert_eq!(slice(2), b"/retain?q=1");
   assert_eq!(slice(4), b"Host");
   assert_eq!(slice(6), b"a");
+  // SAFETY: Consume the retained blob once; zero is rejected without dereferencing.
   assert_eq!(unsafe { elide_transport_http_head_release(blob) }, 0);
+  // SAFETY: Consume the retained blob once; zero is rejected without dereferencing.
   assert_eq!(unsafe { elide_transport_http_head_release(0) }, INVALID);
   respond(h.driver, exchange, 204, &[], b"");
   let wire = h.read_while_polling(|wire| wire.ends_with(b"\r\n\r\n"));
@@ -2830,8 +2944,11 @@ fn prepared_responses_are_sent_verbatim_and_can_close_the_connection() {
     .unwrap();
   let requests = h.take(EVENT_REQUEST, 2);
   let (first, second) = (requests[0].value, requests[1].value);
+  // SAFETY: The fixture holds the exchange lease; sentinel handles and invalid capacities are rejected.
   assert_eq!(unsafe { elide_transport_http_prepare(0, 16) }, 0);
+  // SAFETY: The fixture holds the exchange lease; sentinel handles and invalid capacities are rejected.
   assert_eq!(unsafe { elide_transport_http_prepare(first + 1, 16) }, 0);
+  // SAFETY: The fixture holds the exchange lease; sentinel handles and invalid capacities are rejected.
   assert_eq!(unsafe { elide_transport_http_prepare(first, u64::MAX) }, 0);
   assert_eq!(
     elide_transport_http_send(h.driver, first, 4, 0),
@@ -2901,23 +3018,28 @@ fn http_calls_validate_arguments_before_touching_the_exchange() {
 
   let mut out = [7u64; 2];
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); output is writable or null for validation.
     unsafe { elide_transport_http_view(exchange, VIEW_PATH, 0, null_mut()) },
     INVALID
   );
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); output is writable or null for validation.
     unsafe { elide_transport_http_view(exchange, 99, 0, out.as_mut_ptr()) },
     INVALID
   );
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); output is writable or null for validation.
     unsafe { elide_transport_http_view(exchange, VIEW_HEADER_NAME, 2, out.as_mut_ptr()) },
     INVALID
   );
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); output is writable or null for validation.
     unsafe { elide_transport_http_view(0, VIEW_PATH, 0, out.as_mut_ptr()) },
     INVALID
   );
   assert_eq!(view(exchange, VIEW_HEADER_VALUE, 1), b"2");
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); output is writable or null for validation.
     unsafe { elide_transport_http_view(exchange, VIEW_BODY, 0, out.as_mut_ptr()) },
     0
   );
@@ -2925,16 +3047,20 @@ fn http_calls_validate_arguments_before_touching_the_exchange() {
 
   let mut spans = [0u32; 12];
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); the declared output capacity fits the array.
     unsafe { elide_transport_http_spans(exchange, spans.as_mut_ptr(), 4) },
     12
   );
   assert_eq!(spans, [0; 12], "an undersized table is left untouched");
+  // SAFETY: A null output requests the required span count without writing any memory.
   assert_eq!(unsafe { elide_transport_http_spans(exchange, null_mut(), 64) }, 12);
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); the declared output capacity fits the array.
     unsafe { elide_transport_http_spans(0, spans.as_mut_ptr(), 12) },
     INVALID
   );
   assert_eq!(
+    // SAFETY: The exchange is live (or a rejected sentinel); the declared output capacity fits the array.
     unsafe { elide_transport_http_spans(exchange, spans.as_mut_ptr(), 12) },
     12
   );
@@ -2942,6 +3068,7 @@ fn http_calls_validate_arguments_before_touching_the_exchange() {
   assert_eq!(&head[spans[2] as usize..spans[3] as usize], b"/v");
   assert_eq!(&head[spans[8] as usize..spans[9] as usize], b"X-Two");
 
+  // SAFETY: The exchange lease and any header/body storage remain live; null invalid ranges are rejected.
   let respond_raw = |driver: u64, exchange: u64, status: u32, count: u32, length: u64| unsafe {
     elide_transport_http_respond(driver, exchange, status, null(), count, null(), length, 0)
   };
@@ -2962,25 +3089,32 @@ fn http_calls_validate_arguments_before_touching_the_exchange() {
 
   let mut address = 0u64;
   assert_eq!(
+    // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
     unsafe { elide_transport_http_chunk_prepare(exchange, 8, null_mut()) },
     0
   );
+  // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
   assert_eq!(unsafe { elide_transport_http_chunk_prepare(0, 8, &mut address) }, 0);
   assert_eq!(
+    // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
     unsafe { elide_transport_http_chunk_prepare(exchange + 1, 8, &mut address) },
     0
   );
   assert_eq!(
+    // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
     unsafe { elide_transport_http_chunk_prepare(exchange, u64::MAX, &mut address) },
     0
   );
   assert_eq!(
+    // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
     unsafe { elide_transport_http_chunk_prepare(exchange, 1 << 40, &mut address) },
     0
   );
   assert_eq!(address, 0);
+  // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
   let part = unsafe { elide_transport_http_chunk_prepare(exchange, 8, &mut address) };
   assert_ne!(part, 0);
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(b"streamed".as_ptr(), address as *mut u8, 8) };
   assert_eq!(
     elide_transport_http_chunk_send(h.driver, exchange, part, 8, 0),
@@ -2993,6 +3127,7 @@ fn http_calls_validate_arguments_before_touching_the_exchange() {
   respond_stream(h.driver, exchange, 200, &[], u64::MAX);
   assert_eq!(respond_raw(h.driver, exchange, 200, 0, 0), INVALID, "already responded");
   let frozen = elide_transport_buffer_new(h.owner, 64);
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(frozen, 0) }, 0);
   assert_eq!(
     elide_transport_http_chunk_send(h.driver, exchange, frozen, 1, 0),
@@ -3016,6 +3151,7 @@ fn http_calls_validate_arguments_before_touching_the_exchange() {
     elide_transport_http_chunk_send(h.driver, exchange, part, 8, CHUNK_FINAL),
     0
   );
+  // SAFETY: The exchange lease is held; output is writable or null for validation; bad geometry is rejected.
   let late = unsafe { elide_transport_http_chunk_prepare(exchange, 1, &mut address) };
   assert_ne!(late, 0);
   assert_eq!(

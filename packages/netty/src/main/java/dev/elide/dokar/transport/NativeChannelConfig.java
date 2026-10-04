@@ -12,7 +12,7 @@ import java.util.Map;
 @SuppressWarnings("deprecation")
 final class NativeChannelConfig extends DefaultChannelConfig
     implements SocketChannelConfig, ServerSocketChannelConfig {
-  private final NativeChannel channel;
+  private final NativeChannel nativeChannel;
   private volatile boolean tcpNoDelay = true;
   private volatile boolean keepAlive;
   private volatile boolean reuseAddress = true;
@@ -28,7 +28,7 @@ final class NativeChannelConfig extends DefaultChannelConfig
 
   NativeChannelConfig(NativeChannel channel) {
     super(channel);
-    this.channel = channel;
+    this.nativeChannel = channel;
   }
 
   void apply() {
@@ -42,13 +42,16 @@ final class NativeChannelConfig extends DefaultChannelConfig
   }
 
   private void option(int option, int value) {
-    if (channel.socket != 0 && !channel.eventLoop().inEventLoop()) {
-      channel.eventLoop().submit(() -> option(option, value)).syncUninterruptibly();
+    if (nativeChannel.socket != 0 && !nativeChannel.eventLoop().inEventLoop()) {
+      nativeChannel.eventLoop().submit(() -> option(option, value)).syncUninterruptibly();
       return;
     }
-    if (channel.socket != 0
-        && channel.io.api.socketOption(channel.io.driver(), channel.socket, option, value) != 0)
-      throw new NativeTransportException("Native socket option failed");
+    if (nativeChannel.socket != 0
+        && nativeChannel
+                .io()
+                .api
+                .socketOption(nativeChannel.io().driver(), nativeChannel.socket, option, value)
+            != 0) throw new NativeTransportException("Native socket option failed");
   }
 
   @Override
@@ -120,7 +123,7 @@ final class NativeChannelConfig extends DefaultChannelConfig
 
   @Override
   public NativeChannelConfig setBacklog(int value) {
-    if (value < 0 || channel.isActive())
+    if (value < 0 || nativeChannel.isActive())
       throw new IllegalArgumentException("Set nonnegative backlog before bind");
     backlog = value;
     return this;
@@ -177,7 +180,9 @@ final class NativeChannelConfig extends DefaultChannelConfig
   }
 
   @Override
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings({"unchecked", "ReferenceEquality"})
+  // Netty ChannelOption constants are identity tokens.
+
   public <T> T getOption(ChannelOption<T> option) {
     if (option == ChannelOption.TCP_NODELAY) return (T) Boolean.valueOf(isTcpNoDelay());
     if (option == ChannelOption.SO_KEEPALIVE) return (T) Boolean.valueOf(isKeepAlive());
@@ -191,6 +196,8 @@ final class NativeChannelConfig extends DefaultChannelConfig
   }
 
   @Override
+  // Netty ChannelOption constants are identity tokens.
+  @SuppressWarnings("ReferenceEquality")
   public <T> boolean setOption(ChannelOption<T> option, T value) {
     validate(option, value);
     if (option == ChannelOption.TCP_NODELAY) setTcpNoDelay((Boolean) value);

@@ -26,8 +26,11 @@ fn frozen(owner: u64, bytes: &[u8]) -> u64 {
   let handle = elide_transport_buffer_new(owner, bytes.len() as u64);
   assert_ne!(handle, 0);
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
+  // SAFETY: The fixture owns the destination capacity; the source is a separate live byte slice.
   unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), view.address.cast::<u8>(), bytes.len()) };
+  // SAFETY: The fixture has no live writers; allocation initializes capacity and oversized lengths are rejected.
   assert_eq!(unsafe { elide_transport_buffer_freeze(handle, bytes.len() as u64) }, 0);
   handle
 }
@@ -38,7 +41,9 @@ fn endpoint(owner: u64, address: SocketAddr) -> u64 {
 
 fn contents(handle: u64) -> Vec<u8> {
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
+  // SAFETY: The retained handle owns this initialized byte range for the duration of the copy/read.
   unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), view.length as usize) }.to_vec()
 }
 
@@ -65,11 +70,14 @@ fn local_address(driver: u64, owner: u64, socket: u64, peer: u32) -> SocketAddr 
 
 fn completion(driver: u64, batch: u64, kind: u32) -> (u64, i64) {
   for _ in 0..64 {
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
     let count = unsafe { elide_transport_driver_poll(driver, 1_000_000_000, batch, 8) };
     assert!(count >= 0, "poll failed");
     let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
     assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
     for index in 0..count as usize {
+      // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
       let event = unsafe { &*view.address.cast::<NativeEvent>().add(index) };
       if event.kind == kind {
         return (event.value, event.result);
@@ -236,6 +244,7 @@ fn listener_accept_adopt_send_receive_and_shutdown() {
     0
   );
   let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
   assert_eq!(unsafe { elide_transport_buffer_view(mutable, &mut view) }, INVALID);
   client.write_all(b"ping").unwrap();
   let (buffer, received) = completion(f.driver, f.batch, 3);
@@ -427,29 +436,39 @@ fn polls_reject_invalid_batches_drivers_and_callbacks() {
   let owner = elide_transport_owner_new(4096);
   let small = elide_transport_buffer_new(owner, 8);
   let batch = elide_transport_buffer_new(owner, size_of::<NativeEvent>() as u64);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, 0, 1) }, INVALID);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, small, 1) }, INVALID);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, batch, 0) }, INVALID);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, batch, 2) }, INVALID);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, batch, u32::MAX) }, INVALID);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, batch, 1) }, INVALID);
   // The batch is returned to its owner even when the driver is unknown.
   assert_eq!(elide_transport_buffer_release(batch), 0);
   let frozen_batch = frozen(owner, &[0u8; 40]);
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, frozen_batch, 1) }, INVALID);
 
   unsafe extern "C" fn never(_: u64, _: *const NativeEvent) -> i32 {
     unreachable!("no events are dispatched for an unknown driver")
   }
   assert_eq!(
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 1, None, 0) },
     INVALID
   );
   assert_eq!(
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 0, Some(never), 0) },
     INVALID
   );
   assert_eq!(
+    // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
     unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 1, Some(never), 0) },
     INVALID
   );
