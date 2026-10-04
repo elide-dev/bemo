@@ -42,10 +42,10 @@ by C API tests but are **not** included in JVM coverage: JaCoCo cannot instrumen
 them while running a native executable. Rust LCOV excludes integration-test and
 benchmark sources. Coverage and tests remain separate upload types.
 
-CI archives reports even on failures, on every PR and main verification. To
-activate uploads after connecting `elide-dev/dokar` in Codecov, set repository
-variable `CODECOV_ENABLED=true` and enable Codecov OIDC trust. No PR secrets are
-needed. Uploads use explicit file paths, `rust`/`jvm` flags, and disabled file
+CI archives reports even on failures, on every PR and main verification. Uploads are enabled by default after connecting `elide-dev/dokar` in Codecov.
+Main-branch workflows forward `CODECOV_TOKEN`; PR and merge-queue workflows use
+Codecov OIDC trust and receive no secrets. Set repository variable
+`CODECOV_ENABLED=false` to disable external uploads while retaining artifacts. Uploads use explicit file paths, `rust`/`jvm` flags, and disabled file
 search. Codecov statuses start informational; establish measured coverage
 baselines before setting numeric merge requirements. The build and test jobs
 still fail on real failures. Reports are available as artifacts even when

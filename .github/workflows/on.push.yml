@@ -11,3 +11,5 @@ concurrency:
 jobs:
   verify:
     uses: ./.github/workflows/on.verify.yml
+    secrets:
+      CODECOV_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.CODECOV_TOKEN || '' }}

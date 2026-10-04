@@ -1,6 +1,9 @@
 name: Check Coverage
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
 permissions:
   contents: read
 jobs:
@@ -36,19 +39,21 @@ jobs:
           path: build/reports/
           if-no-files-found: error
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() && vars.CODECOV_ENABLED == 'true' }}
+        if: ${{ !cancelled() && vars.CODECOV_ENABLED != 'false' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          use_oidc: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
           disable_search: true
           fail_ci_if_error: true
           flags: ${{ matrix.language }}
           files: ${{ matrix.language == 'rust' && 'build/reports/coverage/rust/lcov.info' || 'build/reports/coverage/jvm/jacoco.xml' }}
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() && vars.CODECOV_ENABLED == 'true' }}
+        if: ${{ !cancelled() && vars.CODECOV_ENABLED != 'false' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          use_oidc: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
           disable_search: true
           fail_ci_if_error: true
           report_type: test_results

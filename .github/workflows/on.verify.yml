@@ -1,6 +1,9 @@
 name: Verify
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +19,8 @@ jobs:
     uses: ./.github/workflows/job.build.yml
   coverage:
     uses: ./.github/workflows/check.coverage.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   ready:
     name: Ready
     if: always()
