@@ -1,16 +1,8 @@
 name: Benchmarks
 on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
-  schedule:
-    - cron: '23 5 * * *'
+  workflow_call:
 permissions:
   contents: read
-concurrency:
-  group: benchmarks-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   simulation:
     runs-on: ubuntu-24.04
@@ -66,7 +58,7 @@ jobs:
           python3 - <<'PY'
           import json, os, subprocess
           runs = json.loads(subprocess.check_output([
-            'gh', 'run', 'list', '--workflow', 'on.bench.yml', '--branch', 'main',
+            'gh', 'run', 'list', '--workflow', 'on.push.yml', '--branch', 'main',
             '--status', 'completed', '--limit', '10', '--json', 'databaseId']))
           for run in runs:
             if str(run['databaseId']) == os.environ['GITHUB_RUN_ID']:
@@ -93,8 +85,8 @@ jobs:
 
   # Match Komodo: only provisioned, trusted runners measure wall-clock regressions.
   walltime:
-    if: vars.CODSPEED_WALLTIME_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ${{ vars.CODSPEED_WALLTIME_RUNNER }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: linux-amd64-bench
     timeout-minutes: 30
     permissions:
       contents: read

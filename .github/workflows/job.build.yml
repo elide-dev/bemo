@@ -1,8 +1,6 @@
 name: Build
 on:
   workflow_call:
-permissions:
-  contents: read
 jobs:
   build:
     name: Package (${{ matrix.os }})
@@ -27,6 +25,27 @@ jobs:
         run: make package
       - name: Validate staged artifacts
         run: python3 tools/verify_package.py
+      - name: Attest tested platform bundle
+        id: provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/dokar-*-unsigned.zip
+      - name: Stage provenance bundle
+        if: steps.provenance.outcome == 'success'
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE" "build/provenance-${{ matrix.os }}.json"
+      - name: Upload release evidence
+        if: steps.provenance.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.os }}
+          path: |
+            build/dokar-*-unsigned.zip
+            build/provenance-*.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload unsigned Maven repository
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

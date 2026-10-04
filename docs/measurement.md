@@ -58,16 +58,17 @@ each run. Native and JVM XML have separate directories.
 
 ## Performance measurement
 
-`on.bench.yml` runs on PRs, main pushes, a daily schedule, and manual dispatch.
+`check.bench.yml` is called by the reusable `on.verify.yml` flow for PRs, main
+pushes, scheduled checks, and manual dispatch.
 It follows Bali's and Komodo's split between CPU simulation and wall time.
-Performance is a separate workflow from the correctness gate. Main runs retain
-baselines; superseded PR runs may be cancelled.
+Benchmark execution participates in the same Ready gate as correctness checks.
+Main push runs retain baselines; superseded PR runs may be cancelled.
 
 | Measurement | Continuous execution | What it covers |
 | --- | --- | --- |
 | CodSpeed CPU simulation | Every run, hosted Linux | Rust buffers, handles, complete/fragmented HTTP/1 request parsing, response encoding |
 | Native/JVM loopback RPS and RSS | Every run, hosted Linux | Native Netty channels, HTTP/1 codec, plaintext/TLS, identity/gzip, 1 KiB/64 KiB bodies |
-| CodSpeed wall time | When `CODSPEED_WALLTIME_RUNNER` names a provisioned runner | TLS 1.2/1.3 handshakes and records; all eight end-to-end workloads |
+| CodSpeed wall time | Trusted runs on `linux-amd64-bench` | TLS 1.2/1.3 handshakes and records; all eight end-to-end workloads |
 
 The Rust benches use Criterion through CodSpeed's compatibility crate, so local
 `cargo bench` remains available. HTTP parsing includes receive-buffer allocation,

@@ -2,14 +2,36 @@ name: Push
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  actions: read
   id-token: write
+  attestations: write
+  artifact-metadata: write
 concurrency:
   group: push-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   verify:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     uses: ./.github/workflows/on.verify.yml
     secrets:
       CODECOV_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.CODECOV_TOKEN || '' }}
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [verify]
+    uses: ./.github/workflows/job.release.yml
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+      id-token: write

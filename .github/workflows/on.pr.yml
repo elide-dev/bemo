@@ -4,6 +4,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
+  actions: read
   id-token: write
 concurrency:
   group: pr-${{ github.event.number }}

@@ -95,9 +95,10 @@ Linux compatibility floor remain prerequisites for production release.
    Java artifacts and classifiers.
 
 Signing credentials and Central tokens are not required for builds or tests.
-The current workflows deliberately stop at unsigned staging. A future publishing
-workflow can consume these verified artifacts and use a protected environment;
-it must never rebuild from untrusted PR code with publishing credentials.
+GitHub releases publish the tested, unsigned Maven staging ZIPs with provenance
+and Sigstore signatures. Maven Central publication remains a separate operation:
+Sigstore signatures do not replace Central's per-JAR/POM PGP signatures.
+See [release automation and verification](releases.md).
 
 See [Central's artifact requirements](https://central.sonatype.org/publish/requirements/)
 and [Portal upload layout](https://central.sonatype.org/publish/publish-portal-upload/).
