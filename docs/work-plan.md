@@ -112,8 +112,23 @@ compiling benchmarks because Cargo was absent from PATH.
 - [x] Verify a deterministic fault-injection test fails before the fix and passes
   after it for TLS 1.2/1.3 and BrokenPipe/ConnectionAborted/ConnectionReset.
 - [x] Run the Rust suite and 20 focused H2 runs without retries.
-- [ ] Confirm the fix on Linux CI.
+- [x] Confirm the fix on Linux CI (`37235296694`); Windows and macOS also passed.
 
 The same run completed the TLS Criterion benchmarks, then failed the end-to-end
 wall-time manifest check (`Benchmark inputs or artifacts changed`). That separate
 benchmark issue remains open; no integrity check has been disabled.
+
+## Benchmark manifest follow-up: run 37235296694
+
+- [x] Reproduce source fingerprint drift with Cargo environment unavailable:
+  Criterion writes reports under `crates/dokar/target/criterion`.
+- [x] Set an explicit CI Criterion report directory and exclude generated target
+  directories from source hashing; retain class and native-library checks.
+- [x] Upload Criterion evidence and write actionable manifest-drift diagnostics.
+- [x] Verify generated reports leave the manifest unchanged while source edits,
+  source deletion, class changes, and native-library changes invalidate it.
+- [x] Run all eight transport benchmark cases as smoke tests, Python contracts,
+  the external Cargo consumer, and Actionlint.
+- [ ] Confirm the wall-time job succeeds on the dedicated CI runner.
+
+Every other verification job passed in run `37235296694`.

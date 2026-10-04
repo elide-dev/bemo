@@ -87,6 +87,8 @@ jobs:
   walltime:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: linux-amd64-bench
+    env:
+      CRITERION_HOME: ${{ github.workspace }}/target/criterion
     timeout-minutes: 30
     permissions:
       contents: read
@@ -113,5 +115,8 @@ jobs:
         if: always()
         with:
           name: walltime-evidence
-          path: build/reports/benchmarks/
+          path: |
+            build/reports/benchmarks/
+            target/criterion/
+            crates/dokar/target/criterion/
           if-no-files-found: error

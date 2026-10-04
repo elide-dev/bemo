@@ -89,7 +89,11 @@ no Rust compression implementation. Bodies repeat a fixed JSON pattern, so gzip
 results describe compressible application data, not incompressible data.
 
 `make bench-prepare` fingerprints source inputs, compiled classes, and the native
-library; measurement refuses stale preparations.
+library; measurement refuses stale preparations. Generated `target/` directories
+and Python caches are excluded from source fingerprints. Wall-time CI sets
+`CRITERION_HOME` explicitly and uploads Criterion reports alongside transport
+measurements. A stale preparation writes `manifest-drift.json` with the changed
+fingerprint categories and expected/actual hashes before failing.
 
 Each sample starts a fresh JVM with a fixed 256 MiB heap, warms 500 rounds, then
 times 2,500 rounds (10,000 completed requests). Setup, TLS handshakes, warmup,

@@ -28,7 +28,11 @@ def digest(paths):
 def snapshot():
   sources = [build.ROOT / name for name in ("Cargo.toml", "Cargo.lock", "elide.pkl", "tools/versions.json", "rust-toolchain.toml")]
   for directory in ("crates", "packages", "benchmarks"):
-    sources.extend(p for p in (build.ROOT / directory).rglob("*") if p.is_file())
+    # Criterion can fall back to a crate-local target/ when Cargo's environment
+    # is unavailable under instrumentation. Generated reports are not inputs.
+    for root, directories, files in os.walk(build.ROOT / directory):
+      directories[:] = [name for name in directories if name not in ("target", "__pycache__")]
+      sources.extend(Path(root) / name for name in files)
   classes = [p for directory in [build.BUILD / "bench/classes", *[build.classes(m) for m in ("api", "ffm", "netty")]]
              for p in directory.rglob("*") if p.is_file()]
   return {"sources_sha256": digest(sources), "classes_sha256": digest(classes),
@@ -83,8 +87,14 @@ def main():
   if min(args.rounds, args.warmup, args.samples) < 1:
     parser.error("rounds, warmup and samples must be positive")
   manifest = build.BUILD / "bench/manifest.json"
-  if not manifest.is_file() or json.loads(manifest.read_text()) != snapshot():
-    raise RuntimeError("Benchmark inputs or artifacts changed; run make bench-prepare")
+  expected = json.loads(manifest.read_text()) if manifest.is_file() else {}
+  actual = snapshot()
+  changed = [name for name in actual if expected.get(name) != actual[name]]
+  if changed:
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    (OUTPUT / "manifest-drift.json").write_text(json.dumps(
+        {"changed": changed, "expected": expected, "actual": actual}, indent=2) + "\n")
+    raise RuntimeError(f"Benchmark inputs or artifacts changed ({', '.join(changed)}); run make bench-prepare")
   report = OUTPUT / (f"summary-{args.case or 'all'}.json")
   report.unlink(missing_ok=True)
   summary = []
