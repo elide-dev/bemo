@@ -209,6 +209,7 @@ fn shards_share_port_zero_and_native_readiness_and_close() {
         barrier.wait();
         if index == 0 {
           assert_eq!(elide_transport_serving_ready(driver), 0);
+          // SAFETY: This thread owns the driver and the live batch has capacity for eight events.
           assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 0);
         }
         barrier.wait();
@@ -216,17 +217,22 @@ fn shards_share_port_zero_and_native_readiness_and_close() {
           assert_eq!(elide_transport_serving_ready(driver), 0);
         }
         barrier.wait();
+        // SAFETY: This thread owns the driver and the live batch has capacity for eight events.
         assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 1);
         let mut view = BufferView::default();
+        // SAFETY: batch is retained and view is writable for the complete BufferView.
         assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+        // SAFETY: poll initialized these events in the retained, NativeEvent-aligned batch allocation.
         assert_eq!(unsafe { &*view.address.cast::<NativeEvent>() }.kind, 12);
         barrier.wait();
         if index == 0 {
           assert_eq!(elide_transport_serving_listener_close(driver, listener), 0);
         }
         barrier.wait();
+        // SAFETY: This thread owns the driver and the live batch has capacity for eight events.
         let count = unsafe { elide_transport_driver_poll(driver, 0, batch, 8) };
         assert!(count > 0);
+        // SAFETY: poll initialized these events in the retained, NativeEvent-aligned batch allocation.
         let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
         assert_eq!(
           events
@@ -253,10 +259,11 @@ fn shards_share_port_zero_and_native_readiness_and_close() {
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn shard_thread_is_pinned_and_restores_its_original_allowed_cpus() {
-  fn mask() -> libc::cpu_set_t {
-    let mut set = unsafe { std::mem::zeroed() };
+  fn mask() -> [usize; libc::CPU_SETSIZE as usize / usize::BITS as usize] {
+    let mut set = [0usize; libc::CPU_SETSIZE as usize / usize::BITS as usize];
     assert_eq!(
-      unsafe { libc::sched_getaffinity(0, std::mem::size_of_val(&set), &mut set) },
+      // SAFETY: set is writable and word-aligned; the kernel receives its exact byte capacity.
+      unsafe { libc::sched_getaffinity(0, std::mem::size_of_val(&set), set.as_mut_ptr().cast()) },
       0
     );
     set
@@ -268,17 +275,18 @@ fn shard_thread_is_pinned_and_restores_its_original_allowed_cpus() {
     assert_ne!(driver, 0);
     let cpu = elide_transport_serving_cpu(driver);
     assert!(cpu >= 0);
-    assert!(unsafe { libc::CPU_ISSET(cpu as usize, &before) });
-    assert_eq!(unsafe { libc::CPU_COUNT(&mask()) }, 1);
+    let bit = cpu as usize;
+    assert_ne!(
+      before[bit / usize::BITS as usize] & (1usize << (bit % usize::BITS as usize)),
+      0
+    );
+    assert_eq!(mask().iter().map(|word| word.count_ones()).sum::<u32>(), 1);
+    // SAFETY: sched_getcpu takes no arguments and does not access caller memory.
     assert_eq!(unsafe { libc::sched_getcpu() }, cpu);
     assert_eq!(elide_transport_serving_close(application), 0);
     assert_eq!(elide_transport_driver_release(driver), 0);
     let after = mask();
-    for cpu in 0..libc::CPU_SETSIZE as usize {
-      assert_eq!(unsafe { libc::CPU_ISSET(cpu, &before) }, unsafe {
-        libc::CPU_ISSET(cpu, &after)
-      });
-    }
+    assert_eq!(before, after);
   })
   .join()
   .unwrap();
@@ -313,15 +321,19 @@ fn secondary_worker_startup_failure_wakes_and_closes_the_first_owner() {
     initialized.send((driver, port)).unwrap();
     started.recv_timeout(Duration::from_secs(3)).unwrap();
     // The other owners are not ready: the queued peer must not be accepted.
+    // SAFETY: This thread owns the driver and the live batch has capacity for eight events.
     assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 0);
     waiting.send(()).unwrap();
     let mut listener_closed = 0;
     let mut application_closed = 0;
     while listener_closed == 0 || application_closed == 0 {
+      // SAFETY: This thread owns the driver and the live batch has capacity for eight events.
       let count = unsafe { elide_transport_driver_poll(driver, u64::MAX, batch, 8) };
       assert!(count >= 0);
       let mut view = BufferView::default();
+      // SAFETY: batch is retained and view is writable for the complete BufferView.
       assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+      // SAFETY: poll initialized these events in the retained, NativeEvent-aligned batch allocation.
       let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
       for event in events {
         match event.kind {
@@ -344,6 +356,7 @@ fn secondary_worker_startup_failure_wakes_and_closes_the_first_owner() {
     assert_eq!((listener_closed, application_closed), (1, 1));
     assert_eq!(elide_transport_serving_ready(driver), INVALID);
     assert_eq!(elide_transport_socket_option(driver, listener, 1, 1), INVALID);
+    // SAFETY: This thread owns the driver and the live batch has capacity for eight events.
     assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 0);
     release(driver, owner, batch);
     finished.send(()).unwrap();

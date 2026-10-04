@@ -59,12 +59,14 @@ pub fn refuse_io_uring(errno: i32) {
   let zero: libc::c_ulong = 0;
   let mode = libc::SECCOMP_MODE_FILTER as libc::c_ulong;
   assert_eq!(
+    // SAFETY: This prctl option takes integer arguments, passed with the required variadic width.
     unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, one, zero, zero, zero) },
     0,
     "{}",
     std::io::Error::last_os_error()
   );
   assert_eq!(
+    // SAFETY: filter and its initialized instruction array remain live while the kernel copies them.
     unsafe { libc::prctl(libc::PR_SET_SECCOMP, mode, &raw const filter) },
     0,
     "{}",

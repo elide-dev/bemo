@@ -131,7 +131,9 @@ fn auto_driver_falls_back_when_the_kernel_rejects_ring_flags() {
     assert_eq!(elide_transport_driver_backend(driver), 1);
     let length = elide_transport_driver_fallback(driver, output);
     let mut view = BufferView::default();
+    // SAFETY: output is retained and view is writable for the complete BufferView.
     assert_eq!(unsafe { elide_transport_buffer_view(output, &mut view) }, 0);
+    // SAFETY: fallback initialized length bytes in output, which remains retained through this read.
     let reason = unsafe { std::slice::from_raw_parts(view.address.cast::<u8>(), length as usize) };
     let reason = std::str::from_utf8(reason).unwrap();
     assert!(reason.ends_with("(os error 22)"), "{reason}");

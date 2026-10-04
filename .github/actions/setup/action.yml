@@ -22,6 +22,18 @@ runs:
     - uses: elide-dev/setup-elide@10fbf30cebffd3538c428369950dc2094137f02b # v4.2.0
       with:
         version: ${{ steps.versions.outputs.elide }}
+    - name: Bootstrap Rust from the repository toolchain pin
+      shell: bash
+      run: |
+        set -euo pipefail
+        cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+        echo "$cargo_bin" >> "$GITHUB_PATH"
+        export PATH="$cargo_bin:$PATH"
+        if ! command -v rustup >/dev/null 2>&1; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y --no-modify-path --default-toolchain none
+        fi
+        rustup toolchain install
+        rustup show
     - name: Check Rust and Python toolchains
       shell: bash
       run: |

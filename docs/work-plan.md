@@ -16,7 +16,8 @@ platform-specific reciprocal TLS shutdown is the suspected cause. The test adapt
 now accepts platform disconnect errors only after authenticated TLS close_notify;
 application reads/writes and unauthenticated EOF remain errors. Its regression
 contract and the H2 exchange passed 20 consecutive local runs without retries.
-Windows execution remains pending CI; this host is macOS.
+Windows Rust verification passed in CI run `37228353422`, including the H2/TLS
+regression. This local host is macOS.
 
 ## JVM strictness
 
@@ -68,7 +69,7 @@ Benchmark workflow wiring passes Actionlint; execution will be verified in CI.
   `make test-native-image` checks, recording unavailable checks explicitly.
 - [x] Review the complete diff for consistency across local commands and CI.
 - [x] Commit coherent changes, with verification results recorded.
-- [ ] Push authorized changes and report CI results or pending checks accurately.
+- [x] Push authorized changes and report CI results or pending checks accurately.
 
 ## Current verification notes
 
@@ -86,3 +87,16 @@ Benchmark workflow wiring passes Actionlint; execution will be verified in CI.
   provenance and signing require a real CI release to verify the deployed flow.
 - Repository release immutability is enabled; the release environment only
   permits deployments from `main`. No Central publishing credentials are needed.
+
+## CI follow-up: run 37228353422
+
+- [x] Trace the Ready failure to Linux Clippy and wall-time runner setup.
+- [x] Document unsafe test invariants in Linux-only seccomp, ABI, and serving paths.
+- [x] Replace untyped affinity-mask zeroing with an initialized word array.
+- [x] Bootstrap rustup and export Cargo's bin directory in shared setup, following Bali.
+- [ ] Confirm Linux checks and wall-time benchmarks in the next CI run.
+
+Windows, macOS, Native Image, packaging, coverage, simulation benchmarks, and
+transport measurements passed in this run. Linux JVM jobs stopped at Rust
+Clippy before reaching Java checks. The wall-time runner stopped at setup before
+compiling benchmarks because Cargo was absent from PATH.
