@@ -733,6 +733,7 @@ impl Driver {
       }
       PushEntry::Ready(result) => match connect_done(&mut self.proactor, &self.ready, id, result, &connection.socket) {
         ConnectOutcome::Done(event) => self.complete_event(event),
+        #[cfg(unix)]
         ConnectOutcome::Waiting(pending, cancel) => {
           connection.write.set(true);
           self.pending.insert(
@@ -1060,7 +1061,10 @@ impl Driver {
       let Some(operation) = self.pending.remove(&id) else {
         continue;
       };
+      #[cfg(unix)]
       let mut replaced_cancel = None;
+      #[cfg(not(unix))]
+      let replaced_cancel = None;
       let pending = match operation.pending {
         Pending::Connect(key, socket) => match self.proactor.pop(key) {
           PushEntry::Ready(result) => match connect_done(&mut self.proactor, &self.ready, id, result, &socket) {
@@ -1068,6 +1072,7 @@ impl Driver {
               self.completed.push_back(event);
               None
             }
+            #[cfg(unix)]
             ConnectOutcome::Waiting(pending, cancel) => {
               replaced_cancel = Some(cancel);
               Some(pending)
@@ -1189,6 +1194,7 @@ fn connected(id: u64, BufResult(result, operation): BufResult<usize, Connect>) -
 
 enum ConnectOutcome {
   Done(Event),
+  #[cfg(unix)]
   Waiting(Pending, Cancel),
 }
 

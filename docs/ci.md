@@ -25,7 +25,9 @@ Hosted runners are the default; this repository does not require Elide's private
 CI pool. Python 3.11+, Rustup, and the platform C compiler are expected from the
 specified hosted images. Native Image static builds need a compatible GraalVM
 JDK and development headers. The build setup installs the selected JDK and
-pinned Elide, and Rustup reads this checkout's pinned toolchain.
+pinned Elide, and Rustup reads this checkout's pinned toolchain. The Netty JAR
+includes Native Image configuration enabling shared arenas, which Netty's Java
+25 direct-buffer cleaner requires even when transport calls use the C API.
 
 `Stage Release` runs the verification graph and uploads unsigned repositories.
 It does not publish to Central or create a GitHub release. See publishing.md for

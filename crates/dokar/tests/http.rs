@@ -2491,7 +2491,14 @@ impl tokio::io::AsyncWrite for H2TlsIo {
     cx: &mut std::task::Context<'_>,
   ) -> std::task::Poll<std::io::Result<()>> {
     self.0.conn.send_close_notify();
-    self.poll_flush(cx)
+    // The server may have closed its socket after sending close_notify. A failed
+    // reciprocal notification does not invalidate the responses already read.
+    match self.poll_flush(cx) {
+      std::task::Poll::Ready(Err(error)) if error.kind() == std::io::ErrorKind::BrokenPipe => {
+        std::task::Poll::Ready(Ok(()))
+      }
+      result => result,
+    }
   }
 }
 
