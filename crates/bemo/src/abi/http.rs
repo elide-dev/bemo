@@ -1262,7 +1262,7 @@ pub(super) fn needs_poll(state: &DriverState) -> bool {
   let mut socket = state.http.retry_head;
   while socket != 0 {
     let http = &state.http.sockets[&socket];
-    if http.h2.as_ref().is_some_and(H2Socket::needs_poll) {
+    if http.h2.as_ref().is_some_and(H2Socket::needs_poll) || http.tls.as_ref().is_some_and(TlsSocket::needs_poll) {
       return true;
     }
     socket = http.retry_next;

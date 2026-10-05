@@ -123,6 +123,8 @@ public final class TransportBenchmark {
     boolean serverOnly = args.length > 12 && args[12].equals("server");
     int externalPort = args.length > 12 && !serverOnly ? Integer.parseInt(args[12]) : 0;
     long serverPid = args.length > 13 ? Long.parseLong(args[13]) : 0;
+    int socketBuffer =
+        Integer.parseInt(System.getenv().getOrDefault("BEMO_BENCH_SOCKET_BUFFER", "0"));
     Path library = Path.of(args[0]);
     byte[] cert = Files.readAllBytes(Path.of(args[1]));
     byte[] key = Files.readAllBytes(Path.of(args[2]));
@@ -209,6 +211,8 @@ public final class TransportBenchmark {
                 .group(group)
                 .channel(serverClass)
                 .childOption(ChannelOption.TCP_NODELAY, true)
+                .childOption(ChannelOption.SO_SNDBUF, socketBuffer > 0 ? socketBuffer : null)
+                .childOption(ChannelOption.SO_RCVBUF, socketBuffer > 0 ? socketBuffer : null)
                 .childHandler(
                     new ChannelInitializer<Channel>() {
                       @Override
@@ -279,6 +283,8 @@ public final class TransportBenchmark {
                       }
                     })
                 .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.SO_SNDBUF, socketBuffer > 0 ? socketBuffer : null)
+                .option(ChannelOption.SO_RCVBUF, socketBuffer > 0 ? socketBuffer : null)
                 .handler(
                     new ChannelInitializer<Channel>() {
                       @Override

@@ -53,3 +53,11 @@ Transfer tests exercise fragmented reads, more than 64 components, partial
 writes, tight allocation budgets, retained slices, and teardown. The TLS engine
 also tests terminal failure and delivery of its queued fatal alert. Performance
 comparisons use the procedures in [measurement.md](measurement.md).
+
+The V2 native HTTP/TLS data plane bypasses the Netty channel adapter. Its Rust
+write lane also tries polling-backend ciphertext sends inline, preserving frozen
+storage across partial writes and acknowledging a TLS record only after every
+byte is accepted. A drive yields after 128 KiB or its transition limit, explicitly
+schedules remaining work, and keeps ordinary completion-driven sends for
+backpressure and io_uring/IOCP. The primary benchmark uses this data plane through
+optimized Native Image C bindings.

@@ -16,6 +16,7 @@ pub(super) struct TlsSocket {
   pub(super) input_eof: bool,
   wire: Vec<FrozenBuffer>,
   wire_sending: bool,
+  needs_drive: bool,
   plaintext: VecDeque<FrozenBuffer>,
   started: Instant,
   input_ended: bool,
@@ -29,10 +30,15 @@ impl TlsSocket {
       input_eof: false,
       wire: Vec::new(),
       wire_sending: false,
+      needs_drive: false,
       plaintext: VecDeque::new(),
       started: Instant::now(),
       input_ended: false,
     })
+  }
+
+  pub(super) fn needs_poll(&self) -> bool {
+    self.needs_drive
   }
 }
 
@@ -96,8 +102,10 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
     return;
   }
   tls.driving = true;
+  tls.needs_drive = false;
   let mut completed = false;
   let mut blocked = false;
+  let mut inline_bytes = 0;
   for _ in 0..256 {
     let Some(http) = state.http.sockets.get_mut(&socket) else {
       return;
@@ -130,6 +138,36 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
       let Some(connection) = state.sockets.get(&socket) else {
         break;
       };
+      // Polling sockets can accept ciphertext synchronously. Keep the same immutable
+      // lease and acknowledge a TLS transmission only once its complete record is sent.
+      // Backpressure and completion-only backends retain the asynchronous write lane.
+      match state.driver.try_send(connection, tls.wire[0].as_ref()) {
+        Ok(Some(sent)) => {
+          match tls.wire.advance(sent) {
+            Ok(true) => {
+              tls.lane.transmitted();
+              http.sending = tls.lane.has_application();
+            }
+            Ok(false) => {}
+            Err(error) => {
+              fail_writes(http, socket, error_code(error), events);
+              close_socket(state, socket, events);
+              return;
+            }
+          }
+          inline_bytes += sent;
+          if inline_bytes >= 128 * 1024 {
+            break;
+          }
+          continue;
+        }
+        Ok(None) => {}
+        Err(error) => {
+          fail_writes(http, socket, error_code(error), events);
+          close_socket(state, socket, events);
+          return;
+        }
+      }
       let wire = std::mem::take(&mut tls.wire);
       match state.driver.send_vectored(connection, wire) {
         Ok(operation) => {
@@ -178,6 +216,8 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
   };
   let tls = http.tls.as_mut().unwrap();
   tls.driving = false;
+  let yielded = !blocked && !tls.wire_sending && (!tls.wire.is_empty() || tls.lane.has_application());
+  tls.needs_drive = yielded;
   // Multishot EOF may follow ciphertext before the handshake write completes. Drain accepted
   // ciphertext/plaintext first; only close_notify permits preserving delayed responses.
   if blocked && tls.input_eof && !tls.lane.input_closed() && tls.plaintext.is_empty() && http.pending_input.is_empty() {
@@ -195,6 +235,11 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
       http.closing = true;
       discard_body(http, socket, http.body, events);
     }
+  }
+  if yielded {
+    // Inline records can exhaust the bounded drive loop without producing a CQE.
+    // Keep remaining work runnable rather than waiting for unrelated socket input.
+    state.http.queue_retry(socket);
   }
   if completed || ended {
     pump(state, socket, events);

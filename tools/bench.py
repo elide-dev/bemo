@@ -28,7 +28,7 @@ def comparisons(summary):
     for other in summary:
       if other["transport"] not in ("epoll", "kqueue", "nio") or other["case"] != bemo["case"]:
         continue
-      keys = ("clients", "requests", "warmup_rounds", "java_version", "host", "workload_sha256", "load_generator_transport", "load_generator_tls_provider", "process_scope")
+      keys = ("clients", "requests", "warmup_rounds", "java_version", "host", "workload_sha256", "load_generator_transport", "load_generator_tls_provider", "process_scope", "socket_buffer_bytes")
       if any(bemo["samples"][0].get(key) != other["samples"][0].get(key) for key in keys):
         raise RuntimeError("Refusing incompatible transport comparison")
       bemo_tls = bemo["samples"][0]["tls_provider"]
@@ -117,6 +117,9 @@ def read_json(stream, timeout):
 def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="auto", backend=0,
             http_provider="native", runtime="native-image"):
   tls, gzip, size = CASES[case]
+  socket_buffer = int(os.environ.get("BEMO_BENCH_SOCKET_BUFFER", "0"))
+  if not 0 <= socket_buffer <= 16 * 1024 * 1024:
+    raise ValueError("Socket buffer override must be between 0 and 16 MiB")
   tls_provider = selected_tls_provider(transport, tls_provider)
   native_http = transport == "bemo" and http_provider == "native"
   if native_http and tls and tls_provider != "native":
@@ -127,9 +130,9 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
   java_args = [java, "-Xms256m", "-Xmx256m", "--enable-native-access=ALL-UNNAMED", "-cp", build.classpath(cp)]
   inputs = [str(build.library(True)), str(fixtures / "localhost-cert.pem"), str(fixtures / "localhost-key.pem"),
             str(tls).lower(), str(gzip).lower(), str(size)]
-  client_transport = {"Linux": "epoll", "Darwin": "kqueue"}.get(platform.system())
-  if client_transport is None:
-    raise RuntimeError("Native Netty load generator requires Linux or macOS")
+  client_transport = os.environ.get("BEMO_BENCH_CLIENT_TRANSPORT", "nio")
+  if client_transport not in ("epoll", "kqueue", "nio"):
+    raise RuntimeError("Unsupported benchmark client transport")
   if native_http:
     server_command = ([str(native_server_binary()), "-Xms256m", "-Xmx256m"] if runtime == "native-image"
                       else [*java_args, "FfmNativeHttpBenchmarkServer"])
@@ -213,7 +216,7 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
                  load_generator_transport=client_transport, load_generator_tls_provider="jdk" if tls else "none",
                  process_scope="server+client", gzip_provider="java.util.zip" if native_http and gzip else "netty" if gzip else "none",
                  workload_sha256=digest([*sorted((build.ROOT / "benchmarks/java").glob("*.java")), Path(__file__).resolve()]),
-                 case=case, requested_backend=backend if transport == "bemo" else 0,
+                 case=case, socket_buffer_bytes=socket_buffer, requested_backend=backend if transport == "bemo" else 0,
                  commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=build.ROOT, text=True).strip(),
                  host=f"{platform.system()}-{platform.machine()}", warmup_rounds=warmup,
                  java_version=subprocess.run([java, "-version"], capture_output=True, text=True, check=True).stderr.strip())

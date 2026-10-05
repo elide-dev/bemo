@@ -87,11 +87,11 @@ The comparator is a stock OpenJDK Netty HTTP server with epoll on Linux or kqueu
 on macOS and JDK TLS. Explicit NIO comparison is also available. Neither server
 falls back silently when its requested backend is unavailable.
 
-Both servers run in separate processes from the same stock OpenJDK Netty load
+Both servers run in separate processes from the same stock OpenJDK Netty NIO load
 generator, with one server I/O thread and one client I/O thread. Four persistent
 clients issue one outstanding request each. Payload, response headers, connection
 count, 256 MiB heaps, warmup and measurement rounds match. Launch order rotates
-across samples. The client always uses the selected platform-native Netty transport,
+across samples. The client always uses Netty NIO,
 JDK TLS 1.3 with certificate and hostname verification, Netty HTTP response codecs,
 and byte-exact payload validation. Native HTTP currently implements server-side
 parsing/encoding; the common client is deliberately held constant.
@@ -109,6 +109,13 @@ uses `java.util.zip.GZIPOutputStream` per response; the comparator uses Netty's
 compression negotiation. Identity workloads isolate the native HTTP/TLS data
 plane. Bodies repeat a fixed JSON pattern, so gzip results describe compressible
 application data, not incompressible data.
+
+The common NIO client prevents client native-driver readiness behavior from being
+attributed to either server. `BEMO_BENCH_CLIENT_TRANSPORT=kqueue|epoll|nio` selects
+an explicit client control; it does not change the comparator server's native
+transport. `BEMO_BENCH_SOCKET_BUFFER=<bytes>` sets matched send/receive socket
+buffers on both servers and clients; zero (default) preserves OS defaults. Both
+settings are recorded and incompatible comparisons are rejected.
 
 `make bench-prepare` fingerprints source inputs, compiled classes, the native
 library, and the optimized Native Image server; measurement refuses stale

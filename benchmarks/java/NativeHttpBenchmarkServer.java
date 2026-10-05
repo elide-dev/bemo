@@ -33,6 +33,8 @@ public final class NativeHttpBenchmarkServer {
     boolean gzip = Boolean.parseBoolean(args[4]);
     int size = Integer.parseInt(args[5]);
     int backend = Integer.parseInt(args[6]);
+    int socketBuffer =
+        Integer.parseInt(System.getenv().getOrDefault("BEMO_BENCH_SOCKET_BUFFER", "0"));
     byte[] payload = new byte[size];
     byte[] pattern =
         "{\"message\":\"bemo transport benchmark\",\"value\":12345}\n"
@@ -111,6 +113,12 @@ public final class NativeHttpBenchmarkServer {
               require(api.socketAdopt(owner, driver, value) == 0, "adopt");
               connections.add(value);
               require(api.socketOption(driver, value, 1, 1) == 0, "TCP_NODELAY");
+              if (socketBuffer > 0) {
+                require(
+                    api.socketOption(driver, value, 3, socketBuffer) == 0, "receive socket buffer");
+                require(
+                    api.socketOption(driver, value, 4, socketBuffer) == 0, "send socket buffer");
+              }
               require(
                   (tls
                           ? api.socketHttpTls(owner, driver, value, owner, 16 * 1024, tlsContext)
