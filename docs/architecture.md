@@ -2,21 +2,21 @@
 
 ```mermaid
 flowchart TD
-  Elide[Elide Cargo consumer] --> Core[dokar Rust implementation]
+  Elide[Elide Cargo consumer] --> Core[bemo Rust implementation]
   Netty[Stock Netty adapter] --> API[TransportNative Java API]
   API --> FFM[FFM / regular JVM]
   API --> SVM[C API / Native Image]
   FFM --> Shared[Cargo cdylib]
   SVM --> Static[Cargo staticlib]
-  Shared --> ABI[dokar-ffi generated exports]
+  Shared --> ABI[bemo-ffi generated exports]
   Static --> ABI
-  ABI --> Handles[dokar::abi Rust handle operations]
+  ABI --> Handles[bemo::abi Rust handle operations]
   Handles --> Core
 ```
 
-The Rust transport implementation and handle state live together in `dokar`,
+The Rust transport implementation and handle state live together in `bemo`,
 retaining crate-private ownership invariants. Those Rust functions no longer
-export unmangled C symbols. `dokar-ffi` supplies generated forwarding functions;
+export unmangled C symbols. `bemo-ffi` supplies generated forwarding functions;
 `tools/generate_exports.py --check` compares their signatures with the Rust
 entrypoints and ensures the symbol set matches `include/elide_transport.h`.
 Each forwarding call delegates to the same implementation; no transport logic
@@ -26,15 +26,15 @@ Rust can be released through C against the same handle registry.
 ## ABI and lifetime
 
 Elide transport ABI 3 (`elide_transport_*`) remains unchanged. The JVM interface
-and adapter packages now use `dev.elide.dokar.transport`. Elide cutover requires
+and adapter packages now use `dev.elide.bemo.transport`. Elide cutover requires
 updated Java imports as well as dependency, linking, and source-ownership changes.
 
-Dokar's separate metadata ABI 1 (`dokar_abi_version`, `dokar_capabilities`) is
-retained from the foundation. Capability bit `DOKAR_CAP_TRANSPORT_V3` means the
+Bemo's separate metadata ABI 1 (`bemo_abi_version`, `bemo_capabilities`) is
+retained from the foundation. Capability bit `BEMO_CAP_TRANSPORT_V3` means the
 complete legacy transport boundary is present. It does not assert that every
 OS backend is available at runtime: AUTO selects a supported backend, and
-io_uring setup failure can fall back to polling. The `dev.elide.dokar` classes
-exercise this metadata boundary; the `dev.elide.dokar.transport` classes carry traffic.
+io_uring setup failure can fall back to polling. The `dev.elide.bemo` classes
+exercise this metadata boundary; the `dev.elide.bemo.transport` classes carry traffic.
 
 The transport FFM adapter validates ABI 3 before resolving other symbols and
 retains the shared library for process lifetime. Buffers, workloads, drivers,
@@ -55,9 +55,9 @@ helper, or Truffle annotation dependency. `NativeRegion` remains in Elide.
 
 ## Artifacts and toolchains
 
-`dokar-api` has no Netty, GraalVM, or Elide runtime dependency. `dokar-ffm`
-depends on that API; `dokar-native-image` adds provided GraalVM SDK dependencies;
-`dokar-netty` adds stock Netty. Netty TLS's ALPN helper lives in Netty's package,
+`bemo-api` has no Netty, GraalVM, or Elide runtime dependency. `bemo-ffm`
+depends on that API; `bemo-native-image` adds provided GraalVM SDK dependencies;
+`bemo-netty` adds stock Netty. Netty TLS's ALPN helper lives in Netty's package,
 so this integration currently supports the classpath rather than JPMS.
 
 `tools/build.py` calls Elide `install`, `javac`, `java`, and `jar`; Cargo builds

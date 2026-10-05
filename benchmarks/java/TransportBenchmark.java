@@ -1,4 +1,4 @@
-import dev.elide.dokar.transport.*;
+import dev.elide.bemo.transport.*;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;
@@ -94,7 +94,7 @@ public final class TransportBenchmark {
       throw new IllegalArgumentException("Positive workload required");
     byte[] payload = new byte[size];
     byte[] pattern =
-        "{\"message\":\"dokar transport benchmark\",\"value\":12345}\n"
+        "{\"message\":\"bemo transport benchmark\",\"value\":12345}\n"
             .getBytes(java.nio.charset.StandardCharsets.UTF_8);
     for (int i = 0; i < size; i++) payload[i] = pattern[i % pattern.length];
     TransportNative api = new FfmTransportNative(library);

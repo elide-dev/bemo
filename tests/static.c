@@ -1,9 +1,9 @@
-#include "dokar.h"
+#include "bemo.h"
 #include "elide_transport.h"
 #include <assert.h>
 
 int main(void) {
-  assert(dokar_abi_version() == DOKAR_ABI_VERSION);
+  assert(bemo_abi_version() == BEMO_ABI_VERSION);
   assert(elide_transport_abi_version() == 3);
   uint64_t owner = elide_transport_owner_new(4096);
   assert(owner != 0);

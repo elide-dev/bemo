@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import dev.elide.dokar.transport.DriverSelection;
-import dev.elide.dokar.transport.TransportNative;
+import dev.elide.bemo.transport.DriverSelection;
+import dev.elide.bemo.transport.TransportNative;
 import java.nio.ByteBuffer;
 
 /** Shared behavioral checks for the FFM and Native Image binding implementations. */

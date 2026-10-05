@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import dev.elide.dokar.transport.DriverSelection;
-import dev.elide.dokar.transport.FfmTransportNative;
+import dev.elide.bemo.transport.DriverSelection;
+import dev.elide.bemo.transport.FfmTransportNative;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -29,7 +29,7 @@ public final class StandaloneTransportCheck {
     NativeChannelTest.verify(new BackendTransport(new FfmTransportNative(Path.of(args[0]))));
     DriverSelection selection = DriverSelection.observed();
     if (selection == null) throw new AssertionError("event loop recorded no driver selection");
-    if (!mapped("dokar_ffi"))
+    if (!mapped("bemo_ffi"))
       throw new AssertionError("module enumeration cannot see the transport");
     if (mapped("elideruntime")) throw new AssertionError("elideruntime was loaded");
     System.out.println("Standalone transport check passed: driver " + selection.describe());

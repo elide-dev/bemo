@@ -1,8 +1,8 @@
-#include "dokar.h"
+#include "bemo.h"
 #include <assert.h>
 
 int main(void) {
-  assert(dokar_abi_version() == DOKAR_ABI_VERSION);
-  assert(dokar_capabilities() == DOKAR_CAP_TRANSPORT_V3);
+  assert(bemo_abi_version() == BEMO_ABI_VERSION);
+  assert(bemo_capabilities() == BEMO_CAP_TRANSPORT_V3);
   return 0;
 }

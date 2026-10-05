@@ -13,10 +13,10 @@ flags:
     paths: [packages/]
 # Reports come from separate source roots in the Elide-compiled modules.
 fixes:
-  - "^dev/elide/dokar/ffm/::packages/ffm/src/main/java/dev/elide/dokar/ffm/"
-  - "^dev/elide/dokar/TransportNative.java::packages/api/src/main/java/dev/elide/dokar/TransportNative.java"
-  - "^dev/elide/dokar/transport/FfmTransportNative.java::packages/ffm/src/main/java/dev/elide/dokar/transport/FfmTransportNative.java"
-  - "^dev/elide/dokar/transport/TransportNative.java::packages/api/src/main/java/dev/elide/dokar/transport/TransportNative.java"
-  - "^dev/elide/dokar/transport/Workload.java::packages/api/src/main/java/dev/elide/dokar/transport/Workload.java"
-  - "^dev/elide/dokar/transport/::packages/netty/src/main/java/dev/elide/dokar/transport/"
+  - "^dev/elide/bemo/ffm/::packages/ffm/src/main/java/dev/elide/bemo/ffm/"
+  - "^dev/elide/bemo/TransportNative.java::packages/api/src/main/java/dev/elide/bemo/TransportNative.java"
+  - "^dev/elide/bemo/transport/FfmTransportNative.java::packages/ffm/src/main/java/dev/elide/bemo/transport/FfmTransportNative.java"
+  - "^dev/elide/bemo/transport/TransportNative.java::packages/api/src/main/java/dev/elide/bemo/transport/TransportNative.java"
+  - "^dev/elide/bemo/transport/Workload.java::packages/api/src/main/java/dev/elide/bemo/transport/Workload.java"
+  - "^dev/elide/bemo/transport/::packages/netty/src/main/java/dev/elide/bemo/transport/"
   - "^io/netty/handler/ssl/::packages/netty/src/main/java/io/netty/handler/ssl/"

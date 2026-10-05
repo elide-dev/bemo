@@ -52,7 +52,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           ELIDE_TRANSPORT_TEST_BACKEND: epoll
-        run: cargo nextest run -p dokar --lib --tests --locked --profile epoll
+        run: cargo nextest run -p bemo --lib --tests --locked --profile epoll
       - name: Check external allocator embedding
         run: cargo check --workspace --no-default-features --locked
       - run: cargo build --workspace --release --locked

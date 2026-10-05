@@ -1,0 +1,21 @@
+[package]
+name = "bemo-ffi"
+description = "Shared C ABI for Bemo FFM and Native Image bindings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "bemo_ffi"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+bemo = { workspace = true, default-features = false }
+
+[features]
+default = ["bundled-mimalloc"]
+bundled-mimalloc = ["bemo/bundled-mimalloc"]
+
+[lints]
+workspace = true

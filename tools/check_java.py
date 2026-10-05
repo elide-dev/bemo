@@ -48,7 +48,7 @@ def verify_enforcement():
   directory.mkdir(parents=True, exist_ok=True)
   for name, (kind, diagnostic, body) in fixtures.items():
     source = directory / f"{name}.java"
-    source.write_text(f"package dev.elide.dokar.checks;\n@org.jspecify.annotations.NullMarked final class {name} {{ {body} }}\n")
+    source.write_text(f"package dev.elide.bemo.checks;\n@org.jspecify.annotations.NullMarked final class {name} {{ {body} }}\n")
     log_path = directory / f"{name}.log"
     with log_path.open("w") as log, contextlib.redirect_stdout(log):
       try:

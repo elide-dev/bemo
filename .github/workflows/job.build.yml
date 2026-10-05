@@ -30,7 +30,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: build/dokar-*-unsigned.zip
+          subject-path: build/bemo-*-unsigned.zip
       - name: Stage provenance bundle
         if: steps.provenance.outcome == 'success'
         env:
@@ -42,7 +42,7 @@ jobs:
         with:
           name: release-${{ matrix.os }}
           path: |
-            build/dokar-*-unsigned.zip
+            build/bemo-*-unsigned.zip
             build/provenance-*.json
           if-no-files-found: error
           retention-days: 30

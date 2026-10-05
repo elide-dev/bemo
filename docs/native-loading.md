@@ -1,9 +1,9 @@
 # Native loading and Java namespaces
 
-All Maven artifacts use group `dev.elide.dokar`. Java transport APIs now live in
-`dev.elide.dokar.transport`, TLS adapters in `.transport.tls`, and their Native
+All Maven artifacts use group `dev.elide.bemo`. Java transport APIs now live in
+`dev.elide.bemo.transport`, TLS adapters in `.transport.tls`, and their Native
 Image binding in `.transport.svm`. The smaller metadata ABI remains in
-`dev.elide.dokar`, with its FFM and C API bindings in `.ffm` and `.svm`. The only
+`dev.elide.bemo`, with its FFM and C API bindings in `.ffm` and `.svm`. The only
 `io.netty` class is the ALPN bridge required by Netty's package-private interface.
 Existing Java callers must update imports from `dev.elide.netty.v2`; no legacy
 facade is published. C symbols retain `elide_transport_*` and ABI 3 for Cargo and
@@ -42,9 +42,9 @@ Configuration:
 | Setting | Effect |
 | --- | --- |
 | Explicit constructor `FfmTransportNative(Path)` | Uses that library directly; bypasses automatic resource selection |
-| `-Ddokar.native.path=/absolute/library/path` | No-argument constructors load this existing file instead of a resource |
-| `-Ddokar.native.workdir=/writable/executable/directory` | Parent directory for a private extraction directory |
-| `java.io.tmpdir` | Default extraction parent when no Dokar work directory is configured |
+| `-Dbemo.native.path=/absolute/library/path` | No-argument constructors load this existing file instead of a resource |
+| `-Dbemo.native.workdir=/writable/executable/directory` | Parent directory for a private extraction directory |
+| `java.io.tmpdir` | Default extraction parent when no Bemo work directory is configured |
 
 Set properties before creating adapters. The resource extraction path is cached;
 a later change to the work directory does not relocate an existing mapping.

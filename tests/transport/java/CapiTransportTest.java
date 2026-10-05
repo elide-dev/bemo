@@ -1,4 +1,4 @@
-import dev.elide.dokar.transport.svm.CapiTransportNative;
+import dev.elide.bemo.transport.svm.CapiTransportNative;
 
 public final class CapiTransportTest {
 

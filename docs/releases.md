@@ -72,7 +72,7 @@ claim of Level 3 isolation or a reproducible/hermetic build. The dedicated
 An initial successful release and consumer verification are still required to
 qualify the deployed workflow; checking in YAML alone is not evidence of a level.
 
-Dokar is currently an internal GitHub repository. GitHub build attestations use
+Bemo is currently an internal GitHub repository. GitHub build attestations use
 its private Sigstore instance and authenticated repository access. The separate
 cosign signatures use public Fulcio/Rekor, making the signing identity and
 artifact hashes public. They provide publisher authentication, while build
@@ -86,13 +86,13 @@ Download the platform ZIP, corresponding `provenance-<runner>.json`, and the ZIP
 full tagged commit SHA:
 
 ```sh
-gh attestation verify dokar-VERSION-linux-x86_64-gnu-unsigned.zip \
+gh attestation verify bemo-VERSION-linux-x86_64-gnu-unsigned.zip \
   --repo elide-dev/dokar --bundle provenance-ubuntu-24.04.json \
   --signer-workflow elide-dev/dokar/.github/workflows/job.build.yml \
   --source-ref refs/heads/main --source-digest TAGGED_COMMIT_SHA \
   --deny-self-hosted-runners
-cosign verify-blob dokar-VERSION-linux-x86_64-gnu-unsigned.zip \
-  --bundle dokar-VERSION-linux-x86_64-gnu-unsigned.zip.sigstore.json \
+cosign verify-blob bemo-VERSION-linux-x86_64-gnu-unsigned.zip \
+  --bundle bemo-VERSION-linux-x86_64-gnu-unsigned.zip.sigstore.json \
   --certificate-identity https://github.com/elide-dev/dokar/.github/workflows/job.release.yml@refs/heads/main \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
