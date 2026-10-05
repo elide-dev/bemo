@@ -23,10 +23,7 @@ public final class NativeAllocatorChannelTest {
               nativeAllocation ? nativeAllocator : ByteBufAllocator.DEFAULT;
           EventLoopGroup group =
               new MultiThreadIoEventLoopGroup(
-                  1,
-                  v2
-                      ? NativeIoHandler.newFactory(api, 0, 128, 1024 * 1024)
-                      : NioIoHandler.newFactory());
+                  1, v2 ? NativeIoHandler.newFactory(api, 0, 8, 2500) : NioIoHandler.newFactory());
           Channel server = null;
           AtomicReference<Throwable> failure = new AtomicReference<>();
           try {

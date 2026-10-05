@@ -21,6 +21,11 @@ final class NativeChannelConfig extends DefaultChannelConfig
   private volatile int sendBuffer;
   private volatile int backlog = 128;
   private volatile boolean allocatorSet;
+  private volatile boolean receiveAllocatorSet;
+
+  boolean useAdaptiveReadFloor() {
+    return !receiveAllocatorSet;
+  }
 
   void installAllocator(ByteBufAllocator allocator) {
     if (!allocatorSet) super.setAllocator(allocator);
@@ -238,6 +243,7 @@ final class NativeChannelConfig extends DefaultChannelConfig
 
   @Override
   public NativeChannelConfig setRecvByteBufAllocator(RecvByteBufAllocator value) {
+    receiveAllocatorSet = true;
     super.setRecvByteBufAllocator(value);
     return this;
   }

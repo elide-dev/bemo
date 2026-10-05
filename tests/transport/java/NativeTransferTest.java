@@ -27,6 +27,10 @@ public final class NativeTransferTest {
     }
   }
 
+  private static byte payloadByte(int offset) {
+    return (byte) ((offset * 31) ^ (offset >>> 8) ^ (offset >>> 16));
+  }
+
   private static void transfer(
       TransportNative api,
       NativeTlsContext serverTls,
@@ -103,7 +107,7 @@ public final class NativeTransferTest {
                       ByteBuf bytes = (ByteBuf) message;
                       try {
                         while (bytes.isReadable()) {
-                          if (offset >= size || bytes.readByte() != (byte) offset++)
+                          if (offset >= size || bytes.readByte() != payloadByte(offset++))
                             throw new AssertionError("Payload corruption at " + (offset - 1));
                         }
                         if (offset == size) complete.complete(null);
@@ -124,8 +128,20 @@ public final class NativeTransferTest {
               .sync()
               .channel();
       if (clientTls != null) ((NativeSocketChannel) client).handshakeFuture().sync();
-      ByteBuf payload = client.alloc().directBuffer(size, size);
-      for (int i = 0; i < size; i++) payload.writeByte(i);
+      ByteBuf payload;
+      if (clientTls == null) {
+        // More components than one gathered send may expose; do not count omitted views.
+        io.netty.buffer.CompositeByteBuf composite = client.alloc().compositeDirectBuffer(97);
+        for (int i = 0; i < 96; i++)
+          composite.addComponent(true, client.alloc().directBuffer(1, 1).writeByte(payloadByte(i)));
+        ByteBuf tail = client.alloc().directBuffer(size - 96, size - 96);
+        for (int i = 96; i < size; i++) tail.writeByte(payloadByte(i));
+        composite.addComponent(true, tail);
+        payload = composite;
+      } else {
+        payload = client.alloc().directBuffer(size, size);
+        for (int i = 0; i < size; i++) payload.writeByte(payloadByte(i));
+      }
       retained = payload.retainedSlice(0, 17);
       client.writeAndFlush(payload).sync();
       complete.get(15, TimeUnit.SECONDS);
@@ -133,7 +149,7 @@ public final class NativeTransferTest {
       if (retained.refCnt() != 1)
         throw new AssertionError("completed send retained native storage");
       for (int i = 0; i < 17; i++) {
-        if (retained.getByte(i) != (byte) i)
+        if (retained.getByte(i) != payloadByte(i))
           throw new AssertionError("retained send storage corrupted");
       }
       System.out.println(

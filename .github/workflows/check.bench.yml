@@ -37,7 +37,7 @@ jobs:
 
   transport:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     permissions:
       contents: read
       actions: read
@@ -89,7 +89,7 @@ jobs:
     runs-on: linux-amd64-bench
     env:
       CRITERION_HOME: ${{ github.workspace }}/target/criterion
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write

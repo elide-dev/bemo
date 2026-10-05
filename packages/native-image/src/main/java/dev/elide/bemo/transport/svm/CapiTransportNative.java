@@ -376,6 +376,52 @@ public final class CapiTransportNative implements TransportNative {
     return socketReceiveNew0(workload, driver, socket, owner, capacity);
   }
 
+  @CStruct("elide_transport_receive_result_t")
+  interface ReceiveOutput extends PointerBase {
+    @CField("operation")
+    long operation();
+
+    @CField("buffer")
+    long buffer();
+
+    @CField("address")
+    VoidPointer address();
+
+    @CField("result")
+    long result();
+  }
+
+  @CFunction("elide_transport_socket_receive_new_result")
+  private static native int socketReceiveNewResult0(
+      long workload, long driver, long socket, long owner, long capacity, ReceiveOutput output);
+
+  @Override
+  public boolean supportsReceiveResults() {
+    return true;
+  }
+
+  @Override
+  public ReceiveResult socketReceiveNewResult(
+      long workload, long driver, long socket, long owner, long capacity) {
+    ReceiveOutput output = StackValue.get(ReceiveOutput.class);
+    int status = socketReceiveNewResult0(workload, driver, socket, owner, capacity, output);
+    if (status < 0)
+      throw new IllegalStateException("Native receive allocation or admission failed");
+    long operation = output.operation();
+    long buffer = output.buffer();
+    long result = output.result();
+    try {
+      ByteBuffer bytes =
+          result > 0
+              ? CTypeConversion.asByteBuffer(output.address(), Math.toIntExact(result))
+              : null;
+      return new ReceiveResult(operation, buffer, result, bytes);
+    } catch (RuntimeException | Error error) {
+      if (buffer != 0) bufferRelease(buffer);
+      throw error;
+    }
+  }
+
   @CFunction("elide_transport_socket_send")
   private static native long socketSend0(
       long workload, long driver, long socket, long buffer, long offset, long length);
@@ -384,6 +430,44 @@ public final class CapiTransportNative implements TransportNative {
   public long socketSend(
       long workload, long driver, long socket, long buffer, long offset, long length) {
     return socketSend0(workload, driver, socket, buffer, offset, length);
+  }
+
+  @CFunction("elide_transport_socket_send_inline")
+  private static native long socketSendInline0(
+      long workload, long driver, long socket, Pointer source, long length);
+
+  @Override
+  public boolean supportsInlineWrites() {
+    return true;
+  }
+
+  @Override
+  public long socketSendInline(long workload, long driver, long socket, ByteBuffer source) {
+    if (!source.isDirect() || !source.hasRemaining() || source.remaining() > 128 * 1024) return -1;
+    return socketSendInline0(
+        workload,
+        driver,
+        socket,
+        WordFactory.pointer(MemorySegment.ofBuffer(source).address()),
+        source.remaining());
+  }
+
+  @CFunction("elide_transport_socket_send_gathered")
+  private static native long socketSendGathered0(
+      long workload, long driver, long socket, Pointer regions, int count);
+
+  @Override
+  public boolean supportsGatheredWrites() {
+    return true;
+  }
+
+  @Override
+  public long socketSendGathered(
+      long workload, long driver, long socket, long[] regions, int count) {
+    if (count < 1 || count > 64 || regions.length < count * 3) return 0;
+    try (PinnedObject pinned = PinnedObject.create(regions)) {
+      return socketSendGathered0(workload, driver, socket, pinned.addressOfArrayElement(0), count);
+    }
   }
 
   @CFunction("elide_transport_socket_close")

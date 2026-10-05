@@ -109,8 +109,8 @@ before failing. Cargo.lock remains part of the fingerprint. The renamed package
 entries use Cargo's canonical ordering, and the wall-time workflow prepares the
 JVM workload after building CodSpeed's Rust benchmarks.
 
-Each sample starts a fresh JVM with a fixed 256 MiB heap, warms 500 rounds, then
-times 2,500 rounds (10,000 completed requests). Setup, TLS handshakes, warmup,
+Each sample starts a fresh JVM with a fixed 256 MiB heap, warms 5,000 rounds, then
+times 25,000 rounds (100,000 completed requests). Setup, TLS handshakes, warmup,
 and teardown are outside the requests/sec timer. Three samples produce a median
 RPS, and all samples are retained. Per-response p50/p99 latency records enqueue
 through validated reply completion; process CPU is measured over the request
@@ -122,7 +122,9 @@ allocations, server, client, codecs, and warmup. It is not server-only RSS, a
 live-allocation counter, or heap size. macOS local runs explicitly emit null RSS;
 Linux CI requires actual RSS readings. CodSpeed simulation does not measure RSS.
 
-CodSpeed's generic command integration times the complete fixed-work macro
+CodSpeed tracks Bemo and stock Netty native transports as separate fixed-work
+commands. Each command runs one transport; combining them would hide which
+transport changed. The generic command integration times the complete macro
 process, including JVM startup and warmup; warmed RPS is a separate JSON metric.
 Do not label its wall-time number as steady-state requests/sec. The Rust TLS
 integration measures benchmark regions directly. Dedicated runner jobs never

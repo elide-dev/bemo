@@ -106,8 +106,8 @@ def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("task", choices=("prepare", "run"))
   parser.add_argument("--case", choices=tuple(CASES))
-  parser.add_argument("--rounds", type=int, default=2500)
-  parser.add_argument("--warmup", type=int, default=500)
+  parser.add_argument("--rounds", type=int, default=25000)
+  parser.add_argument("--warmup", type=int, default=5000)
   parser.add_argument("--samples", type=int, default=3)
   parser.add_argument("--transports", default="bemo,netty-native",
                       help="Comma-separated bemo,netty-native,epoll,kqueue,nio; unavailable backends fail")

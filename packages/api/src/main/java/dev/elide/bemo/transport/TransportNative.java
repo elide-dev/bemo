@@ -199,8 +199,57 @@ public interface TransportNative {
    */
   long socketReceiveNew(long workload, long driver, long socket, long owner, long capacity);
 
+  /** Whether receive submission can return an immediate result without another poll. */
+  default boolean supportsReceiveResults() {
+    return false;
+  }
+
+  /**
+   * Pending receives have a nonzero operation and complete through normal polling. Immediate
+   * receives have operation zero: positive results own a mutable native buffer and its initialized
+   * direct view; EOF/error results own none. Release the handle once, abandoning the view before
+   * freezing, submitting, or releasing it. No completion is queued for an immediate result.
+   */
+  record ReceiveResult(long operation, long buffer, long result, @Nullable ByteBuffer bytes) {}
+
+  /** Submit private receive storage, preserving ordinary cancellation rules while pending. */
+  default ReceiveResult socketReceiveNewResult(
+      long workload, long driver, long socket, long owner, long capacity) {
+    throw new UnsupportedOperationException("Immediate native receive results");
+  }
+
   /** Lease a frozen byte range for an asynchronous send; the caller retains its original handle. */
   long socketSend(long workload, long driver, long socket, long buffer, long offset, long length);
+
+  /** Whether this binding exposes bounded nonblocking inline writes on the polling backend. */
+  default boolean supportsInlineWrites() {
+    return false;
+  }
+
+  /**
+   * Try a nonblocking polling-backend send of 1..131072 remaining direct-buffer bytes. Returns
+   * bytes sent, zero for backpressure/unsupported backend, or a negative transport error. No
+   * operation or completion is created. Serialize source writes with this call; source storage may
+   * be reused immediately after return. Caller buffer indices are unchanged.
+   */
+  default long socketSendInline(long workload, long driver, long socket, ByteBuffer source) {
+    throw new UnsupportedOperationException("Inline native writes");
+  }
+
+  /** Whether this binding can submit several immutable buffer regions in one operation. */
+  default boolean supportsGatheredWrites() {
+    return false;
+  }
+
+  /**
+   * Submit 1..64 native-endian (frozen handle, offset, nonzero length) triples. Descriptors are
+   * consumed during this call; storage remains leased through completion. Original handles remain
+   * independently owned. Returns zero on rejected admission.
+   */
+  default long socketSendGathered(
+      long workload, long driver, long socket, long[] regions, int count) {
+    throw new UnsupportedOperationException("Gathered native writes");
+  }
 
   /**
    * Cancel pending operations and close the socket; late completions retain their original

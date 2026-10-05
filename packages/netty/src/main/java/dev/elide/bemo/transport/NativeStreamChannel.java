@@ -9,6 +9,7 @@ import io.netty.channel.*;
 import io.netty.channel.socket.*;
 import io.netty.util.concurrent.ScheduledFuture;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.channels.AlreadyConnectedException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.ConnectionPendingException;
@@ -35,9 +36,32 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
   private @Nullable ScheduledFuture<?> handshakeTimeout;
   private long receive;
   private int receiveCapacity;
+  private boolean dispatchingRead;
+  private boolean completingConnect;
+  private final NativeIoHandler.Completion immediateRead = new NativeIoHandler.Completion();
   private long send;
   private long stagedWrite;
   private int sentLength;
+  private final long[] sendRegions = new long[64 * 3];
+  private final @Nullable NativeByteBuf[] sendBuffers = new NativeByteBuf[64];
+  private int sendRegionCount;
+  private int sendRegionBytes;
+  private final ChannelOutboundBuffer.MessageProcessor collectSendRegions = this::collectSendRegion;
+
+  private boolean collectSendRegion(Object message) {
+    if (!(message instanceof NativeByteBuf bytes)
+        || !bytes.belongsTo(io().api)
+        || bytes.refCnt() != 1) return false;
+    if (!bytes.isReadable()) return true;
+    int length = Math.min(bytes.readableBytes(), 128 * 1024 - sendRegionBytes);
+    int index = sendRegionCount * 3;
+    sendBuffers[sendRegionCount++] = bytes;
+    sendRegions[index + 1] = bytes.readerIndex();
+    sendRegions[index + 2] = length;
+    sendRegionBytes += length;
+    return length == bytes.readableBytes() && sendRegionCount < 64 && sendRegionBytes < 128 * 1024;
+  }
+
   private boolean ioStarted;
   private boolean inputShutdown;
   private boolean outputShutdown;
@@ -233,22 +257,100 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
 
   @Override
   void beginNativeRead() {
-    if (!active
-        || (tlsContext != null && tls == null)
-        || inputShutdown
-        || receive != 0
-        || !(readRequested || settings.isAutoRead() || (tls != null && !tls.ready()))) return;
-    if (tls != null && tls.ready() && tls.hasPendingRead()) return;
-    int capacity = Math.max(1, Math.min(1024 * 1024, unsafe().recvBufAllocHandle().guess()));
-    ioStarted = true;
-    receiveCapacity = capacity;
-    receive =
-        io().api
-            .socketReceiveNew(workload, io().driver(), socket, io().allocator().owner, capacity);
-    if (receive == 0) {
-      receiveCapacity = 0;
-      throw new NativeTransportException("Native receive allocation or admission failed");
+    if (dispatchingRead || completingConnect || (tls != null && tls.isPumping())) return;
+    dispatchingRead = true;
+    try {
+      for (int messages = 0; messages < 16; messages++) {
+        if (!active
+            || (tlsContext != null && tls == null)
+            || inputShutdown
+            || receive != 0
+            || !(readRequested || settings.isAutoRead() || (tls != null && !tls.ready()))) return;
+        if (tls != null && tls.ready() && tls.hasPendingRead()) return;
+        int capacity = Math.max(1, Math.min(1024 * 1024, unsafe().recvBufAllocHandle().guess()));
+        // Private storage is uninitialized until the kernel fills it; custom allocators keep
+        // control.
+        if (settings.useAdaptiveReadFloor() && capacity >= 16 * 1024 && capacity < 64 * 1024)
+          capacity = 64 * 1024;
+        ioStarted = true;
+        if (!io().api.supportsReceiveResults()) {
+          receiveCapacity = capacity;
+          receive =
+              io().api
+                  .socketReceiveNew(
+                      workload, io().driver(), socket, io().allocator().owner, capacity);
+          if (receive == 0) {
+            receiveCapacity = 0;
+            throw new NativeTransportException("Native receive allocation or admission failed");
+          }
+          return;
+        }
+        TransportNative.ReceiveResult result =
+            io().api
+                .socketReceiveNewResult(
+                    workload, io().driver(), socket, io().allocator().owner, capacity);
+        if (result.operation() != 0) {
+          receive = result.operation();
+          receiveCapacity = capacity;
+          return;
+        }
+        immediateRead.value = result.buffer();
+        immediateRead.result = result.result();
+        try {
+          deliverRead(immediateRead, capacity, result.bytes());
+        } finally {
+          if (immediateRead.value != 0) {
+            io().api.bufferRelease(immediateRead.value);
+            immediateRead.value = 0;
+          }
+        }
+      }
+      // Ready reads cannot monopolize the loop or recursively enter pipeline callbacks.
+      eventLoop().execute(this::resumeNativeReads);
+    } finally {
+      dispatchingRead = false;
     }
+  }
+
+  private void resumeNativeReads() {
+    try {
+      beginNativeRead();
+    } catch (Throwable error) {
+      pipeline().fireExceptionCaught(error);
+      ((NativeUnsafe) unsafe()).forceClose(voidPromise());
+    }
+  }
+
+  private void deliverRead(
+      NativeIoHandler.Completion event, int attempted, @Nullable ByteBuffer view) {
+    if (inputShutdown) return;
+    if (event.result < 0) throw NativeTransportException.operation("receive", event.result);
+    RecvByteBufAllocator.Handle allocation = unsafe().recvBufAllocHandle();
+    allocation.reset(settings);
+    allocation.attemptedBytesRead(attempted);
+    allocation.lastBytesRead(Math.toIntExact(event.result));
+    if (event.result > 0) allocation.incMessagesRead(1);
+    allocation.readComplete();
+    if (tls != null) {
+      tls.feed(event);
+      return;
+    }
+    readRequested = false;
+    if (event.result == 0) {
+      inputShutdown = true;
+      if (settings.isAllowHalfClosure())
+        pipeline().fireUserEventTriggered(ChannelInputShutdownEvent.INSTANCE);
+      else unsafe().close(voidPromise());
+      return;
+    }
+    long handle = event.value;
+    event.value = 0;
+    ByteBuf bytes =
+        view == null
+            ? io().allocator().received(handle, Math.toIntExact(event.result))
+            : io().allocator().received(handle, Math.toIntExact(event.result), view);
+    pipeline().fireChannelRead(bytes);
+    pipeline().fireChannelReadComplete();
   }
 
   @Override
@@ -272,42 +374,28 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
         active = true;
         invalidateLocalAddress();
         invalidateRemoteAddress();
-        promise.trySuccess();
-        if (!open) return;
-        startTls();
-        if (open) pipeline().fireChannelActive();
+        completingConnect = true;
+        try {
+          promise.trySuccess();
+          if (!open) return;
+          startTls();
+          if (open) pipeline().fireChannelActive();
+        } finally {
+          completingConnect = false;
+        }
+        beginNativeRead();
       }
       case 3 -> {
         if (event.operation != receive) return;
         int attempted = receiveCapacity;
         receive = 0;
         receiveCapacity = 0;
-        if (inputShutdown) return;
-        if (event.result < 0) throw NativeTransportException.operation("receive", event.result);
-        RecvByteBufAllocator.Handle allocation = unsafe().recvBufAllocHandle();
-        allocation.reset(settings);
-        allocation.attemptedBytesRead(attempted);
-        allocation.lastBytesRead(Math.toIntExact(event.result));
-        if (event.result > 0) allocation.incMessagesRead(1);
-        // TLS pumping and channelRead callbacks can submit the next receive immediately.
-        allocation.readComplete();
-        if (tls != null) {
-          tls.feed(event);
-          return;
+        dispatchingRead = true;
+        try {
+          deliverRead(event, attempted, null);
+        } finally {
+          dispatchingRead = false;
         }
-        readRequested = false;
-        if (event.result == 0) {
-          inputShutdown = true;
-          if (settings.isAllowHalfClosure())
-            pipeline().fireUserEventTriggered(ChannelInputShutdownEvent.INSTANCE);
-          else unsafe().close(voidPromise());
-          return;
-        }
-        long handle = event.value;
-        event.value = 0;
-        ByteBuf bytes = io().allocator().received(handle, Math.toIntExact(event.result));
-        pipeline().fireChannelRead(bytes);
-        pipeline().fireChannelReadComplete();
         beginNativeRead();
       }
       case 4 -> {
@@ -325,12 +413,26 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
           throw NativeTransportException.operation("send", event.result);
         ChannelOutboundBuffer outbound = unsafe().outboundBuffer();
         if (outbound != null) {
-          outbound.removeBytes(event.result);
+          advanceWritten(outbound, event.result);
           ((NativeUnsafe) unsafe()).resumeWrites();
         }
       }
       default -> throw new NativeTransportException("Unexpected native completion");
     }
+  }
+
+  private static void advanceWritten(ChannelOutboundBuffer outbound, long written) {
+    // Include the last partially written entry: maxBytes=written can omit its cached view.
+    // Netty caches these views, so advance them before moving the ByteBuf indices.
+    ByteBuffer[] buffers = outbound.nioBuffers(64, Long.MAX_VALUE);
+    long remaining = written;
+    for (int i = 0; i < outbound.nioBufferCount() && remaining > 0; i++) {
+      ByteBuffer buffer = buffers[i];
+      int length = (int) Math.min(buffer.remaining(), remaining);
+      buffer.position(buffer.position() + length);
+      remaining -= length;
+    }
+    outbound.removeBytes(written);
   }
 
   @Override
@@ -348,6 +450,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
       tls.pump();
       return;
     }
+    int spins = settings.getWriteSpinCount();
     for (; ; ) {
       ByteBuf bytes = (ByteBuf) outbound.current();
       if (bytes == null) return;
@@ -355,19 +458,113 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
         outbound.remove();
         continue;
       }
-      sentLength = Math.min(bytes.readableBytes(), 64 * 1024);
+      ByteBuffer[] buffers = outbound.nioBuffers(64, 128 * 1024);
+      int count = outbound.nioBufferCount();
+      long available = 0;
+      for (int i = 0; i < count; i++) available += buffers[i].remaining();
+      sentLength = (int) Math.min(available, 128 * 1024L);
+      // An exclusively owned direct buffer can be borrowed through a bounded syscall.
+      // Frozen buffers use their immutable native handle; never revive an old mutable view.
+      if (count == 1
+          && bytes.refCnt() == 1
+          && bytes.isDirect()
+          && bytes.nioBufferCount() == 1
+          && (!(bytes instanceof NativeByteBuf nativeBytes) || !nativeBytes.isFrozen())) {
+        long written =
+            io().trySendInlineDirect(
+                    workload,
+                    socket,
+                    bytes.internalNioBuffer(bytes.readerIndex(), bytes.readableBytes()));
+        if (written < 0) throw NativeTransportException.operation("send", written);
+        if (written > Math.min(bytes.readableBytes(), 128 * 1024))
+          throw new NativeTransportException("Invalid inline send length");
+        if (written > 0) {
+          advanceWritten(outbound, written);
+          if (--spins == 0) {
+            eventLoop().execute(() -> ((NativeUnsafe) unsafe()).resumeWrites());
+            return;
+          }
+          continue;
+        }
+      }
+      if (io().api.supportsGatheredWrites()) {
+        sendRegionCount = sendRegionBytes = 0;
+        try {
+          outbound.forEachFlushedMessage(collectSendRegions);
+          if (sendRegionCount > 1) {
+            for (int i = 0; i < sendRegionCount; i++)
+              sendRegions[i * 3] = java.util.Objects.requireNonNull(sendBuffers[i]).freeze();
+            sentLength = sendRegionBytes;
+            send =
+                io().api
+                    .socketSendGathered(
+                        workload, io().driver(), socket, sendRegions, sendRegionCount);
+            if (send == 0)
+              throw new NativeTransportException("Native gathered send admission failed");
+            return;
+          }
+        } catch (RuntimeException error) {
+          throw error;
+        } catch (Exception error) {
+          throw new IllegalStateException("Cannot gather native send regions", error);
+        } finally {
+          java.util.Arrays.fill(sendBuffers, 0, sendRegionCount, null);
+        }
+      }
+      // A partial gathered write may leave one frozen region before non-native messages.
+      // Submit that immutable handle without reading its abandoned mutable Java view.
+      if (bytes instanceof NativeByteBuf nativeBytes
+          && nativeBytes.isFrozen()
+          && nativeBytes.belongsTo(io().api)
+          && bytes.refCnt() == 1) {
+        sentLength = Math.min(bytes.readableBytes(), 128 * 1024);
+        send =
+            io().api
+                .socketSend(
+                    workload,
+                    io().driver(),
+                    socket,
+                    nativeBytes.freeze(),
+                    bytes.readerIndex(),
+                    sentLength);
+        if (send == 0) throw new NativeTransportException("Native send admission failed");
+        return;
+      }
+      // Gather flushed records into one bounded send instead of round-tripping through
+      // native completion once per TLS record. Only this event loop can change the queue.
       long handle;
       int offset;
-      if (bytes instanceof NativeByteBuf nativeBytes
+      if (count == 1
+          && bytes instanceof NativeByteBuf nativeBytes
           && nativeBytes.belongsTo(io().api)
           && bytes.refCnt() == 1) {
         handle = nativeBytes.freeze();
         offset = bytes.readerIndex();
       } else {
+        long written = io().trySendInline(workload, socket, buffers, count, sentLength);
+        if (written < 0) throw NativeTransportException.operation("send", written);
+        if (written > sentLength) throw new NativeTransportException("Invalid inline send length");
+        if (written > 0) {
+          TransportEvents.copy(this, "tcp-write", (int) written);
+          advanceWritten(outbound, written);
+          if (--spins == 0) {
+            eventLoop().execute(() -> ((NativeUnsafe) unsafe()).resumeWrites());
+            return;
+          }
+          continue;
+        }
         stagedWrite = io().api.bufferNew(io().allocator().owner, sentLength);
         if (stagedWrite == 0) throw new OutOfMemoryError("Native send budget exhausted");
         try {
-          bytes.getBytes(bytes.readerIndex(), io().api.bufferView(stagedWrite).limit(sentLength));
+          ByteBuffer target = io().api.bufferView(stagedWrite).limit(sentLength);
+          for (int i = 0; i < count && target.hasRemaining(); i++) {
+            ByteBuffer source = buffers[i];
+            int length = Math.min(source.remaining(), target.remaining());
+            target.put(target.position(), source, source.position(), length);
+            target.position(target.position() + length);
+          }
+          if (target.hasRemaining())
+            throw new IllegalStateException("Incomplete native send batch");
           if (io().api.bufferFreeze(stagedWrite, sentLength) != 0)
             throw new NativeTransportException("Native send freeze failed");
         } catch (Throwable error) {

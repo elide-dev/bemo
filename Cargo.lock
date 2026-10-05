@@ -271,7 +271,7 @@ dependencies = [
 [[package]]
 name = "compio-buf"
 version = "0.8.3"
-source = "git+https://github.com/elide-tools/compio.git?rev=61a04b75f7c6299a41c5b3cacb17b5c2d96f824f#61a04b75f7c6299a41c5b3cacb17b5c2d96f824f"
+source = "git+https://github.com/elide-tools/compio.git?rev=029af1602c7701dd4fc607c9c857a26144153b14#029af1602c7701dd4fc607c9c857a26144153b14"
 dependencies = [
  "libc",
 ]
@@ -279,7 +279,7 @@ dependencies = [
 [[package]]
 name = "compio-driver"
 version = "0.12.5"
-source = "git+https://github.com/elide-tools/compio.git?rev=61a04b75f7c6299a41c5b3cacb17b5c2d96f824f#61a04b75f7c6299a41c5b3cacb17b5c2d96f824f"
+source = "git+https://github.com/elide-tools/compio.git?rev=029af1602c7701dd4fc607c9c857a26144153b14#029af1602c7701dd4fc607c9c857a26144153b14"
 dependencies = [
  "bitflags",
  "cfg_aliases",
@@ -307,7 +307,7 @@ dependencies = [
 [[package]]
 name = "compio-log"
 version = "0.2.1"
-source = "git+https://github.com/elide-tools/compio.git?rev=61a04b75f7c6299a41c5b3cacb17b5c2d96f824f#61a04b75f7c6299a41c5b3cacb17b5c2d96f824f"
+source = "git+https://github.com/elide-tools/compio.git?rev=029af1602c7701dd4fc607c9c857a26144153b14#029af1602c7701dd4fc607c9c857a26144153b14"
 dependencies = [
  "tracing",
 ]

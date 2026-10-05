@@ -27,7 +27,7 @@ FFI packages in one graph, preventing duplicate C boundaries.
 | `packages/base/main/io/netty/handler/ssl` | `packages/netty` | Package-private ALPN integration requires explicit compatibility coverage |
 | `crates/netty-transport/tests` | Rust and shared binding contracts here | Preserve backend, shutdown, ownership, TLS, and reentrant-close cases |
 
-Bemo pins CompIO at `61a04b75f7c6299a41c5b3cacb17b5c2d96f824f`, based on Elide's
+Bemo pins CompIO at `029af1602c7701dd4fc607c9c857a26144153b14`, based on Elide's
 `8feca49de69cb8090f18405741982b416a4beda9`. The two polling dependencies in that
 fork now directly pin `1198249b4e54fa430dc6f76b058ad0912bd6bbea`. No source is
 vendored. ntex-httparse is directly pinned at

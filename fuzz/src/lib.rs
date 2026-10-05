@@ -88,7 +88,7 @@ pub fn abi(data: &[u8]) {
   let mut handles = Vec::new();
   let mut retired = Vec::new();
   for instruction in data.as_chunks::<3>().0.iter().take(256) {
-    match instruction[0] % 5 {
+    match instruction[0] % 8 {
       0 if handles.len() < 32 => {
         let handle = elide_transport_buffer_new(owner, u64::from(instruction[1]) + 1);
         if handle != 0 {
@@ -119,6 +119,36 @@ pub fn abi(data: &[u8]) {
         );
       }
       4 => assert!(elide_transport_owner_used(owner) <= 4096),
+      5 => {
+        assert_eq!(
+          // SAFETY: The instruction is live initialized storage; invalid driver/workload reject admission.
+          unsafe { elide_transport_socket_send_inline(0, 0, 0, instruction.as_ptr(), instruction.len() as u64) },
+          -1
+        );
+      }
+      6 => {
+        let handle = handles
+          .get(usize::from(instruction[1]) % handles.len().max(1))
+          .copied()
+          .unwrap_or(0);
+        let regions = [handle, u64::from(instruction[1]), u64::from(instruction[2])];
+        let count = [0, 1, 65][usize::from(instruction[2]) % 3];
+        assert_eq!(
+          // SAFETY: Count 1 reads exactly the live triple; invalid counts reject before access.
+          unsafe { elide_transport_socket_send_gathered(0, 0, 0, regions.as_ptr(), count) },
+          0
+        );
+      }
+      7 => {
+        let mut output = ReceiveResult::default();
+        assert_eq!(
+          // SAFETY: The descriptor is aligned and writable; invalid handles reject admission.
+          unsafe { elide_transport_socket_receive_new_result(0, 0, 0, owner, u64::from(instruction[1]), &mut output) },
+          INVALID
+        );
+        assert_eq!(output.buffer, 0);
+        assert!(output.address.is_null());
+      }
       _ => {}
     }
   }

@@ -170,7 +170,8 @@ struct DriverState {
   limit: usize,
   http: http::HttpTables,
   serving: Option<serving::Shard>,
-  callback: socket::CallbackScratch,
+  callback: socket::PollScratch,
+  raw_poll: socket::PollScratch,
 }
 
 struct Drivers(IntMap<u64, DriverState>);
@@ -503,7 +504,8 @@ pub fn elide_transport_driver_new(workload: u64, backend: u32, limit: u32) -> u6
           limit: limit as usize,
           http: http::HttpTables::default(),
           serving: None,
-          callback: socket::CallbackScratch::default(),
+          callback: socket::PollScratch::default(),
+          raw_poll: socket::PollScratch::default(),
         },
       )
     });

@@ -100,6 +100,7 @@ platform classifier JAR; the no-argument constructor extracts and loads the
 shared library automatically. Static archives ship in the Native Image classifier.
 See [native loading](docs/native-loading.md) for configuration. Netty TLS uses
 a package-private ALPN adapter and currently requires the classpath rather than JPMS. See [architecture](docs/architecture.md), [extraction boundaries](docs/extraction.md),
+[Netty I/O ownership and batching](docs/transport-io.md),
 [publishing](docs/publishing.md), and [CI](docs/ci.md).
 
 Licensed under Apache-2.0.

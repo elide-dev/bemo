@@ -155,6 +155,10 @@ final class NativeTlsSession implements AutoCloseable {
     channel.beginNativeRead();
   }
 
+  boolean isPumping() {
+    return pumping;
+  }
+
   void pump() {
     if (pumping || closed || !channel.isActive()) return;
     pumping = true;
@@ -301,6 +305,7 @@ final class NativeTlsSession implements AutoCloseable {
                 });
     } finally {
       pumping = false;
+      channel.beginNativeRead();
     }
   }
 

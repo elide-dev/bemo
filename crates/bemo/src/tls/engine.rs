@@ -250,56 +250,57 @@ fn transition<Data>(
   status: UnbufferedStatus<'_, '_, Data>,
   pending: &mut Pending,
   sink: &mut Sink<'_>,
-) -> Result<(usize, bool), rustls::Error> {
+) -> Result<(usize, bool), (rustls::Error, usize)> {
   let mut discard = status.discard;
   let io = |error: io::Error| rustls::Error::General(error.to_string());
-  let blocked = match status.state? {
-    ConnectionState::EncodeTlsData(mut encode) => {
-      pending.encode(&mut encode).map_err(io)?;
-      false
-    }
-    ConnectionState::TransmitTlsData(transmit) => {
-      // Encoded records belong to the engine until a wrap hands them to the caller.
-      transmit.done();
-      false
-    }
-    ConnectionState::ReadTraffic(mut traffic) => {
-      while let Some(record) = traffic.next_record() {
-        let record = record?;
-        discard += record.discard;
-        pending.deliver(record.payload, sink).map_err(io)?;
+  let result = (|| {
+    let blocked = match status.state? {
+      ConnectionState::EncodeTlsData(mut encode) => {
+        pending.encode(&mut encode).map_err(io)?;
+        false
       }
-      false
-    }
-    ConnectionState::WriteTraffic(mut traffic) => {
-      let queue = pending.close_requested && !pending.close_queued;
-      pending.write(&mut traffic, sink).map_err(io)?;
-      // A newly queued close-notify may need encoding through the next transition.
-      !(queue && pending.close_queued)
-    }
-    ConnectionState::PeerClosed => {
-      pending.peer_closed = true;
-      false
-    }
-    ConnectionState::Closed => {
-      pending.peer_closed = true;
-      true
-    }
-    ConnectionState::BlockedHandshake => true,
-    _ => return Err(rustls::Error::General("unsupported TLS state".into())),
-  };
-  Ok((discard, blocked))
+      ConnectionState::TransmitTlsData(transmit) => {
+        // Encoded records belong to the engine until a wrap hands them to the caller.
+        transmit.done();
+        false
+      }
+      ConnectionState::ReadTraffic(mut traffic) => {
+        while let Some(record) = traffic.next_record() {
+          let record = record?;
+          discard += record.discard;
+          pending.deliver(record.payload, sink).map_err(io)?;
+        }
+        false
+      }
+      ConnectionState::WriteTraffic(mut traffic) => {
+        let queue = pending.close_requested && !pending.close_queued;
+        pending.write(&mut traffic, sink).map_err(io)?;
+        // A newly queued close-notify may need encoding through the next transition.
+        !(queue && pending.close_queued)
+      }
+      ConnectionState::PeerClosed => {
+        pending.peer_closed = true;
+        false
+      }
+      ConnectionState::Closed => {
+        pending.peer_closed = true;
+        true
+      }
+      ConnectionState::BlockedHandshake => true,
+      _ => return Err(rustls::Error::General("unsupported TLS state".into())),
+    };
+    Ok(blocked)
+  })();
+  result
+    .map(|blocked| (discard, blocked))
+    .map_err(|error| (error, discard))
 }
 
-/// Encode one queued alert after a failure; returns whether another transition may follow.
-fn alert<Data>(status: UnbufferedStatus<'_, '_, Data>, pending: &mut Pending) -> bool {
-  match status.state {
-    Ok(ConnectionState::EncodeTlsData(mut encode)) => pending.encode(&mut encode).is_ok(),
-    Ok(ConnectionState::TransmitTlsData(transmit)) => {
-      transmit.done();
-      true
-    }
-    _ => false,
+/// Encode the queued fatal alert without re-entering the failed deframer. A terminal engine
+/// never resumes Rustls, so it does not need a subsequent TransmitTlsData acknowledgement.
+fn alert<Data>(status: UnbufferedStatus<'_, '_, Data>, pending: &mut Pending) {
+  if let Ok(ConnectionState::EncodeTlsData(mut encode)) = status.state {
+    let _ = pending.encode(&mut encode);
   }
 }
 
@@ -528,7 +529,7 @@ impl Engine {
             return Ok(start);
           }
         }
-        Err(error) => return Err(self.fail(error, &mut buffer[start..])),
+        Err((error, discard)) => return Err(self.fail(error, &mut buffer[start + discard..])),
       }
     }
     Err(self.terminate("TLS state machine did not settle".into()))
@@ -537,14 +538,9 @@ impl Engine {
   /// Record a terminal failure and collect any alert Rustls queued for the peer. Rustls must see
   /// the same buffer it failed on, since its deframer may still reference retained ranges.
   fn fail(&mut self, error: rustls::Error, buffer: &mut [u8]) -> io::Error {
-    for _ in 0..MAX_TRANSITIONS {
-      let more = match &mut self.inner {
-        Inner::Client(c) => alert(c.process_tls_records(buffer), &mut self.pending),
-        Inner::Server(c) => alert(c.process_tls_records(buffer), &mut self.pending),
-      };
-      if !more {
-        break;
-      }
+    match &mut self.inner {
+      Inner::Client(c) => alert(c.process_tls_records(buffer), &mut self.pending),
+      Inner::Server(c) => alert(c.process_tls_records(buffer), &mut self.pending),
     }
     self.terminate(error.to_string())
   }
@@ -913,6 +909,30 @@ mod tests {
 
   #[test]
   #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn engine_rejects_tampered_record_and_emits_one_alert() {
+    for version in [&rustls::version::TLS13, &rustls::version::TLS12] {
+      let (mut client, mut server) = pair(&[version], "localhost");
+      handshake(&mut client, &mut server);
+      let mut wire = Vec::new();
+      drain(&mut client, b"authenticated plaintext", &mut wire).unwrap();
+      *wire.last_mut().unwrap() ^= 0x80;
+      let mut out = vec![0; MAX_RECORD];
+      let error = server.unwrap(Input::Mutable(&mut wire), &mut out).unwrap_err();
+      assert!(error.to_string().contains("decrypt"), "{error}");
+      assert!(out.iter().all(|byte| *byte == 0), "unauthenticated plaintext escaped");
+      let alert = server.wrap(&[], &mut out).unwrap();
+      assert_eq!(alert.status, Status::Closed);
+      assert!(alert.produced > 0);
+      let mut wire = out[..alert.produced].to_vec();
+      let error = client.unwrap(Input::Mutable(&mut wire), &mut out).unwrap_err();
+      assert!(error.to_string().contains("alert"), "{error}");
+      assert_eq!(server.wrap(&[], &mut out).unwrap().produced, 0);
+      assert_eq!(client.wrap(&[], &mut out).unwrap().status, Status::Closed);
+    }
+  }
+
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
   fn engine_rejects_wrong_name_and_emits_an_alert() {
     let (mut client, mut server) = pair(&[&rustls::version::TLS13], "example.com");
     let mut out = vec![0; MAX_RECORD];
@@ -927,6 +947,13 @@ mod tests {
     let alert = client.wrap(&[], &mut out).unwrap();
     assert!(alert.produced > 0);
     assert_eq!(alert.status, Status::Closed);
+    // A failed peer's alert can arrive in mutable native receive storage. Its discarded
+    // ciphertext must never be fed back to the deframer while draining local output.
+    let mut wire = out[..alert.produced].to_vec();
+    let peer_error = feed(&mut server, &mut wire, &mut Vec::new()).unwrap_err();
+    assert!(peer_error.to_string().contains("alert"), "{peer_error}");
+    assert!(server.failure().is_some());
+    assert_eq!(server.wrap(&[], &mut out).unwrap().status, Status::Closed);
     assert_eq!(
       client.unwrap(Input::Shared(&[]), &mut out).unwrap().status,
       Status::Closed

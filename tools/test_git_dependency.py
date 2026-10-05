@@ -44,6 +44,7 @@ bemo-ffi = {{ git = "{snapshot.as_uri()}", rev = "{revision}" }}
   let directory = std::env::var("DEP_BEMO_INCLUDE").expect("Bemo shared header metadata");
   let header = std::fs::read_to_string(std::path::Path::new(&directory).join("elide_transport.h")).unwrap();
   assert!(header.contains("elide_transport_driver_poll("));
+  assert!(header.contains("elide_transport_socket_receive_new_result("));
   assert!(std::path::Path::new(&directory).join("bemo.h").is_file());
 }
 ''')
