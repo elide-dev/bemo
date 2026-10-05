@@ -169,3 +169,7 @@ coverage of those performance dimensions.
 References: [Nextest JUnit](https://nexte.st/docs/machine-readable/junit/),
 [CodSpeed Criterion integration](https://codspeed.io/docs/benchmarks/rust/criterion),
 [JaCoCo](https://www.jacoco.org/jacoco/trunk/doc/).
+
+The [2026-10-05 stock OpenJDK comparison](benchmarks/2026-10-05-macos.md)
+records all eight workloads and their samples. It found no consistent win over
+Netty kqueue; shared JDK TLS with a 64 KiB identity payload was the largest gap.
