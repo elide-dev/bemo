@@ -1,9 +1,6 @@
 name: Verify
 on:
   workflow_call:
-    secrets:
-      CODECOV_TOKEN:
-        required: false
 jobs:
   rust:
     uses: ./.github/workflows/check.rust.yml
@@ -15,8 +12,6 @@ jobs:
     uses: ./.github/workflows/job.build.yml
   coverage:
     uses: ./.github/workflows/check.coverage.yml
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   benchmarks:
     uses: ./.github/workflows/check.bench.yml
   safety:
