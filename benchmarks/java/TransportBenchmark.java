@@ -7,6 +7,7 @@ import io.netty.channel.epoll.*;
 import io.netty.channel.kqueue.*;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.nio.*;
+import io.netty.handler.codec.DateFormatter;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.ssl.*;
 import java.io.ByteArrayInputStream;
@@ -23,6 +24,18 @@ import java.util.concurrent.TimeUnit;
 /** Fixed-work loopback benchmark: native transport, Netty HTTP/1 and optional gzip/TLS. */
 @SuppressWarnings("deprecation")
 public final class TransportBenchmark {
+  private static long dateSecond = -1;
+  private static String dateValue;
+
+  private static String date() {
+    long second = System.currentTimeMillis() / 1000;
+    if (second != dateSecond) {
+      dateValue = DateFormatter.format(new java.util.Date(second * 1000));
+      dateSecond = second;
+    }
+    return dateValue;
+  }
+
   private static final class Reply extends SimpleChannelInboundHandler<FullHttpResponse> {
     private final byte[] payload;
     private volatile CompletableFuture<Void> pending;
@@ -84,7 +97,19 @@ public final class TransportBenchmark {
     return System.nanoTime() - started;
   }
 
-  private static String rss(String field) throws Exception {
+  private static String rss(String field, long serverPid) throws Exception {
+    if (serverPid != 0) {
+      String client = rss(field, 0);
+      Path status = Path.of("/proc", Long.toString(serverPid), "status");
+      if (client.equals("null") || !Files.isRegularFile(status)) return "null";
+      for (String line : Files.readAllLines(status)) {
+        if (line.startsWith(field + ":")) {
+          return Long.toString(
+              Long.parseLong(client) + Long.parseLong(line.split("\\s+")[1]) * 1024);
+        }
+      }
+      throw new IllegalStateException("Missing server RSS: " + field);
+    }
     Path status = Path.of("/proc/self/status");
     if (!Files.isRegularFile(status)) return "null";
     for (String line : Files.readAllLines(status)) {
@@ -95,6 +120,9 @@ public final class TransportBenchmark {
   }
 
   public static void main(String[] args) throws Exception {
+    boolean serverOnly = args.length > 12 && args[12].equals("server");
+    int externalPort = args.length > 12 && !serverOnly ? Integer.parseInt(args[12]) : 0;
+    long serverPid = args.length > 13 ? Long.parseLong(args[13]) : 0;
     Path library = Path.of(args[0]);
     byte[] cert = Files.readAllBytes(Path.of(args[1]));
     byte[] key = Files.readAllBytes(Path.of(args[2]));
@@ -169,53 +197,70 @@ public final class TransportBenchmark {
       }
       default -> throw new IllegalArgumentException("Unknown transport: " + transport);
     }
-    EventLoopGroup group = new MultiThreadIoEventLoopGroup(2, factory);
+    EventLoopGroup group =
+        new MultiThreadIoEventLoopGroup(externalPort != 0 || serverOnly ? 1 : 2, factory);
     List<Channel> clients = new ArrayList<>();
     List<Reply> replies = new ArrayList<>();
     Channel server = null;
     try {
-      server =
-          new ServerBootstrap()
-              .group(group)
-              .channel(serverClass)
-              .childOption(ChannelOption.TCP_NODELAY, true)
-              .childHandler(
-                  new ChannelInitializer<Channel>() {
-                    @Override
-                    protected void initChannel(Channel channel) {
-                      if (nativeTls) ((NativeSocketChannel) channel).tls(serverTls, null);
-                      if (serverSsl != null)
-                        channel.pipeline().addLast(serverSsl.newHandler(channel.alloc()));
-                      channel
-                          .pipeline()
-                          .addLast(new HttpServerCodec(), new HttpObjectAggregator(1024 * 1024));
-                      if (gzip) channel.pipeline().addLast(new HttpContentCompressor());
-                      channel
-                          .pipeline()
-                          .addLast(
-                              new SimpleChannelInboundHandler<FullHttpRequest>() {
-                                @Override
-                                protected void channelRead0(
-                                    ChannelHandlerContext ctx, FullHttpRequest request) {
-                                  FullHttpResponse response =
-                                      new DefaultFullHttpResponse(
-                                          HttpVersion.HTTP_1_1,
-                                          HttpResponseStatus.OK,
-                                          Unpooled.wrappedBuffer(payload));
-                                  response
-                                      .headers()
-                                      .set(HttpHeaderNames.CONTENT_TYPE, "application/json");
-                                  response
-                                      .headers()
-                                      .setInt(HttpHeaderNames.CONTENT_LENGTH, payload.length);
-                                  ctx.writeAndFlush(response);
-                                }
-                              });
-                    }
-                  })
-              .bind(new InetSocketAddress("127.0.0.1", 0))
-              .sync()
-              .channel();
+      if (externalPort == 0)
+        server =
+            new ServerBootstrap()
+                .group(group)
+                .channel(serverClass)
+                .childOption(ChannelOption.TCP_NODELAY, true)
+                .childHandler(
+                    new ChannelInitializer<Channel>() {
+                      @Override
+                      protected void initChannel(Channel channel) {
+                        if (nativeTls) ((NativeSocketChannel) channel).tls(serverTls, null);
+                        if (serverSsl != null)
+                          channel.pipeline().addLast(serverSsl.newHandler(channel.alloc()));
+                        channel
+                            .pipeline()
+                            .addLast(new HttpServerCodec(), new HttpObjectAggregator(1024 * 1024));
+                        if (gzip) channel.pipeline().addLast(new HttpContentCompressor());
+                        channel
+                            .pipeline()
+                            .addLast(
+                                new SimpleChannelInboundHandler<FullHttpRequest>() {
+                                  @Override
+                                  protected void channelRead0(
+                                      ChannelHandlerContext ctx, FullHttpRequest request) {
+                                    FullHttpResponse response =
+                                        new DefaultFullHttpResponse(
+                                            HttpVersion.HTTP_1_1,
+                                            HttpResponseStatus.OK,
+                                            Unpooled.wrappedBuffer(payload));
+                                    response
+                                        .headers()
+                                        .set(HttpHeaderNames.CONTENT_TYPE, "application/json");
+                                    response
+                                        .headers()
+                                        .setInt(HttpHeaderNames.CONTENT_LENGTH, payload.length);
+                                    ctx.writeAndFlush(response);
+                                  }
+                                });
+                      }
+                    })
+                .bind(new InetSocketAddress("127.0.0.1", 0))
+                .sync()
+                .channel();
+      if (serverOnly) {
+        System.out.printf(
+            "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":false}%n",
+            ((InetSocketAddress) server.localAddress()).getPort(), transport);
+        System.out.flush();
+        var control = new java.io.BufferedReader(new java.io.InputStreamReader(System.in));
+        String command;
+        while ((command = control.readLine()) != null && command.equals("cpu")) {
+          System.out.printf(
+              "{\"server_cpu_ns\":%d}%n",
+              ProcessHandle.current().info().totalCpuDuration().orElseThrow().toNanos());
+          System.out.flush();
+        }
+        return;
+      }
       for (int i = 0; i < clientCount; i++) {
         Reply reply = new Reply(payload);
         replies.add(reply);
@@ -276,7 +321,10 @@ public final class TransportBenchmark {
                                 reply);
                       }
                     })
-                .connect(server.localAddress())
+                .connect(
+                    externalPort == 0
+                        ? server.localAddress()
+                        : new InetSocketAddress("127.0.0.1", externalPort))
                 .sync()
                 .channel();
         clients.add(client);
@@ -284,10 +332,16 @@ public final class TransportBenchmark {
         if (clientSsl != null) client.pipeline().get(SslHandler.class).handshakeFuture().sync();
       }
       exercise(clients, replies, warmup, gzip, null);
-      String before = rss("VmRSS");
+      if (externalPort != 0) {
+        System.out.println("{\"phase\":\"start\"}");
+        System.out.flush();
+        if (System.in.read() < 0) throw new IllegalStateException("Missing measurement controller");
+      }
+      String before = rss("VmRSS", serverPid);
       long cpuBefore = ProcessHandle.current().info().totalCpuDuration().orElseThrow().toNanos();
       long[] latencies = new long[Math.multiplyExact(clientCount, rounds)];
       long elapsed = exercise(clients, replies, rounds, gzip, latencies);
+      long cpuAfter = ProcessHandle.current().info().totalCpuDuration().orElseThrow().toNanos();
       Arrays.sort(latencies);
       long requests = (long) clientCount * rounds;
       DriverSelection selection = transport.equals("bemo") ? DriverSelection.observed() : null;
@@ -311,10 +365,13 @@ public final class TransportBenchmark {
           requests * 1e9 / elapsed,
           latencies[(int) Math.ceil(latencies.length * 0.50) - 1],
           latencies[(int) Math.ceil(latencies.length * 0.99) - 1],
-          ProcessHandle.current().info().totalCpuDuration().orElseThrow().toNanos() - cpuBefore,
+          cpuAfter - cpuBefore,
           before,
-          rss("VmRSS"),
-          rss("VmHWM"));
+          rss("VmRSS", serverPid),
+          rss("VmHWM", serverPid));
+      System.out.flush();
+      if (externalPort != 0 && System.in.read() < 0)
+        throw new IllegalStateException("Missing measurement completion controller");
     } finally {
       for (Channel client : clients) client.close().syncUninterruptibly();
       if (server != null) server.close().syncUninterruptibly();

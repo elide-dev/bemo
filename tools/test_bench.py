@@ -38,6 +38,50 @@ class ComparisonTests(unittest.TestCase):
     with self.assertRaisesRegex(RuntimeError, "incompatible"):
       bench.comparisons(rows)
 
+  def test_default_compares_native_bemo_with_jdk_netty(self):
+    self.assertEqual(bench.selected_tls_provider("bemo", "auto"), "native")
+    self.assertEqual(bench.selected_tls_provider("kqueue", "auto"), "jdk")
+    self.assertEqual(bench.selected_tls_provider("bemo", "jdk"), "jdk")
+    sample = {"clients": 4, "requests": 100, "warmup_rounds": 20,
+              "java_version": "stock", "host": "same", "workload_sha256": "same",
+              "requests_per_second": 100}
+    rows = [{"case": "tls", "transport": transport, "tls_provider": provider,
+             "median_requests_per_second": 100, "median_latency_p99_ns": 10,
+             "samples": [dict(sample, tls_provider=provider)]}
+            for transport, provider in (("bemo", "native"), ("kqueue", "jdk"))]
+    result = bench.comparisons(rows)[0]
+    self.assertEqual(result["comparison_kind"], "full-stack")
+    self.assertEqual(result["tls_provider"], "native")
+    self.assertEqual(result["comparator_tls_provider"], "jdk")
+    rows[1]["samples"][0]["requests"] += 1
+    with self.assertRaisesRegex(RuntimeError, "incompatible"):
+      bench.comparisons(rows)
+
+  def test_native_http_comparison_is_full_stack_even_without_tls(self):
+    sample = {"clients": 4, "requests": 100, "warmup_rounds": 20, "tls_provider": "none",
+              "java_version": "stock", "host": "same", "workload_sha256": "same",
+              "requests_per_second": 100, "load_generator_transport": "kqueue",
+              "load_generator_tls_provider": "none", "process_scope": "server+client"}
+    rows = [{"case": "plain", "transport": transport, "tls_provider": "none",
+             "median_requests_per_second": 100, "median_latency_p99_ns": 10,
+             "samples": [dict(sample, http_provider=http, runtime=runtime, binding=binding)]}
+            for transport, http, runtime, binding in (("bemo", "native", "native-image", "capi"),
+                                                       ("kqueue", "netty", "jvm", "netty"))]
+    result = bench.comparisons(rows)[0]
+    self.assertEqual(result["comparison_kind"], "full-stack")
+    self.assertEqual(result["bemo_stack"]["binding"], "capi")
+    rows[1]["samples"][0]["load_generator_transport"] = "nio"
+    with self.assertRaisesRegex(RuntimeError, "incompatible"):
+      bench.comparisons(rows)
+
+  def test_baseline_rejects_changed_http_runtime(self):
+    baseline = [{"case": "plain", "transport": "bemo", "tls_provider": "none",
+                 "median_requests_per_second": 1000, "max_peak_rss_bytes": None,
+                 "samples": [{"requests": 100, "http_provider": "netty", "runtime": "jvm"}]}]
+    current = copy.deepcopy(baseline)
+    current[0]["samples"][0].update(http_provider="native", runtime="native-image")
+    self.assertIn("skipped", compare(current, baseline)[0])
+
 
 class ManifestTests(unittest.TestCase):
   def test_generated_reports_do_not_change_inputs_but_sources_and_artifacts_do(self):

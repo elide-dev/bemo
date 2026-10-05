@@ -80,27 +80,39 @@ record benchmarks warm an established session and test both directions at
 wall-time measurement, not the deterministic simulation set. Benchmarks assert
 successful parsing, encoding, handshakes, and byte-exact record delivery.
 
-The macro workload creates persistent loopback clients and a server on two I/O
-threads in one JVM, with one outstanding request per client. Four clients are
-the default; `--clients` supports concurrency sweeps. Each workload runs Bemo
-and stock Netty epoll on Linux or kqueue on macOS. NIO is an optional control.
-Unavailable requested native transports fail instead of silently falling back
-to NIO. All variants use the same payload, codecs, connection count, heap,
-warmup, and measurement rounds. Launch order rotates across samples.
+The primary macro workload runs a V2 native HTTP server compiled as an optimized
+Native Image (`-O3`) and statically linked to Bemo through its C bindings. Rust
+owns request parsing, response encoding, socket I/O, and Rustls/aws-lc-rs TLS.
+The comparator is a stock OpenJDK Netty HTTP server with epoll on Linux or kqueue
+on macOS and JDK TLS. Explicit NIO comparison is also available. Neither server
+falls back silently when its requested backend is unavailable.
 
-The default TLS comparison uses Netty's JDK TLS provider with TLS 1.3 on both
-transports, isolating transport differences. `--tls-provider native --transports
-bemo` measures Bemo's fused Rust TLS separately; its results must not be labeled
-as a comparison of identical TLS providers. Both verify the localhost fixture
-certificate, including hostname verification on the JDK path. The harness
-validates every response and compression negotiation before decompression.
-Gzip uses Netty's
-`HttpContentCompressor` and `HttpContentDecompressor`; this project currently has
-no Rust compression implementation. Bodies repeat a fixed JSON pattern, so gzip
-results describe compressible application data, not incompressible data.
+Both servers run in separate processes from the same stock OpenJDK Netty load
+generator, with one server I/O thread and one client I/O thread. Four persistent
+clients issue one outstanding request each. Payload, response headers, connection
+count, 256 MiB heaps, warmup and measurement rounds match. Launch order rotates
+across samples. The client always uses the selected platform-native Netty transport,
+JDK TLS 1.3 with certificate and hostname verification, Netty HTTP response codecs,
+and byte-exact payload validation. Native HTTP currently implements server-side
+parsing/encoding; the common client is deliberately held constant.
 
-`make bench-prepare` fingerprints source inputs, compiled classes, and the native
-library; measurement refuses stale preparations. Generated `target/` directories
+`--runtime jvm` runs the same V2 HTTP server through FFM as a runtime control.
+`--http-provider netty --runtime jvm` selects the legacy Netty-codec transport
+control, and `--tls-provider jdk` holds TLS constant in that control. The defaults
+use native HTTP and Rustls/aws-lc-rs for Bemo. Results record server runtime,
+binding, HTTP provider, TLS provider, actual backend, and load-generator stack.
+Full-stack comparisons are labeled as such, including plain HTTP comparisons.
+
+Gzip is application compression, not a native Bemo codec: the native HTTP server
+uses `java.util.zip.GZIPOutputStream` per response; the comparator uses Netty's
+`HttpContentCompressor`. Both clients use the same decompressor and verify
+compression negotiation. Identity workloads isolate the native HTTP/TLS data
+plane. Bodies repeat a fixed JSON pattern, so gzip results describe compressible
+application data, not incompressible data.
+
+`make bench-prepare` fingerprints source inputs, compiled classes, the native
+library, and the optimized Native Image server; measurement refuses stale
+preparations. Generated `target/` directories
 and Python caches are excluded from source fingerprints. Wall-time CI sets
 `CRITERION_HOME` explicitly and uploads Criterion reports alongside transport
 measurements. A stale preparation writes `manifest-drift.json` with the changed
@@ -109,16 +121,19 @@ before failing. Cargo.lock remains part of the fingerprint. The renamed package
 entries use Cargo's canonical ordering, and the wall-time workflow prepares the
 JVM workload after building CodSpeed's Rust benchmarks.
 
-Each sample starts a fresh JVM with a fixed 256 MiB heap, warms 5,000 rounds, then
+Each sample starts fresh server and client processes with fixed 256 MiB heaps,
+warms 5,000 rounds, then
 times 25,000 rounds (100,000 completed requests). Setup, TLS handshakes, warmup,
 and teardown are outside the requests/sec timer. Three samples produce a median
 RPS, and all samples are retained. Per-response p50/p99 latency records enqueue
 through validated reply completion; process CPU is measured over the request
-interval and includes clients and server. This is a closed-loop benchmark: its
+interval and records server and client costs separately as well as their sum.
+This is a closed-loop benchmark: its
 latency percentiles do not correct coordinated omission or measure externally
-offered load. RSS is Linux `VmRSS` before/after measurement
-and `VmHWM` for the **entire process lifetime**. It includes the JVM, native
-allocations, server, client, codecs, and warmup. It is not server-only RSS, a
+offered load. RSS sums Linux `VmRSS` before/after measurement
+and each process's `VmHWM` over its **entire lifetime**. The sum of high-water marks
+is not a simultaneous peak. It includes both runtimes, native allocations,
+server, client, codecs, and warmup. It is not server-only RSS, a
 live-allocation counter, or heap size. macOS local runs explicitly emit null RSS;
 Linux CI requires actual RSS readings. CodSpeed simulation does not measure RSS.
 
@@ -138,11 +153,12 @@ Local commands:
 ```sh
 make bench-smoke             # all Rust benchmark correctness paths, including TLS
 make bench                  # local Criterion measurements
-make bench-prepare          # Cargo release library + Elide JVM compilation
+make bench-prepare          # Cargo release library + Elide JVM compilation + optimized Native Image
 make bench-transport        # full loopback measurement matrix
 python3 tools/bench.py run --case tls-gzip-65536 --samples 1
 python3 tools/bench.py run --clients 32 --transports bemo,netty-native,nio
-python3 tools/bench.py run --transports bemo --tls-provider native
+python3 tools/bench.py run --transports bemo --runtime jvm
+python3 tools/bench.py run --http-provider netty --runtime jvm --tls-provider jdk
 # Use a specific stock JDK for local measurements:
 BEMO_BENCH_JAVA=/path/to/jdk/bin/java make bench-transport
 # Fast functionality check, not a performance baseline:
@@ -163,7 +179,7 @@ or treating an RSS/RPS warning as a blocker. New cases establish a baseline on
 main before any comparison can be made.
 
 Next extensions should add incompressible payloads, sustained-load memory slopes,
-HTTP/2 multiplexing and independent load-generator/server processes. Concurrency
+HTTP/2 multiplexing and open-loop offered-load measurement. Concurrency
 sweeps and explicit Bemo backend selection are available locally; the default
 CI matrix uses four clients and AUTO. The initial matrix does not imply
 coverage of those performance dimensions.
