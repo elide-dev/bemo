@@ -42,9 +42,6 @@ jobs:
         if: ${{ !cancelled() && vars.CODECOV_ENABLED != 'false' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          # Use the supported PyPI distribution while cli.codecov.io fails TLS.
-          use_pypi: true
-          version: '11.3.1'
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
           disable_search: true
@@ -55,8 +52,6 @@ jobs:
         if: ${{ !cancelled() && vars.CODECOV_ENABLED != 'false' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          use_pypi: true
-          version: '11.3.1'
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
           disable_search: true
