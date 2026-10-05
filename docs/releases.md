@@ -28,6 +28,40 @@ The workflow refuses publication when any platform/signature is missing or the
 tag points elsewhere.
 Retry the original failed push run to resume an unpublished draft; a subsequent
 commit cannot substitute its artifacts for the original release revision.
+Reruns use the original commit's release script, so a script defect requires a
+fresh release revision or a separate recovery of the original tested assets.
+
+## Recovering the unpublished 0.2.0 release
+
+The first `0.2.0` attempt uploaded its signed assets but failed before publication:
+the REST [`releases/tags/{tag}` endpoint](https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name)
+returns only published releases, so it returned 404 for the draft. The release
+script now discovers drafts through the paginated release list and verifies
+their assets through `releases/{id}`. It uses
+the same release ID for the immutability check after publication.
+
+To issue a fresh `0.2.0` release containing this fix, restore the manifest and
+Cargo versions to `0.1.0`, restore `.version` to `0.1.0-SNAPSHOT`, and remove the
+unpublished changelog entry. Before merging that reset, inspect the existing
+release and its tag:
+
+```sh
+gh api --paginate --slurp repos/elide-dev/dokar/releases \
+  --jq '.[][] | select(.tag_name == "v0.2.0") | {id, draft, immutable, target_commitish}'
+gh api repos/elide-dev/dokar/git/ref/tags/v0.2.0 --jq '.object'
+```
+
+Only if it remains an unpublished draft for the failed revision, delete the draft
+and its tag to free the version:
+
+```sh
+gh release delete v0.2.0 --repo elide-dev/dokar --cleanup-tag --yes
+```
+
+Then merge the fix and version reset and let Release Please open a fresh `0.2.0`
+PR. Its merged commit must pass verification and produce new attestations and
+signatures. Do not reuse the failed revision's assets for the new commit. A
+published release must retain its version and tag; use a new version instead.
 
 ## Trust boundary
 

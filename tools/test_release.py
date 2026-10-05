@@ -1,9 +1,10 @@
-"""Exercise release rejection paths without credentials or network requests."""
+"""Exercise release publication and rejection paths without credentials or network requests."""
 import os
 import json
 import hashlib
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +12,18 @@ import release
 
 
 class ReleaseSafetyTest(unittest.TestCase):
+  def test_find_release_includes_drafts_on_later_pages(self):
+    draft = {"id": 123, "tag_name": "v0.1.0", "draft": True}
+    with patch.object(release, "gh", return_value=json.dumps([
+        [{"id": 122, "tag_name": "v0.0.9", "draft": False}], [draft]])):
+      self.assertEqual(release.find_release("elide-dev/dokar", "v0.1.0"), draft)
+      self.assertIsNone(release.find_release("elide-dev/dokar", "v0.2.0"))
+
+  def test_find_release_propagates_api_failures(self):
+    with patch.object(release, "gh", side_effect=subprocess.CalledProcessError(1, "gh")):
+      with self.assertRaises(subprocess.CalledProcessError):
+        release.find_release("elide-dev/dokar", "v0.1.0")
+
   def test_snapshots_never_select_a_release(self):
     with patch.object(release, "version", return_value="0.1.0-SNAPSHOT"), patch.object(release, "gh") as gh:
       release.select()
@@ -76,7 +89,7 @@ class ReleaseSafetyTest(unittest.TestCase):
       names = payload | {name + ".sigstore.json" for name in payload}
       for name in names:
         (destination / name).write_bytes(b"asset")
-      replies = ["true", '{"assets":[]}', "uploaded",
+      replies = [json.dumps([[{"id": 123, "tag_name": "v0.1.0", "draft": True, "assets": []}]]), "uploaded",
                  json.dumps({"assets": [{"name": name, "digest": "sha256:wrong"} for name in names]})]
       with patch.object(release, "ROOT", root), patch.object(release, "version", return_value="0.1.0"), \
            patch.dict(os.environ, {"GITHUB_REPOSITORY": "elide-dev/dokar", "RELEASE_TAG": "v0.1.0"}), \
@@ -84,6 +97,22 @@ class ReleaseSafetyTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
           release.publish()
         self.assertFalse(any("--draft=false" in call.args for call in gh.call_args_list))
+
+  def test_publish_refuses_missing_or_published_releases(self):
+    for releases in ([], [{"id": 123, "tag_name": "v0.1.0", "draft": False}]):
+      with self.subTest(releases=releases), tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        destination = root / "build/release-assets"
+        destination.mkdir(parents=True)
+        payload = release.expected_assets("0.1.0") | {"SHA256SUMS"}
+        for name in payload | {name + ".sigstore.json" for name in payload}:
+          (destination / name).write_bytes(b"asset")
+        with patch.object(release, "ROOT", root), patch.object(release, "version", return_value="0.1.0"), \
+             patch.dict(os.environ, {"GITHUB_REPOSITORY": "elide-dev/dokar", "RELEASE_TAG": "v0.1.0"}), \
+             patch.object(release, "gh", return_value=json.dumps([releases])) as gh:
+          with self.assertRaisesRegex(RuntimeError, "Refusing to change"):
+            release.publish()
+          gh.assert_called_once()
 
 
   def test_publish_verifies_immutable_release_without_admin_api(self):
@@ -97,7 +126,7 @@ class ReleaseSafetyTest(unittest.TestCase):
         for name in names:
           (destination / name).write_bytes(b"asset")
         digest = "sha256:" + hashlib.sha256(b"asset").hexdigest()
-        replies = ["true", '{"assets":[]}', "uploaded",
+        replies = [json.dumps([[{"id": 123, "tag_name": "v0.1.0", "draft": True, "assets": []}]]), "uploaded",
                    json.dumps({"assets": [{"name": name, "digest": digest} for name in names]}),
                    "published", json.dumps({} if immutable is None else {"immutable": immutable})]
         with patch.object(release, "ROOT", root), patch.object(release, "version", return_value="0.1.0"), \
@@ -110,8 +139,11 @@ class ReleaseSafetyTest(unittest.TestCase):
               release.publish()
           calls = [call.args for call in gh.call_args_list]
           self.assertFalse(any("immutable-releases" in arg for call in calls for arg in call))
+          self.assertFalse(any("/releases/tags/" in arg for call in calls for arg in call))
+          self.assertEqual(calls[0], ("api", "--paginate", "--slurp", "repos/elide-dev/dokar/releases"))
+          self.assertEqual(calls[2], ("api", "repos/elide-dev/dokar/releases/123"))
           self.assertEqual(calls[-2], ("release", "edit", "v0.1.0", "--draft=false", "--repo", "elide-dev/dokar"))
-          self.assertEqual(calls[-1], ("api", "repos/elide-dev/dokar/releases/tags/v0.1.0"))
+          self.assertEqual(calls[-1], ("api", "repos/elide-dev/dokar/releases/123"))
 
 
 if __name__ == "__main__":
