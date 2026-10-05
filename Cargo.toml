@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/dokar", "crates/dokar-ffi"]
+members = ["crates/bemo", "crates/bemo-ffi"]
 resolver = "3"
 
 [workspace.package]
@@ -9,7 +9,7 @@ license = "Apache-2.0"
 repository = "https://github.com/elide-dev/dokar"
 
 [workspace.dependencies]
-dokar = { path = "crates/dokar", version = "0.1.0", default-features = false }
+bemo = { path = "crates/bemo", version = "0.1.0", default-features = false }
 
 compio-buf = { version = "=0.8.3", git = "https://github.com/elide-tools/compio.git", rev = "61a04b75f7c6299a41c5b3cacb17b5c2d96f824f" }
 compio-driver = { version = "=0.12.5", features = ["polling"], git = "https://github.com/elide-tools/compio.git", rev = "61a04b75f7c6299a41c5b3cacb17b5c2d96f824f" }

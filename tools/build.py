@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, check, test, and stage Dokar with Cargo and Elide (Python 3.11+)."""
+"""Build, check, test, and stage Bemo with Cargo and Elide (Python 3.11+)."""
 import argparse
 import hashlib
 import json
@@ -21,7 +21,7 @@ VERSIONS = json.loads((ROOT / "tools/versions.json").read_text())
 VERSION = (ROOT / ".version").read_text().strip()
 ELIDE = os.environ.get("ELIDE", "elide")
 MODULES = ("api", "ffm", "native-image", "netty")
-MAVEN_GROUP = "dev.elide.dokar"
+MAVEN_GROUP = "dev.elide.bemo"
 MAVEN_PATH = MAVEN_GROUP.replace(".", "/")
 REPOSITORY = "https://github.com/elide-dev/dokar"
 
@@ -79,7 +79,7 @@ def target_dir(release=False):
 
 
 def library(release=False):
-  name = {"Darwin": "libdokar_ffi.dylib", "Linux": "libdokar_ffi.so", "Windows": "dokar_ffi.dll"}
+  name = {"Darwin": "libbemo_ffi.dylib", "Linux": "libbemo_ffi.so", "Windows": "bemo_ffi.dll"}
   return target_dir(release) / name[platform.system()]
 
 
@@ -124,13 +124,13 @@ def java_tool(name):
 def test_jvm(coverage=False):
   rust()
   jvm()
-  test_root = ROOT / "tests/java/dev/elide/dokar"
+  test_root = ROOT / "tests/java/dev/elide/bemo"
   output = BUILD / "tests/ffm"
   cp = [classes("api"), classes("ffm")]
   compile_java(output, [test_root / "Contract.java", test_root / "FfmContract.java"], cp)
   extra = []
   if os.name != "nt":
-    incompatible = BUILD / "tests" / library().name.replace("dokar_ffi", "incompatible")
+    incompatible = BUILD / "tests" / library().name.replace("bemo_ffi", "incompatible")
     kind = "-dynamiclib" if platform.system() == "Darwin" else "-shared"
     run(os.environ.get("CC", "cc"), kind, "-fPIC", ROOT / "tests/incompatible.c", "-o", incompatible)
     extra.append(incompatible)
@@ -143,9 +143,9 @@ def test_jvm(coverage=False):
     jar = jar_dependency("org.jacoco", "org.jacoco.agent", VERSIONS["jacoco"], "runtime")
     agent = [f"-javaagent:{jar}=destfile={destination / 'jacoco.exec'},append=true,includes=dev.elide.*:io.netty.handler.ssl.ApplicationProtocolSslEngine"]
   # Deliberately launch stock java, with no Elide or GraalVM SDK in the classpath.
-  reports.run("FfmContract", [os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), *agent,
+  reports.run("FfmContract", [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
       "--enable-native-access=ALL-UNNAMED", "-ea", "-cp",
-      classpath([output, *cp]), "dev.elide.dokar.FfmContract", library(), *extra], timeout=60, cwd=ROOT)
+      classpath([output, *cp]), "dev.elide.bemo.FfmContract", library(), *extra], timeout=60, cwd=ROOT)
   if os.name != "nt":
     binary = BUILD / "tests/abi"
     run(os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
@@ -162,7 +162,7 @@ def test_jvm(coverage=False):
 def test_native_image():
   rust()
   jvm()
-  test_root = ROOT / "tests/java/dev/elide/dokar"
+  test_root = ROOT / "tests/java/dev/elide/bemo"
   output = BUILD / "tests/capi"
   cp = [classes("api"), classes("native-image"), *sdk()]
   compile_java(output, [test_root / "Contract.java", test_root / "CapiContract.java"], cp)
@@ -174,7 +174,7 @@ def test_native_image():
   }[platform.system()]
   run(java_tool("native-image"), "--no-fallback", "-O0", "-cp", classpath([output, *cp]),
       f"-H:CLibraryPath={target_dir()}", f"--native-compiler-options=-I{ROOT / 'include'}",
-      *linker, "dev.elide.dokar.CapiContract", binary, timeout=900)
+      *linker, "dev.elide.bemo.CapiContract", binary, timeout=900)
   reports = Reports(BUILD / "reports/tests/native-image")
   reports.run("CapiContract", [binary], timeout=60, cwd=ROOT)
   test_transport(native_image=True, reports=reports)
@@ -186,7 +186,7 @@ def test_transport(native_image=False, reports=None, agent=()):
   cp = [classes("api"), classes("ffm"), classes("netty"), *netty()]
   compile_java(output, sorted((ROOT / "tests/transport/java").glob("*.java")),
                [*cp, classes("native-image"), *sdk()], lint="all,-restricted,-deprecation,-try,-serial")
-  fixtures = ROOT / "crates/dokar/tests/fixtures"
+  fixtures = ROOT / "crates/bemo/tests/fixtures"
   cert, key = fixtures / "localhost-cert.pem", fixtures / "localhost-key.pem"
   if native_image:
     binary = BUILD / "tests" / ("transport-capi.exe" if os.name == "nt" else "transport-capi")
@@ -202,7 +202,7 @@ def test_transport(native_image=False, reports=None, agent=()):
                      "NativeTransferTest", "NativeJfrTest", "NativeReentrantCloseTest",
                      "NativeReceiveAllocatorTest", "NativeSslEngineTest", "NativeSslInteropTest",
                      "NativeSslPolicyTest", "StandaloneTransportCheck"):
-      reports.run(contract, [os.environ.get("DOKAR_TEST_JAVA", java_tool("java")), *agent,
+      reports.run(contract, [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
           "--enable-native-access=ALL-UNNAMED", "-ea", "-cp", classpath([output, *cp]),
           contract, library(), cert, key], timeout=90, cwd=ROOT)
 
@@ -237,7 +237,7 @@ def test_rust(coverage=False):
 
 def fmt(check=False):
   deps()
-  run("cargo", "fmt", "--package", "dokar", "--package", "dokar-ffi", *(["--check"] if check else []))
+  run("cargo", "fmt", "--package", "bemo", "--package", "bemo-ffi", *(["--check"] if check else []))
   formatter = jar_dependency("com.google.googlejavaformat", "google-java-format",
                              VERSIONS["java_format"], "all-deps")
   java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java")) + sorted((ROOT / "benchmarks").rglob("*.java"))
@@ -283,7 +283,7 @@ def pom(path, artifact, dependencies):
     return node
   for name, value in (("modelVersion", "4.0.0"), ("groupId", MAVEN_GROUP), ("artifactId", artifact),
                       ("version", VERSION), ("packaging", "jar"), ("name", artifact),
-                      ("description", "Dokar native transport for Netty, JVM FFM, and Native Image"),
+                      ("description", "Bemo native transport for Netty, JVM FFM, and Native Image"),
                       ("url", REPOSITORY)):
     add(project, name, value)
   license_node = add(add(project, "licenses"), "license")
@@ -318,7 +318,7 @@ def package():
   stage = BUILD / "maven"
   shutil.rmtree(stage, ignore_errors=True)
   for module in MODULES:
-    artifact = f"dokar-{module}"
+    artifact = f"bemo-{module}"
     destination = stage / MAVEN_PATH / artifact / VERSION
     destination.mkdir(parents=True)
     prefix = destination / f"{artifact}-{VERSION}"
@@ -340,7 +340,7 @@ def package():
         "-notimestamp", "-Werror", "-Xdoclint:all,-missing", "--release", VERSIONS["jvm_release"], "-d", docs,
         "-classpath", classpath(cp) or str(classes(module)), *sources(module))
     jar(f"{prefix}-javadoc.jar", docs)
-    dependencies = [("org.jspecify", "jspecify", VERSIONS["jspecify"], "compile")] if module == "api" else [(MAVEN_GROUP, "dokar-api", VERSION, "compile")]
+    dependencies = [("org.jspecify", "jspecify", VERSIONS["jspecify"], "compile")] if module == "api" else [(MAVEN_GROUP, "bemo-api", VERSION, "compile")]
     if module == "native-image":
       dependencies += [("org.graalvm.sdk", name, VERSIONS["graalvm_sdk"], "provided")
                        for name in ("nativeimage", "word")]
@@ -349,25 +349,25 @@ def package():
           "netty-transport", "netty-handler", "netty-codec-http2", "netty-transport-native-unix-common")]
     pom(f"{prefix}.pom", artifact, dependencies)
   # Attach separate dynamic and static native classifiers; keep base JARs portable.
-  static_name = "dokar_ffi.lib" if os.name == "nt" else "libdokar_ffi.a"
+  static_name = "bemo_ffi.lib" if os.name == "nt" else "libbemo_ffi.a"
   for module, binary in (("ffm", library(True)), ("native-image", target_dir(True) / static_name)):
     native = BUILD / "native-resources" / module
     shutil.rmtree(native, ignore_errors=True)
     resource = native / "META-INF/native" / classifier()
     resource.mkdir(parents=True)
     shutil.copy2(binary, resource)
-    shutil.copy2(ROOT / "include/dokar.h", resource)
+    shutil.copy2(ROOT / "include/bemo.h", resource)
     shutil.copy2(ROOT / "include/elide_transport.h", resource)
     for name in ("LICENSE", "NOTICE"):
       shutil.copy2(ROOT / name, native / "META-INF" / name)
-    prefix = stage / MAVEN_PATH / f"dokar-{module}" / VERSION / f"dokar-{module}-{VERSION}"
+    prefix = stage / MAVEN_PATH / f"bemo-{module}" / VERSION / f"bemo-{module}-{VERSION}"
     jar(f"{prefix}-{classifier()}.jar", native)
   for path in sorted(stage.rglob("*")):
     if path.is_file():
       for algorithm in ("md5", "sha1", "sha256", "sha512"):
         digest = hashlib.new(algorithm, path.read_bytes()).hexdigest()
         Path(f"{path}.{algorithm}").write_text(digest + "\n")
-  bundle = BUILD / f"dokar-{VERSION}-{classifier()}-unsigned.zip"
+  bundle = BUILD / f"bemo-{VERSION}-{classifier()}-unsigned.zip"
   with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
     for path in sorted(stage.rglob("*")):
       if path.is_file():

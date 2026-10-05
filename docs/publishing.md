@@ -1,18 +1,18 @@
 # Maven and Cargo delivery
 
-`make package` stages `build/maven/dev/elide/dokar/` and a platform-specific unsigned
+`make package` stages `build/maven/dev/elide/bemo/` and a platform-specific unsigned
 ZIP. `python3 tools/verify_package.py` checks metadata, hashes, class version,
 runtime isolation, and loading the packaged native library. This is local
 staging; no task uploads or publishes anything.
 
 | Artifact | Contents |
 | --- | --- |
-| `dev.elide.dokar:dokar-api` | Java boundary interface and JSpecify nullness annotations |
-| `dev.elide.dokar:dokar-ffm` | FFM adapter; depends on `dokar-api` (which exposes JSpecify) |
-| `dev.elide.dokar:dokar-netty` | Stock Netty channels, buffer allocator, event-loop and TLS adapters |
-| `dev.elide.dokar:dokar-native-image` | C API adapter; API dependency and provided GraalVM SDK dependencies |
-| `dokar-ffm:<platform>` classifier | Cargo shared library, C header, and license notices |
-| `dokar-native-image:<platform>` classifier | Cargo static library, C header, and license notices |
+| `dev.elide.bemo:bemo-api` | Java boundary interface and JSpecify nullness annotations |
+| `dev.elide.bemo:bemo-ffm` | FFM adapter; depends on `bemo-api` (which exposes JSpecify) |
+| `dev.elide.bemo:bemo-netty` | Stock Netty channels, buffer allocator, event-loop and TLS adapters |
+| `dev.elide.bemo:bemo-native-image` | C API adapter; API dependency and provided GraalVM SDK dependencies |
+| `bemo-ffm:<platform>` classifier | Cargo shared library, C header, and license notices |
+| `bemo-native-image:<platform>` classifier | Cargo static library, C header, and license notices |
 
 Every Java artifact includes its POM, sources, and Javadoc. Native classifiers
 use `META-INF/native/<platform>/`. Add both the base FFM JAR and the shared-library
@@ -20,44 +20,44 @@ classifier JAR to the runtime classpath. For example, on Linux glibc x86-64:
 
 ```xml
 <dependency>
-  <groupId>dev.elide.dokar</groupId>
-  <artifactId>dokar-netty</artifactId>
-  <version>${dokar.version}</version>
+  <groupId>dev.elide.bemo</groupId>
+  <artifactId>bemo-netty</artifactId>
+  <version>${bemo.version}</version>
 </dependency>
 <dependency>
-  <groupId>dev.elide.dokar</groupId>
-  <artifactId>dokar-ffm</artifactId>
-  <version>${dokar.version}</version>
+  <groupId>dev.elide.bemo</groupId>
+  <artifactId>bemo-ffm</artifactId>
+  <version>${bemo.version}</version>
 </dependency>
 <dependency>
-  <groupId>dev.elide.dokar</groupId>
-  <artifactId>dokar-ffm</artifactId>
-  <version>${dokar.version}</version>
+  <groupId>dev.elide.bemo</groupId>
+  <artifactId>bemo-ffm</artifactId>
+  <version>${bemo.version}</version>
   <classifier>linux-x86_64-gnu</classifier>
   <scope>runtime</scope>
 </dependency>
 ```
 
-`new dev.elide.dokar.transport.FfmTransportNative()` selects and extracts the
-library automatically. The metadata binding in `dev.elide.dokar.ffm` supports
+`new dev.elide.bemo.transport.FfmTransportNative()` selects and extracts the
+library automatically. The metadata binding in `dev.elide.bemo.ffm` supports
 the same no-argument constructor. Explicit `Path` constructors remain available.
 See [native loading](native-loading.md) for overrides and class-loader behavior.
 
 ## Static linkage
 
 Cargo builds **both** a shared and a static library on every release build:
-`libdokar_ffi.so`/`.dylib` (Windows `dokar_ffi.dll`) and `libdokar_ffi.a`
-(Windows `dokar_ffi.lib`). The static archive is published separately as
-`dev.elide.dokar:dokar-native-image:<version>:<platform>`; it is not an import
-library for the shared binary. Both `dokar.h` and `elide_transport.h` are included.
+`libbemo_ffi.so`/`.dylib` (Windows `bemo_ffi.dll`) and `libbemo_ffi.a`
+(Windows `bemo_ffi.lib`). The static archive is published separately as
+`dev.elide.bemo:bemo-native-image:<version>:<platform>`; it is not an import
+library for the shared binary. Both `bemo.h` and `elide_transport.h` are included.
 There is no dependency on the FFM classifier for static consumers.
 
 Extract `META-INF/native/<platform>/` from that classifier JAR and give Native
 Image `-H:CLibraryPath=<directory>` and
-`--native-compiler-options=-I<directory>`. Use the base `dokar-native-image` and
-`dokar-api` JARs and the GraalVM SDK at build time. Its `@CLibrary(requireStatic =
-true)` binding selects the archive. The linked executable needs no Dokar shared
-library or runtime resource extraction. This statically links Dokar; it does not
+`--native-compiler-options=-I<directory>`. Use the base `bemo-native-image` and
+`bemo-api` JARs and the GraalVM SDK at build time. Its `@CLibrary(requireStatic =
+true)` binding selects the archive. The linked executable needs no Bemo shared
+library or runtime resource extraction. This statically links Bemo; it does not
 promise a fully static libc/JDK executable.
 
 For a C consumer on Linux, link the extracted archive explicitly, after the
@@ -67,7 +67,7 @@ consumer using only the packaged archive and packaged headers, checking both
 metadata and transport ownership operations. `make test-native-image` separately
 checks the complete statically linked Java transport contracts.
 
-The Maven group is `dev.elide.dokar` and the repository is `elide-dev/dokar`.
+The Maven group is `dev.elide.bemo` and the repository is `elide-dev/dokar`.
 Central namespace ownership must be verified before a release.
 The initial `.version` is a snapshot, intentionally unsuitable for a Central
 release. The transport is extracted, but cross-platform release qualification and the

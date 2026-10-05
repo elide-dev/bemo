@@ -3,15 +3,15 @@
 The initial structure was informed by Elide revision
 `68e31f11d9e4d194cc8b3fe4f644f9b9e5d9f155`. The Rust implementation and its
 regression suite have now been extracted.
-The Rust handle layer remains in `dokar::abi`, without unmangled exports;
-`dokar-ffi` generates the C entrypoints from that layer and checks them against
+The Rust handle layer remains in `bemo::abi`, without unmangled exports;
+`bemo-ffi` generates the C entrypoints from that layer and checks them against
 `include/elide_transport.h`. This preserves crate-private state and ownership
 invariants without exposing transport internals across crates.
 
-| Elide source | Dokar destination | Constraints |
+| Elide source | Bemo destination | Constraints |
 | --- | --- | --- |
-| `crates/netty-transport/src/{buffer,driver,http,tls}*` | `crates/dokar` | Preserve runtime independence and per-crate feature choices |
-| `crates/netty-transport/src/abi*` | `dokar::abi` + generated `dokar-ffi` exports | One foreign boundary; preserve ABI 3 symbols |
+| `crates/netty-transport/src/{buffer,driver,http,tls}*` | `crates/bemo` | Preserve runtime independence and per-crate feature choices |
+| `crates/netty-transport/src/abi*` | `bemo::abi` + generated `bemo-ffi` exports | One foreign boundary; preserve ABI 3 symbols |
 | `crates/netty-transport/include/elide_transport.h` | `include` | Preserve handle semantics, ownership rules, layouts, and workload parameters |
 | `packages/base/main/dev/elide/netty/v2/TransportNative.java` | `packages/api` | No Elide runtime dependencies |
 | `FfmTransportNative.java` | `packages/ffm` | JDK 22+ path; explicit library lifetime and ABI negotiation |
@@ -21,7 +21,7 @@ invariants without exposing transport internals across crates.
 | `packages/base/main/io/netty/handler/ssl` | `packages/netty` | Package-private ALPN integration requires explicit compatibility coverage |
 | `crates/netty-transport/tests` | Rust and shared binding contracts here | Preserve backend, shutdown, ownership, TLS, and reentrant-close cases |
 
-Dokar pins CompIO at `61a04b75f7c6299a41c5b3cacb17b5c2d96f824f`, based on Elide's
+Bemo pins CompIO at `61a04b75f7c6299a41c5b3cacb17b5c2d96f824f`, based on Elide's
 `8feca49de69cb8090f18405741982b416a4beda9`. The two polling dependencies in that
 fork now directly pin `1198249b4e54fa430dc6f76b058ad0912bd6bbea`. No source is
 vendored. ntex-httparse is directly pinned at
@@ -43,7 +43,7 @@ and reference counts; TLS/ALPN and shutdown; HTTP and workload admission. Force
 polling and io_uring separately on Linux and exercise restricted io_uring setup
 under seccomp. IOCP must retain buffers until cancellation completion.
 
-Elide cutover is a later change in Elide: pin the Dokar Git revision, depend on
+Elide cutover is a later change in Elide: pin the Bemo Git revision, depend on
 these JVM artifacts or their source during development, remove copied transport
 implementations, and leave only runtime-specific integration. Do not maintain a
 second independent copy of the transport after that cutover.
@@ -62,9 +62,9 @@ must still qualify Linux and Windows after this repository is hosted.
 
 Elide's working tree has not been changed. Its cutover must remove the old Rust
 implementation and duplicate Java classes, including the ALPN helper, then
-link `dokar-ffi` and consume `dokar` for Rust APIs. The Java package and native
+link `bemo-ffi` and consume `bemo` for Rust APIs. The Java package and native
 symbol compatibility minimize source changes, but the native library name is
-now `dokar_ffi`. Update Elide's library discovery/link directives accordingly.
+now `bemo_ffi`. Update Elide's library discovery/link directives accordingly.
 Do not link both libraries into a process: they export identical ABI 3 symbols.
 
 Align Elide's existing CompIO and polling source identities with these exact

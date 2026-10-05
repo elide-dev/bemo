@@ -1,5 +1,5 @@
-import dev.elide.dokar.transport.TransportNative;
-import dev.elide.dokar.transport.svm.CapiTransportNative;
+import dev.elide.bemo.transport.TransportNative;
+import dev.elide.bemo.transport.svm.CapiTransportNative;
 import java.net.Socket;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;

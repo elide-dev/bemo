@@ -10,13 +10,13 @@ runs:
     - id: versions
       shell: bash
       env:
-        DOKAR_CARGO_TOOLS: ${{ inputs.tools }}
+        BEMO_CARGO_TOOLS: ${{ inputs.tools }}
       run: |
         python3 - <<'PY' >> "$GITHUB_OUTPUT"
         import json, os
         versions = json.load(open('tools/versions.json'))
         names = {'nextest': 'cargo-nextest', 'llvm_cov': 'cargo-llvm-cov', 'codspeed': 'cargo-codspeed'}
-        print('tools=' + ','.join(names[key] + '@' + versions[key] for key in os.environ['DOKAR_CARGO_TOOLS'].split(',')))
+        print('tools=' + ','.join(names[key] + '@' + versions[key] for key in os.environ['BEMO_CARGO_TOOLS'].split(',')))
         PY
     - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2
       with:

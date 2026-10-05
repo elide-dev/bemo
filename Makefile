@@ -41,9 +41,9 @@ coverage-jvm:
 
 .PHONY: bench bench-smoke bench-prepare bench-transport
 bench:
-	cargo bench -p dokar --locked
+	cargo bench -p bemo --locked
 bench-smoke:
-	cargo bench -p dokar --locked -- --test
+	cargo bench -p bemo --locked -- --test
 bench-prepare:
 	$(PYTHON) tools/bench.py prepare
 bench-transport:

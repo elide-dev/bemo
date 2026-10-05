@@ -36,7 +36,7 @@ the current isolation and stock-JVM check; it does not claim to use Elide's
 JUnit discovery engine. Native Image's combined transport contract remains one
 case. Compilation failures fail the job; they are not invented passing test cases.
 
-JaCoCo instruments only Dokar packages. Its report includes API, FFM, and Netty
+JaCoCo instruments only Bemo packages. Its report includes API, FFM, and Netty
 classes, not dependencies or test harnesses. Native Image adapters are verified
 by C API tests but are **not** included in JVM coverage: JaCoCo cannot instrument
 them while running a native executable. Rust LCOV excludes integration-test and

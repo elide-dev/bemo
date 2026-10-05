@@ -20,17 +20,17 @@
         {
           "type": "toml",
           "path": "Cargo.toml",
-          "jsonpath": "$.workspace.dependencies.dokar.version"
+          "jsonpath": "$.workspace.dependencies.bemo.version"
         },
         {
           "type": "toml",
           "path": "Cargo.lock",
-          "jsonpath": "$.package[?(@.name.value==\"dokar\")].version"
+          "jsonpath": "$.package[?(@.name.value==\"bemo\")].version"
         },
         {
           "type": "toml",
           "path": "Cargo.lock",
-          "jsonpath": "$.package[?(@.name.value==\"dokar-ffi\")].version"
+          "jsonpath": "$.package[?(@.name.value==\"bemo-ffi\")].version"
         }
       ]
     }

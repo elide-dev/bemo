@@ -14,9 +14,9 @@ def run(*args, cwd):
   return subprocess.check_output(args, cwd=cwd, text=True).strip()
 
 
-with tempfile.TemporaryDirectory(prefix="dokar-cargo-consumer-") as tmp:
+with tempfile.TemporaryDirectory(prefix="bemo-cargo-consumer-") as tmp:
   root = Path(tmp)
-  snapshot = root / "dokar"
+  snapshot = root / "bemo"
   snapshot.mkdir()
   for name in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml"):
     shutil.copy2(ROOT / name, snapshot / name)
@@ -24,36 +24,36 @@ with tempfile.TemporaryDirectory(prefix="dokar-cargo-consumer-") as tmp:
   shutil.copytree(ROOT / "include", snapshot / "include")
   run("git", "init", "-q", cwd=snapshot)
   run("git", "add", ".", cwd=snapshot)
-  run("git", "-c", "user.name=Dokar Test", "-c", "user.email=test@example.invalid",
+  run("git", "-c", "user.name=Bemo Test", "-c", "user.email=test@example.invalid",
       "-c", "commit.gpgsign=false", "commit", "-qm", "Consumer test snapshot", cwd=snapshot)
   revision = run("git", "rev-parse", "HEAD", cwd=snapshot)
   consumer = root / "consumer"
   (consumer / "src").mkdir(parents=True)
   # A distinct workspace proves this does not inherit root-only Cargo patches.
   (consumer / "Cargo.toml").write_text(f'''[package]
-name = "dokar-consumer-test"
+name = "bemo-consumer-test"
 version = "0.0.0"
 edition = "2024"
 [workspace]
 [dependencies]
-dokar = {{ git = "{snapshot.as_uri()}", rev = "{revision}" }}
-dokar-ffi = {{ git = "{snapshot.as_uri()}", rev = "{revision}" }}
+bemo = {{ git = "{snapshot.as_uri()}", rev = "{revision}" }}
+bemo-ffi = {{ git = "{snapshot.as_uri()}", rev = "{revision}" }}
 ''')
   shutil.copy2(ROOT / "rust-toolchain.toml", consumer / "rust-toolchain.toml")
   (consumer / "src/main.rs").write_text('''unsafe extern "C" {
   fn elide_transport_buffer_release(buffer: u64) -> i32;
 }
 fn main() {
-  assert_eq!(dokar::ABI_VERSION, dokar_ffi::dokar_abi_version());
-  assert_eq!(dokar::CAPABILITIES, dokar_ffi::dokar_capabilities());
-  let owner = dokar::abi::elide_transport_owner_new(4096);
+  assert_eq!(bemo::ABI_VERSION, bemo_ffi::bemo_abi_version());
+  assert_eq!(bemo::CAPABILITIES, bemo_ffi::bemo_capabilities());
+  let owner = bemo::abi::elide_transport_owner_new(4096);
   assert_ne!(owner, 0);
-  let buffer = dokar::abi::elide_transport_buffer_new(owner, 128);
+  let buffer = bemo::abi::elide_transport_buffer_new(owner, 128);
   assert_ne!(buffer, 0);
   // The native export and Rust facade must share exactly one handle registry.
   assert_eq!(unsafe { elide_transport_buffer_release(buffer) }, 0);
-  assert_eq!(dokar::abi::elide_transport_owner_used(owner), 0);
-  assert_eq!(dokar::abi::elide_transport_owner_release(owner), 0);
+  assert_eq!(bemo::abi::elide_transport_owner_used(owner), 0);
+  assert_eq!(bemo::abi::elide_transport_owner_release(owner), 0);
 }
 ''')
   run("cargo", "generate-lockfile", cwd=consumer)

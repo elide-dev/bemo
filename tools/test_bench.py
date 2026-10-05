@@ -24,9 +24,9 @@ class ManifestTests(unittest.TestCase):
     with tempfile.TemporaryDirectory() as temporary:
       root = Path(temporary)
       build_dir = root / "build"
-      source = root / "crates/dokar/src/lib.rs"
+      source = root / "crates/bemo/src/lib.rs"
       classes = build_dir / "classes/api/Test.class"
-      library = root / "target/release/libdokar.so"
+      library = root / "target/release/libbemo.so"
       inputs = [root / name for name in ("Cargo.toml", "Cargo.lock", "elide.pkl",
                 "tools/versions.json", "rust-toolchain.toml")] + [source, classes, library]
       for path in inputs:
@@ -35,7 +35,7 @@ class ManifestTests(unittest.TestCase):
       with patch.object(bench.build, "ROOT", root), patch.object(bench.build, "BUILD", build_dir), \
            patch.object(bench.build, "library", return_value=library):
         baseline = bench.snapshot()
-        report = root / "crates/dokar/target/criterion/tls/new/estimates.json"
+        report = root / "crates/bemo/target/criterion/tls/new/estimates.json"
         report.parent.mkdir(parents=True)
         report.write_text('{"mean": 123}')
         self.assertEqual(bench.snapshot(), baseline)

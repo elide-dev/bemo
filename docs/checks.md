@@ -29,7 +29,7 @@ both statically linked metadata and Netty/TLS contracts; it requires GraalVM's
   separately. There are no global Error Prone check exclusions.
 - NullAway checks JSpecify null-marked production packages in JSpecify mode.
   Optional state and nullable boundary arguments are explicit. The Netty-package
-  ALPN bridge is marked at class level so Dokar does not impose package defaults
+  ALPN bridge is marked at class level so Bemo does not impose package defaults
   on Netty's own classes. Lifecycle accessors require registration/initialization
   before returning non-null state.
 - Checker Framework Regex and Formatter checkers cover API and Netty sources.

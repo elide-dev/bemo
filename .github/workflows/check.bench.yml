@@ -20,7 +20,7 @@ jobs:
       - name: Check benchmark correctness, including TLS
         run: make bench-smoke
       - name: Build deterministic CPU benchmarks
-        run: cargo codspeed build -p dokar --bench buffers --bench handles --bench http --locked -m simulation
+        run: cargo codspeed build -p bemo --bench buffers --bench handles --bench http --locked -m simulation
       - name: Track CPU performance
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
@@ -102,7 +102,7 @@ jobs:
         with:
           tools: codspeed
       - run: make bench-prepare
-      - run: cargo codspeed build -p dokar --bench tls --locked -m walltime
+      - run: cargo codspeed build -p bemo --bench tls --locked -m walltime
       - name: Track TLS and end-to-end wall time
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
@@ -118,5 +118,5 @@ jobs:
           path: |
             build/reports/benchmarks/
             target/criterion/
-            crates/dokar/target/criterion/
+            crates/bemo/target/criterion/
           if-no-files-found: error

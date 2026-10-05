@@ -49,7 +49,7 @@ def prepare():
 
 def measure(case, rounds, warmup):
   tls, gzip, size = CASES[case]
-  fixtures = build.ROOT / "crates/dokar/tests/fixtures"
+  fixtures = build.ROOT / "crates/bemo/tests/fixtures"
   cp = [build.BUILD / "bench/classes", *[build.classes(name) for name in ("api", "ffm", "netty")], *build.netty()]
   command = [str(build.java_tool("java")), "-Xms256m", "-Xmx256m", "--enable-native-access=ALL-UNNAMED",
              "-cp", build.classpath(cp), "TransportBenchmark", str(build.library(True)),

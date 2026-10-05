@@ -6,7 +6,7 @@ complete until its checks have been exercised; record limitations explicitly.
 ## Before the next push
 
 - [x] Investigate the Windows failure in
-  `dokar::http native_h2_multiplexes_responses_over_verified_tls` using CI evidence.
+  `bemo::http native_h2_multiplexes_responses_over_verified_tls` using CI evidence.
 - [x] Fix the cause or establish a supported diagnosis, and run the relevant
   regression checks. Do not mask the failure with retries.
 - [x] Implement and locally verify the fix before pushing the pending commits.
@@ -31,7 +31,7 @@ regression. This local host is macOS.
 
 ## Rust strictness
 
-- [x] Compare Bali's lint and dependency policies with Dokar's workspace.
+- [x] Compare Bali's lint and dependency policies with Bemo's workspace.
 - [x] Enable inherited workspace lints for the core and resolve findings.
 - [x] Preserve existing documentation checks on the FFI crate.
 - [x] Add cargo-deny policy with reviewed dependency exceptions where needed.
@@ -121,7 +121,7 @@ benchmark issue remains open; no integrity check has been disabled.
 ## Benchmark manifest follow-up: run 37235296694
 
 - [x] Reproduce source fingerprint drift with Cargo environment unavailable:
-  Criterion writes reports under `crates/dokar/target/criterion`.
+  Criterion writes reports under `crates/bemo/target/criterion`.
 - [x] Set an explicit CI Criterion report directory and exclude generated target
   directories from source hashing; retain class and native-library checks.
 - [x] Upload Criterion evidence and write actionable manifest-drift diagnostics.

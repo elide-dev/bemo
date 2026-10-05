@@ -1,4 +1,4 @@
-import dev.elide.dokar.transport.FfmTransportNative;
+import dev.elide.bemo.transport.FfmTransportNative;
 import java.nio.file.Path;
 
 public final class FfmTransportTest {

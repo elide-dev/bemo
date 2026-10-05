@@ -3,7 +3,7 @@ import "elide:Sources.pkl" as src
 import "pkl:json" as json
 
 local versions = new json.Parser {}.parse(read("file:tools/versions.json").text)
-name = "dokar"
+name = "bemo"
 version = read("file:.version").text.trim()
 description = "Rust native transport for Netty, the JVM, and Native Image"
 

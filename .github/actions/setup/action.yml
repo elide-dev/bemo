@@ -1,4 +1,4 @@
-name: Setup Dokar
+name: Setup Bemo
 description: Pinned Elide, JVM, and Rust toolchains
 inputs:
   java:

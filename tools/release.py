@@ -51,7 +51,7 @@ def select():
 
 
 def expected_assets(value):
-  return {f"dokar-{value}-{platform}-unsigned.zip" for platform in PLATFORMS.values()} | {
+  return {f"bemo-{value}-{platform}-unsigned.zip" for platform in PLATFORMS.values()} | {
       f"provenance-{runner}.json" for runner in PLATFORMS}
 
 
@@ -62,7 +62,7 @@ def stage():
   if {p.name for p in source.iterdir()} != expected:
     raise RuntimeError("Missing or unexpected platform release evidence")
   for runner, platform in PLATFORMS.items():
-    gh("attestation", "verify", str(source / f"dokar-{version()}-{platform}-unsigned.zip"),
+    gh("attestation", "verify", str(source / f"bemo-{version()}-{platform}-unsigned.zip"),
        "--repo", os.environ["GITHUB_REPOSITORY"],
        "--bundle", str(source / f"provenance-{runner}.json"),
        "--signer-workflow", f"{os.environ['GITHUB_REPOSITORY']}/.github/workflows/job.build.yml",
