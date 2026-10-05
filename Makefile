@@ -48,3 +48,15 @@ bench-prepare:
 	$(PYTHON) tools/bench.py prepare
 bench-transport:
 	$(PYTHON) tools/bench.py run
+
+.PHONY: fuzz fuzz-smoke test-asan test-tsan test-miri
+fuzz:
+	$(PYTHON) tools/verify.py fuzz
+fuzz-smoke:
+	$(PYTHON) tools/verify.py fuzz --runs 1000
+test-asan:
+	$(PYTHON) tools/verify.py asan
+test-tsan:
+	$(PYTHON) tools/verify.py tsan
+test-miri:
+	$(PYTHON) tools/verify.py miri

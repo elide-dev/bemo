@@ -21,14 +21,19 @@ import org.jspecify.annotations.Nullable;
  * it, and closing a workload cancels only its own operations.
  */
 public interface TransportNative {
+  /** Preserved transport ABI version, independent of Bemo metadata ABI 1. */
   int ABI_VERSION = 3;
 
+  /** Return the preserved Elide transport ABI version; it must equal {@link #ABI_VERSION}. */
   int version();
 
+  /** Read and clear the last synchronous socket or driver error on the calling thread. */
   int lastError();
 
+  /** Create an allocation owner and workload with a byte limit; zero indicates failure. */
   long ownerNew(long limit);
 
+  /** Return capacity still charged to a live owner, including retained buffer slices. */
   long ownerUsed(long owner);
 
   /** Close the owner's workload and forget its handle. */
@@ -40,26 +45,49 @@ public interface TransportNative {
    */
   int workloadClose(long workload);
 
+  /**
+   * Allocate mutable storage charged to the owner; zero indicates invalid admission or exhaustion.
+   */
   long bufferNew(long owner, long capacity);
 
+  /**
+   * Borrow initialized native storage. The view owns no memory and must be abandoned before
+   * transfer or release.
+   */
   ByteBuffer bufferView(long buffer);
 
+  /** Return the borrowed storage capacity without transferring ownership. */
   default int bufferCapacity(long buffer) {
     return bufferView(buffer).capacity();
   }
 
+  /**
+   * Publish an initialized length and make the buffer immutable. Abandon all writable views first.
+   */
   int bufferFreeze(long buffer, long length);
 
+  /** Retain a bounded slice of a frozen buffer; zero indicates invalid bounds or ownership. */
   long bufferSlice(long buffer, long offset, long length);
 
+  /** Release one buffer handle exactly once; its borrowed views become invalid immediately. */
   int bufferRelease(long buffer);
 
+  /**
+   * Create an owner-thread driver. Backends are 0 AUTO, 1 polling, 2 io_uring, and 3 IOCP; zero
+   * indicates failure.
+   */
   long driverNew(long workload, int backend, int limit);
 
+  /** Return the selected backend code for an owner-thread driver, or a negative error. */
   int driverBackend(long driver);
 
+  /** Wake a driver from any thread without transferring its ownership. */
   int driverWake(long driver);
 
+  /**
+   * Retire an owner-thread driver and its pending resources. Cancellation must reach completion
+   * before storage is reclaimed.
+   */
   int driverRelease(long driver);
 
   /**
@@ -75,11 +103,16 @@ public interface TransportNative {
   /** Resolve all transport owners once, with each owner assigned to exactly one context. */
   long servingSplitNew(int contexts);
 
+  /** Return the number of transport owners assigned to a serving context. */
   int servingWorkers(long application, int context);
 
+  /**
+   * Create the specified context worker driver under the workload; the worker owns its OS thread.
+   */
   long servingWorkerDriver(
       long workload, long application, int context, int worker, int backend, int limit);
 
+  /** Return the physical-core count available within the captured process affinity. */
   default int servingAvailableCores() {
     throw new UnsupportedOperationException("Serving topology is unavailable");
   }
@@ -89,6 +122,10 @@ public interface TransportNative {
     throw new UnsupportedOperationException("Serving context placement is unavailable");
   }
 
+  /**
+   * Restore the parent affinity captured by the last successful context entry; the token is
+   * single-use.
+   */
   default int servingContextLeave() {
     throw new UnsupportedOperationException("Serving context placement is unavailable");
   }
@@ -99,6 +136,7 @@ public interface TransportNative {
     throw new UnsupportedOperationException("Serving shard placement is unavailable");
   }
 
+  /** Create the context listener driver; accepted sockets retain the listener workload. */
   long servingDriver(long workload, long application, int replica, int backend, int limit);
 
   /** Unpinned context listener; accepted sockets transfer to its dedicated transport workers. */
@@ -107,18 +145,32 @@ public interface TransportNative {
     throw new UnsupportedOperationException("Split serving is unavailable");
   }
 
+  /**
+   * Register an endpoint and listener signature with the serving driver; zero indicates failure.
+   */
   long servingListen(long workload, long driver, long endpoint, long signature, int backlog);
 
+  /** Report whether the serving driver has completed native startup. */
   int servingReady(long driver);
 
+  /** Return the CPU assigned to the serving owner, or a negative error. */
   int servingCpu(long driver);
 
+  /** Close a serving listener on its owning driver thread. */
   int servingListenerClose(long driver, long listener);
 
+  /** Close the serving topology after its transport owners have retired. */
   int servingClose(long application);
 
+  /**
+   * Bind a frozen endpoint descriptor to a listener. The returned socket belongs to the workload.
+   */
   long socketListen(long workload, long driver, long endpoint, int backlog, int reuse);
 
+  /**
+   * Start an asynchronous connection. Completion identifies the returned socket; zero indicates
+   * setup failure.
+   */
   long socketConnect(long workload, long driver, long endpoint);
 
   /** Accepted sockets belong to the listener's workload. */
@@ -127,10 +179,19 @@ public interface TransportNative {
   /** A workload other than the listener's leaves the socket with the caller. */
   int socketAdopt(long workload, long driver, long socket);
 
+  /** Close an accepted socket before adoption; callable from any thread. */
   int socketDiscard(long socket);
 
+  /**
+   * Write a socket endpoint to mutable output storage; peer selects the remote endpoint when
+   * nonzero.
+   */
   int socketAddress(long driver, long socket, int peer, long output);
 
+  /**
+   * Transfer mutable receive storage to the driver. Access resumes only after its completion
+   * returns the handle.
+   */
   long socketReceive(long workload, long driver, long socket, long buffer);
 
   /**
@@ -138,8 +199,13 @@ public interface TransportNative {
    */
   long socketReceiveNew(long workload, long driver, long socket, long owner, long capacity);
 
+  /** Lease a frozen byte range for an asynchronous send; the caller retains its original handle. */
   long socketSend(long workload, long driver, long socket, long buffer, long offset, long length);
 
+  /**
+   * Cancel pending operations and close the socket; late completions retain their original
+   * identities.
+   */
   int socketClose(long driver, long socket);
 
   /** A timeout of -1 (native UINT64_MAX) waits until I/O or an explicit wake. */
@@ -150,6 +216,7 @@ public interface TransportNative {
     boolean event(long operation, long socket, long value, long result, int kind);
   }
 
+  /** Report whether this binding implements reentrant completion callbacks. */
   default boolean supportsPollCallback() {
     return false;
   }
@@ -163,8 +230,10 @@ public interface TransportNative {
     throw new UnsupportedOperationException("Native poll callbacks unavailable");
   }
 
+  /** Set a supported integer socket option on the owning driver thread. */
   int socketOption(long driver, long socket, int option, int value);
 
+  /** Shut down the socket read, write, or both directions using the native direction code. */
   int socketShutdown(long driver, long socket, int direction);
 
   /**
@@ -213,10 +282,19 @@ public interface TransportNative {
    */
   int EXCHANGE_FLAG_BODY = 1;
 
+  /** Request method byte range. */
   int VIEW_METHOD = 0;
+
+  /** Request target byte range. */
   int VIEW_PATH = 1;
+
+  /** Indexed request header name byte range. */
   int VIEW_HEADER_NAME = 2;
+
+  /** Indexed request header value byte range. */
   int VIEW_HEADER_VALUE = 3;
+
+  /** Buffered request body byte range. */
   int VIEW_BODY = 4;
 
   /**
@@ -238,6 +316,7 @@ public interface TransportNative {
   /** 0 for HTTP/1.0, 1 for HTTP/1.1. */
   int httpVersion(long exchange);
 
+  /** Return the number of header span pairs in a live HTTP exchange. */
   int httpHeaderCount(long exchange);
 
   /** 1 when the connection stays open after this exchange, 0 when it closes. */
@@ -408,21 +487,37 @@ public interface TransportNative {
   /** Copy {@code length} bytes from native memory at {@code address}. */
   byte[] bytes(long address, int length);
 
+  /**
+   * Create a client TLS context from frozen trust-anchor and ALPN buffers; zero indicates invalid
+   * input.
+   */
   long tlsClient(long workload, long roots, long alpn);
 
+  /**
+   * Create a server TLS context from frozen certificate-chain, key, and ALPN buffers; zero
+   * indicates invalid input.
+   */
   long tlsServer(long workload, long chain, long key, long alpn);
 
+  /** Release a TLS context handle; sessions retain their configurations independently. */
   int tlsContextRelease(long context);
 
   /** Once the workload closes, feeds and writes fail; progress and close-notify remain. */
   long tlsNew(long workload, long context, long owner, long name);
 
+  /**
+   * Transfer encrypted input to a thread-owned TLS session; the input must be quiescent during the
+   * call.
+   */
   int tlsFeed(long session, long input, long length);
 
+  /** Advance a TLS session and write its fixed-layout result into mutable output storage. */
   int tlsStep(long session, int action, long plaintext, long offset, long length, long output);
 
+  /** Copy the negotiated application protocol into mutable output storage. */
   int tlsProtocol(long session, long output);
 
+  /** Release a thread-owned TLS session and its retained native storage. */
   int tlsRelease(long session);
 
   // ---- SSLEngine (begin) ----------------------------------------------------------------------
@@ -478,6 +573,7 @@ public interface TransportNative {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
 
+  /** Release an engine context; live engines retain their configuration. */
   default int engineContextRelease(long context) {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
@@ -516,6 +612,9 @@ public interface TransportNative {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
 
+  /**
+   * Read engine state, begin a handshake, or close one direction using an ENGINE_CONTROL operation.
+   */
   default long engineControl(long engine, int operation) {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
@@ -525,6 +624,7 @@ public interface TransportNative {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }
 
+  /** Release a thread-owned TLS engine and invalidate all of its session state. */
   default int engineRelease(long engine) {
     throw new UnsupportedOperationException("Native TLS engines are unavailable");
   }

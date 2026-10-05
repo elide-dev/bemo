@@ -144,3 +144,28 @@ Every other verification job passed in run `37235296694`.
 - [x] Document that repository administrators own the policy and CI's check is
   post-publication; no administrator credential is added to workflows.
 - [ ] Confirm the corrected release job in CI.
+
+
+## Standalone qualification audit
+
+- [x] Canonicalize the renamed Cargo.lock and prepare the wall-time JVM manifest
+  after the CodSpeed Rust build; retain strict lock/source/artifact fingerprints.
+- [x] Add stock Netty epoll/kqueue and NIO comparison paths, identical JDK TLS,
+  explicit native TLS measurements, latency and CPU metrics, and concurrency selection.
+- [x] Run the eight workloads against stock OpenJDK and macOS kqueue; retain raw samples.
+- [x] Add bounded parser, buffer, and ABI fuzz targets with pinned dependencies and seeds.
+- [x] Add ASAN, TSAN, and scoped Miri commands and required CI jobs; verify locally.
+- [x] Add native compatibility requirements, package checks, and CI evidence artifacts.
+- [x] Update repository URLs, qualification docs, and low-level API method descriptions.
+- [x] Supply dependency-owned C headers through Cargo metadata and verify an external consumer.
+- [ ] Verify the new Linux safety and comparison jobs in CI.
+- [ ] Reconnect or confirm the renamed repository's CodSpeed registration.
+- [ ] Complete and verify Elide's pinned-source cutover in its separate worktree.
+- [ ] Qualify a first signed release after the full merged-source gate succeeds.
+
+Local macOS verification passed the ordinary build/check/test/Native Image and
+packaged-library contracts. ASAN and TSAN each passed 300 Rust tests. Scoped Miri
+passed with its explicit driver/crypto exclusions; each fuzzer passed 1,000
+executions. Sanitizer scope and its C/assembly/JVM exclusions are documented in
+`native-safety.md`. Benchmark comparisons are workload-dependent; no broad claim
+of outperforming Netty's native transports is supported.

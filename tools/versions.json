@@ -9,6 +9,7 @@
   "nextest": "0.9.135",
   "llvm_cov": "0.8.7",
   "codspeed": "5.0.2",
+  "fuzz": "0.13.1",
   "error_prone": "2.50.0",
   "nullaway": "0.14.2",
   "jspecify": "1.0.1",

@@ -1,0 +1,70 @@
+name: Native safety
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  sanitizer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [asan, tsan]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-cargo-tools
+        with:
+          tools: nextest
+      - run: rustup component add rust-src
+      - name: Run instrumented Rust and ownership tests
+        run: make test-${{ matrix.mode }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: safety-${{ matrix.mode }}
+          path: |
+            build/reports/verification/
+            build/reports/tests/rust/
+          if-no-files-found: error
+  miri:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup component add miri rust-src
+      - run: make test-miri
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: safety-miri
+          path: build/reports/verification/
+          if-no-files-found: error
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-cargo-tools
+        with:
+          tools: fuzz
+      - run: rustup component add rust-src
+      - name: Bounded parser, buffer, and ABI fuzzing
+        run: make fuzz
+      - name: Require unchanged dependency locks
+        run: git diff --exit-code -- Cargo.lock fuzz/Cargo.lock
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: safety-fuzz
+          path: |
+            build/reports/verification/
+            fuzz/artifacts/
+            fuzz/corpus/
+          if-no-files-found: error

@@ -3,7 +3,13 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
+import io.netty.channel.epoll.*;
+import io.netty.channel.kqueue.*;
+import io.netty.channel.nio.NioIoHandler;
+import io.netty.channel.socket.nio.*;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.ssl.*;
+import java.io.ByteArrayInputStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,11 +23,11 @@ import java.util.concurrent.TimeUnit;
 /** Fixed-work loopback benchmark: native transport, Netty HTTP/1 and optional gzip/TLS. */
 @SuppressWarnings("deprecation")
 public final class TransportBenchmark {
-  private static final int CLIENTS = 4;
-
   private static final class Reply extends SimpleChannelInboundHandler<FullHttpResponse> {
     private final byte[] payload;
-    private CompletableFuture<Void> pending;
+    private volatile CompletableFuture<Void> pending;
+    private long started;
+    private long latency;
 
     Reply(byte[] payload) {
       this.payload = payload;
@@ -34,6 +40,7 @@ public final class TransportBenchmark {
       if (!response.status().equals(HttpResponseStatus.OK) || !Arrays.equals(bytes, payload)) {
         pending.completeExceptionally(new AssertionError("HTTP payload mismatch"));
       } else {
+        latency = System.nanoTime() - started;
         pending.complete(null);
       }
     }
@@ -45,7 +52,8 @@ public final class TransportBenchmark {
     }
   }
 
-  private static long exercise(List<Channel> clients, List<Reply> replies, int rounds, boolean gzip)
+  private static long exercise(
+      List<Channel> clients, List<Reply> replies, int rounds, boolean gzip, long[] latencies)
       throws Exception {
     long started = System.nanoTime();
     for (int round = 0; round < rounds; round++) {
@@ -58,6 +66,7 @@ public final class TransportBenchmark {
             new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/payload");
         request.headers().set(HttpHeaderNames.HOST, "localhost");
         request.headers().set(HttpHeaderNames.ACCEPT_ENCODING, gzip ? "gzip" : "identity");
+        reply.started = System.nanoTime();
         clients
             .get(i)
             .writeAndFlush(request)
@@ -67,6 +76,10 @@ public final class TransportBenchmark {
                 });
       }
       CompletableFuture.allOf(batch).get(10, TimeUnit.SECONDS);
+      if (latencies != null) {
+        for (int i = 0; i < clients.size(); i++)
+          latencies[round * clients.size() + i] = replies.get(i).latency;
+      }
     }
     return System.nanoTime() - started;
   }
@@ -90,6 +103,16 @@ public final class TransportBenchmark {
     int size = Integer.parseInt(args[5]);
     int rounds = Integer.parseInt(args[6]);
     int warmup = Integer.parseInt(args[7]);
+    String transport = args[8];
+    int clientCount = Integer.parseInt(args[9]);
+    String tlsProvider = args[10];
+    int backend = Integer.parseInt(args[11]);
+    if (clientCount < 1 || clientCount > 1024)
+      throw new IllegalArgumentException("Clients must be between 1 and 1024");
+    if (!tlsProvider.equals("jdk") && !tlsProvider.equals("native"))
+      throw new IllegalArgumentException("Unknown TLS provider: " + tlsProvider);
+    if (tlsProvider.equals("native") && !transport.equals("bemo"))
+      throw new IllegalArgumentException("Native Rust TLS requires Bemo");
     if (rounds < 1 || warmup < 1 || size < 1)
       throw new IllegalArgumentException("Positive workload required");
     byte[] payload = new byte[size];
@@ -97,12 +120,56 @@ public final class TransportBenchmark {
         "{\"message\":\"bemo transport benchmark\",\"value\":12345}\n"
             .getBytes(java.nio.charset.StandardCharsets.UTF_8);
     for (int i = 0; i < size; i++) payload[i] = pattern[i % pattern.length];
-    TransportNative api = new FfmTransportNative(library);
-    NativeTlsContext serverTls = tls ? NativeTlsContext.server(api, cert, key, "http/1.1") : null;
-    NativeTlsContext clientTls = tls ? NativeTlsContext.client(api, cert, "http/1.1") : null;
-    EventLoopGroup group =
-        new MultiThreadIoEventLoopGroup(
-            2, NativeIoHandler.newFactory(api, 0, 256, 64 * 1024 * 1024));
+    TransportNative api = transport.equals("bemo") ? new FfmTransportNative(library) : null;
+    boolean nativeTls = tls && tlsProvider.equals("native");
+    NativeTlsContext serverTls =
+        nativeTls ? NativeTlsContext.server(api, cert, key, "http/1.1") : null;
+    NativeTlsContext clientTls = nativeTls ? NativeTlsContext.client(api, cert, "http/1.1") : null;
+    SslContext serverSsl =
+        tls && !nativeTls
+            ? SslContextBuilder.forServer(
+                    new ByteArrayInputStream(cert), new ByteArrayInputStream(key))
+                .sslProvider(SslProvider.JDK)
+                .protocols("TLSv1.3")
+                .build()
+            : null;
+    SslContext clientSsl =
+        tls && !nativeTls
+            ? SslContextBuilder.forClient()
+                .trustManager(new ByteArrayInputStream(cert))
+                .sslProvider(SslProvider.JDK)
+                .protocols("TLSv1.3")
+                .build()
+            : null;
+    IoHandlerFactory factory;
+    Class<? extends ServerChannel> serverClass;
+    Class<? extends Channel> clientClass;
+    switch (transport) {
+      case "bemo" -> {
+        factory = NativeIoHandler.newFactory(api, backend, 256, 64 * 1024 * 1024);
+        serverClass = NativeServerSocketChannel.class;
+        clientClass = NativeSocketChannel.class;
+      }
+      case "epoll" -> {
+        Epoll.ensureAvailability();
+        factory = EpollIoHandler.newFactory();
+        serverClass = EpollServerSocketChannel.class;
+        clientClass = EpollSocketChannel.class;
+      }
+      case "kqueue" -> {
+        KQueue.ensureAvailability();
+        factory = KQueueIoHandler.newFactory();
+        serverClass = KQueueServerSocketChannel.class;
+        clientClass = KQueueSocketChannel.class;
+      }
+      case "nio" -> {
+        factory = NioIoHandler.newFactory();
+        serverClass = NioServerSocketChannel.class;
+        clientClass = NioSocketChannel.class;
+      }
+      default -> throw new IllegalArgumentException("Unknown transport: " + transport);
+    }
+    EventLoopGroup group = new MultiThreadIoEventLoopGroup(2, factory);
     List<Channel> clients = new ArrayList<>();
     List<Reply> replies = new ArrayList<>();
     Channel server = null;
@@ -110,13 +177,15 @@ public final class TransportBenchmark {
       server =
           new ServerBootstrap()
               .group(group)
-              .channel(NativeServerSocketChannel.class)
+              .channel(serverClass)
               .childOption(ChannelOption.TCP_NODELAY, true)
               .childHandler(
                   new ChannelInitializer<Channel>() {
                     @Override
                     protected void initChannel(Channel channel) {
-                      if (tls) ((NativeSocketChannel) channel).tls(serverTls, null);
+                      if (nativeTls) ((NativeSocketChannel) channel).tls(serverTls, null);
+                      if (serverSsl != null)
+                        channel.pipeline().addLast(serverSsl.newHandler(channel.alloc()));
                       channel
                           .pipeline()
                           .addLast(new HttpServerCodec(), new HttpObjectAggregator(1024 * 1024));
@@ -147,7 +216,7 @@ public final class TransportBenchmark {
               .bind(new InetSocketAddress("127.0.0.1", 0))
               .sync()
               .channel();
-      for (int i = 0; i < CLIENTS; i++) {
+      for (int i = 0; i < clientCount; i++) {
         Reply reply = new Reply(payload);
         replies.add(reply);
         Channel client =
@@ -155,14 +224,27 @@ public final class TransportBenchmark {
                 .group(group)
                 .channelFactory(
                     () -> {
-                      NativeSocketChannel channel = new NativeSocketChannel();
-                      return tls ? channel.tls(clientTls, "localhost") : channel;
+                      try {
+                        Channel channel = clientClass.getConstructor().newInstance();
+                        return nativeTls
+                            ? ((NativeSocketChannel) channel).tls(clientTls, "localhost")
+                            : channel;
+                      } catch (ReflectiveOperationException error) {
+                        throw new IllegalStateException(error);
+                      }
                     })
                 .option(ChannelOption.TCP_NODELAY, true)
                 .handler(
                     new ChannelInitializer<Channel>() {
                       @Override
                       protected void initChannel(Channel channel) {
+                        if (clientSsl != null) {
+                          SslHandler ssl = clientSsl.newHandler(channel.alloc(), "localhost", 0);
+                          var parameters = ssl.engine().getSSLParameters();
+                          parameters.setEndpointIdentificationAlgorithm("HTTPS");
+                          ssl.engine().setSSLParameters(parameters);
+                          channel.pipeline().addLast(ssl);
+                        }
                         channel
                             .pipeline()
                             .addLast(
@@ -198,22 +280,38 @@ public final class TransportBenchmark {
                 .sync()
                 .channel();
         clients.add(client);
-        if (tls) ((NativeSocketChannel) client).handshakeFuture().sync();
+        if (nativeTls) ((NativeSocketChannel) client).handshakeFuture().sync();
+        if (clientSsl != null) client.pipeline().get(SslHandler.class).handshakeFuture().sync();
       }
-      exercise(clients, replies, warmup, gzip);
+      exercise(clients, replies, warmup, gzip, null);
       String before = rss("VmRSS");
-      long elapsed = exercise(clients, replies, rounds, gzip);
-      long requests = (long) CLIENTS * rounds;
+      long cpuBefore = ProcessHandle.current().info().totalCpuDuration().orElseThrow().toNanos();
+      long[] latencies = new long[Math.multiplyExact(clientCount, rounds)];
+      long elapsed = exercise(clients, replies, rounds, gzip, latencies);
+      Arrays.sort(latencies);
+      long requests = (long) clientCount * rounds;
+      DriverSelection selection = transport.equals("bemo") ? DriverSelection.observed() : null;
+      if (transport.equals("bemo") && selection == null)
+        throw new IllegalStateException("Missing native backend observation");
+      String selectedDriver = selection == null ? transport : selection.driver();
+      boolean autoFallback = selection != null && selection.fallback() != null;
       System.out.printf(
           Locale.ROOT,
-          "{\"tls\":%s,\"gzip\":%s,\"payload_bytes\":%d,\"clients\":%d,\"requests\":%d,\"elapsed_ns\":%d,\"requests_per_second\":%.3f,\"rss_before_bytes\":%s,\"rss_after_bytes\":%s,\"peak_rss_bytes\":%s}%n",
+          "{\"transport\":\"%s\",\"driver\":\"%s\",\"auto_fallback\":%s,\"tls_provider\":\"%s\",\"tls\":%s,\"gzip\":%s,\"payload_bytes\":%d,\"clients\":%d,\"requests\":%d,\"elapsed_ns\":%d,\"requests_per_second\":%.3f,\"latency_p50_ns\":%d,\"latency_p99_ns\":%d,\"process_cpu_ns\":%d,\"rss_before_bytes\":%s,\"rss_after_bytes\":%s,\"peak_rss_bytes\":%s}%n",
+          transport,
+          selectedDriver,
+          autoFallback,
+          tls ? tlsProvider : "none",
           tls,
           gzip,
           size,
-          CLIENTS,
+          clientCount,
           requests,
           elapsed,
           requests * 1e9 / elapsed,
+          latencies[(int) Math.ceil(latencies.length * 0.50) - 1],
+          latencies[(int) Math.ceil(latencies.length * 0.99) - 1],
+          ProcessHandle.current().info().totalCpuDuration().orElseThrow().toNanos() - cpuBefore,
           before,
           rss("VmRSS"),
           rss("VmHWM"));
@@ -223,6 +321,7 @@ public final class TransportBenchmark {
       group.shutdownGracefully(0, 5, TimeUnit.SECONDS).syncUninterruptibly();
       if (clientTls != null) clientTls.close();
       if (serverTls != null) serverTls.close();
+      if (api != null) Workload.close(api, Workload.DEFAULT);
     }
   }
 }

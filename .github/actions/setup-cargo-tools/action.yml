@@ -2,7 +2,7 @@ name: Setup Cargo tools
 description: Install pinned measurement tools from tools/versions.json
 inputs:
   tools:
-    description: Comma-separated tool keys (nextest, llvm_cov, codspeed)
+    description: Comma-separated tool keys (nextest, llvm_cov, codspeed, fuzz)
     default: nextest
 runs:
   using: composite
@@ -15,7 +15,7 @@ runs:
         python3 - <<'PY' >> "$GITHUB_OUTPUT"
         import json, os
         versions = json.load(open('tools/versions.json'))
-        names = {'nextest': 'cargo-nextest', 'llvm_cov': 'cargo-llvm-cov', 'codspeed': 'cargo-codspeed'}
+        names = {'nextest': 'cargo-nextest', 'llvm_cov': 'cargo-llvm-cov', 'codspeed': 'cargo-codspeed', 'fuzz': 'cargo-fuzz'}
         print('tools=' + ','.join(names[key] + '@' + versions[key] for key in os.environ['BEMO_CARGO_TOOLS'].split(',')))
         PY
     - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2

@@ -40,6 +40,13 @@ bemo = {{ git = "{snapshot.as_uri()}", rev = "{revision}" }}
 bemo-ffi = {{ git = "{snapshot.as_uri()}", rev = "{revision}" }}
 ''')
   shutil.copy2(ROOT / "rust-toolchain.toml", consumer / "rust-toolchain.toml")
+  (consumer / "build.rs").write_text('''fn main() {
+  let directory = std::env::var("DEP_BEMO_INCLUDE").expect("Bemo shared header metadata");
+  let header = std::fs::read_to_string(std::path::Path::new(&directory).join("elide_transport.h")).unwrap();
+  assert!(header.contains("elide_transport_driver_poll("));
+  assert!(std::path::Path::new(&directory).join("bemo.h").is_file());
+}
+''')
   (consumer / "src/main.rs").write_text('''unsafe extern "C" {
   fn elide_transport_buffer_release(buffer: u64) -> i32;
 }

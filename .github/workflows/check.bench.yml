@@ -101,8 +101,8 @@ jobs:
       - uses: ./.github/actions/setup-cargo-tools
         with:
           tools: codspeed
-      - run: make bench-prepare
       - run: cargo codspeed build -p bemo --bench tls --locked -m walltime
+      - run: make bench-prepare
       - name: Track TLS and end-to-end wall time
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:

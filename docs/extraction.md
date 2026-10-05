@@ -8,6 +8,12 @@ The Rust handle layer remains in `bemo::abi`, without unmangled exports;
 `include/elide_transport.h`. This preserves crate-private state and ownership
 invariants without exposing transport internals across crates.
 
+`bemo-ffi` declares Cargo's `links = "bemo"` identity and supplies its header
+directory as `DEP_BEMO_INCLUDE` to direct consumers' build scripts. Embedders
+derive export lists and compiler includes from that pinned dependency instead
+of keeping another header copy. Cargo rejects two independently versioned Bemo
+FFI packages in one graph, preventing duplicate C boundaries.
+
 | Elide source | Bemo destination | Constraints |
 | --- | --- | --- |
 | `crates/netty-transport/src/{buffer,driver,http,tls}*` | `crates/bemo` | Preserve runtime independence and per-crate feature choices |
@@ -56,9 +62,9 @@ public GraalVM buffer views; standard exceptions replace Elide-specific helpers.
 Neither Truffle annotations nor test-only runtime shims are shipped.
 
 Both bindings pass the channel, allocator, TLS, callback, lifecycle, reentrant
-close, JFR, and JSSE/OpenSSL contracts on macOS ARM64. Rust tests cover HTTP/1,
-HTTP/2, native TLS, workload isolation, topology, and ownership behavior. CI
-must still qualify Linux and Windows after this repository is hosted.
+close, JFR, and JSSE/OpenSSL contracts. CI qualifies JVM FFM on Linux and macOS
+with JDK 22/25, Native Image on Linux, and Rust on Linux/macOS/Windows. Rust tests
+cover HTTP/1, HTTP/2, native TLS, workload isolation, topology, and ownership.
 
 Elide's working tree has not been changed. Its cutover must remove the old Rust
 implementation and duplicate Java classes, including the ALPN helper, then

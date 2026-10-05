@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+links = "bemo"
 
 [lib]
 name = "bemo_ffi"
@@ -16,6 +17,7 @@ bemo = { workspace = true, default-features = false }
 [features]
 default = ["bundled-mimalloc"]
 bundled-mimalloc = ["bemo/bundled-mimalloc"]
+rust-allocator = ["bemo/rust-allocator"]
 
 [lints]
 workspace = true

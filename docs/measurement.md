@@ -42,7 +42,7 @@ by C API tests but are **not** included in JVM coverage: JaCoCo cannot instrumen
 them while running a native executable. Rust LCOV excludes integration-test and
 benchmark sources. Coverage and tests remain separate upload types.
 
-CI archives reports even on failures, on every PR and main verification. Uploads are enabled by default after connecting `elide-dev/dokar` in Codecov.
+CI archives reports even on failures, on every PR and main verification. Uploads are enabled by default after connecting `elide-dev/bemo` in Codecov.
 Main-branch workflows forward `CODECOV_TOKEN`; PR and merge-queue workflows use
 Codecov OIDC trust and receive no secrets. Set repository variable
 `CODECOV_ENABLED=false` to disable external uploads while retaining artifacts. Uploads use explicit file paths, `rust`/`jvm` flags, and disabled file
@@ -80,10 +80,21 @@ record benchmarks warm an established session and test both directions at
 wall-time measurement, not the deterministic simulation set. Benchmarks assert
 successful parsing, encoding, handshakes, and byte-exact record delivery.
 
-The macro workload creates four persistent loopback clients and a native server
-on two I/O threads in one JVM, with one outstanding request per client. It
-validates every response and verifies compression negotiation before decompression.
-Native TLS verifies the checked-in localhost certificate. Gzip uses Netty's
+The macro workload creates persistent loopback clients and a server on two I/O
+threads in one JVM, with one outstanding request per client. Four clients are
+the default; `--clients` supports concurrency sweeps. Each workload runs Bemo
+and stock Netty epoll on Linux or kqueue on macOS. NIO is an optional control.
+Unavailable requested native transports fail instead of silently falling back
+to NIO. All variants use the same payload, codecs, connection count, heap,
+warmup, and measurement rounds. Launch order rotates across samples.
+
+The default TLS comparison uses Netty's JDK TLS provider with TLS 1.3 on both
+transports, isolating transport differences. `--tls-provider native --transports
+bemo` measures Bemo's fused Rust TLS separately; its results must not be labeled
+as a comparison of identical TLS providers. Both verify the localhost fixture
+certificate, including hostname verification on the JDK path. The harness
+validates every response and compression negotiation before decompression.
+Gzip uses Netty's
 `HttpContentCompressor` and `HttpContentDecompressor`; this project currently has
 no Rust compression implementation. Bodies repeat a fixed JSON pattern, so gzip
 results describe compressible application data, not incompressible data.
@@ -93,12 +104,19 @@ library; measurement refuses stale preparations. Generated `target/` directories
 and Python caches are excluded from source fingerprints. Wall-time CI sets
 `CRITERION_HOME` explicitly and uploads Criterion reports alongside transport
 measurements. A stale preparation writes `manifest-drift.json` with the changed
-fingerprint categories and expected/actual hashes before failing.
+fingerprint categories, changed source file names, and expected/actual hashes
+before failing. Cargo.lock remains part of the fingerprint. The renamed package
+entries use Cargo's canonical ordering, and the wall-time workflow prepares the
+JVM workload after building CodSpeed's Rust benchmarks.
 
 Each sample starts a fresh JVM with a fixed 256 MiB heap, warms 500 rounds, then
 times 2,500 rounds (10,000 completed requests). Setup, TLS handshakes, warmup,
 and teardown are outside the requests/sec timer. Three samples produce a median
-RPS, and all samples are retained. RSS is Linux `VmRSS` before/after measurement
+RPS, and all samples are retained. Per-response p50/p99 latency records enqueue
+through validated reply completion; process CPU is measured over the request
+interval and includes clients and server. This is a closed-loop benchmark: its
+latency percentiles do not correct coordinated omission or measure externally
+offered load. RSS is Linux `VmRSS` before/after measurement
 and `VmHWM` for the **entire process lifetime**. It includes the JVM, native
 allocations, server, client, codecs, and warmup. It is not server-only RSS, a
 live-allocation counter, or heap size. macOS local runs explicitly emit null RSS;
@@ -121,12 +139,19 @@ make bench                  # local Criterion measurements
 make bench-prepare          # Cargo release library + Elide JVM compilation
 make bench-transport        # full loopback measurement matrix
 python3 tools/bench.py run --case tls-gzip-65536 --samples 1
+python3 tools/bench.py run --clients 32 --transports bemo,netty-native,nio
+python3 tools/bench.py run --transports bemo --tls-provider native
+# Use a specific stock JDK for local measurements:
+BEMO_BENCH_JAVA=/path/to/jdk/bin/java make bench-transport
 # Fast functionality check, not a performance baseline:
 python3 tools/bench.py run --rounds 20 --warmup 5 --samples 1
 ```
 
 `build/reports/benchmarks/` contains per-sample JSON/logs and summary JSON; CI
-also writes a table to its job summary and retains artifacts for 30 days. The
+also writes a table to its job summary and retains artifacts for 30 days.
+`summary-*-comparison.json` records Bemo/comparator throughput and p99 ratios,
+including each sample's throughput ratio. Ratios are measurements of this
+workload, not universal superiority claims or statistical confidence bounds. The
 hosted run compares against the most recent available main artifact and emits
 advisory warnings for >25% median RPS loss or >20% peak RSS growth. Workload,
 architecture, and Java-version changes invalidate the comparison. These initial
@@ -136,8 +161,9 @@ or treating an RSS/RPS warning as a blocker. New cases establish a baseline on
 main before any comparison can be made.
 
 Next extensions should add incompressible payloads, sustained-load memory slopes,
-HTTP/2 multiplexing, independent load-generator/server processes, concurrency
-sweeps, and backend-specific Linux runs. The initial matrix does not imply
+HTTP/2 multiplexing and independent load-generator/server processes. Concurrency
+sweeps and explicit Bemo backend selection are available locally; the default
+CI matrix uses four clients and AUTO. The initial matrix does not imply
 coverage of those performance dimensions.
 
 References: [Nextest JUnit](https://nexte.st/docs/machine-readable/junit/),

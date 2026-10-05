@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/elide-dev/dokar"
+repository = "https://github.com/elide-dev/bemo"
 
 [workspace.dependencies]
 bemo = { path = "crates/bemo", version = "0.1.0", default-features = false }

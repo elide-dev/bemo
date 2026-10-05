@@ -67,11 +67,13 @@ consumer using only the packaged archive and packaged headers, checking both
 metadata and transport ownership operations. `make test-native-image` separately
 checks the complete statically linked Java transport contracts.
 
-The Maven group is `dev.elide.bemo` and the repository is `elide-dev/dokar`.
+The Maven group is `dev.elide.bemo` and the repository is `elide-dev/bemo`.
 Central namespace ownership must be verified before a release.
 The initial `.version` is a snapshot, intentionally unsuitable for a Central
-release. The transport is extracted, but cross-platform release qualification and the
-Linux compatibility floor remain prerequisites for production release.
+release. Qualification targets glibc 2.39/Linux x86-64 and macOS 15/ARM64;
+packaging verifies binary requirements and CI runs consumers on those builders.
+The first signed release and its consumer provenance verification still require
+a successful merged-source release run.
 
 ## Release preparation
 
