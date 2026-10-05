@@ -26,14 +26,19 @@ def release_tag():
   return "v" + value if re.fullmatch(r"\d+\.\d+\.\d+", value) else None
 
 
+def find_release(repo, tag):
+  # The by-tag endpoint only returns published releases. Listing also includes
+  # drafts and distinguishes an absent release from API/authentication failures.
+  releases = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/releases"))
+  return next((r for page in releases for r in page if r["tag_name"] == tag), None)
+
+
 def select():
   tag = release_tag()
   if tag is None:
     return
   repo = os.environ["GITHUB_REPOSITORY"]
-  # Listing distinguishes an absent draft from API/authentication failures.
-  releases = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/releases"))
-  draft = next((r for page in releases for r in page if r["tag_name"] == tag), None)
+  draft = find_release(repo, tag)
   if draft is None or not draft["draft"]:
     return
   ref = json.loads(gh("api", f"repos/{repo}/git/ref/tags/{tag}"))["object"]
@@ -81,16 +86,17 @@ def publish():
   expected = payload | {name + ".sigstore.json" for name in payload}
   if {p.name for p in destination.iterdir()} != expected:
     raise RuntimeError("Incomplete signed release asset set")
-  if gh("release", "view", tag, "--repo", repo, "--json", "isDraft", "--jq", ".isDraft") != "true":
+  release = find_release(repo, tag)
+  if release is None or not release["draft"]:
     raise RuntimeError("Refusing to change a published release")
+  endpoint = f"repos/{repo}/releases/{release['id']}"
   # Remove obsolete assets only from the draft on a retry. Published releases
   # are never modified. Verify uploaded digests before freezing the release.
-  remote = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "assets"))["assets"]
-  for asset in remote:
+  for asset in release["assets"]:
     if asset["name"] not in expected:
       gh("release", "delete-asset", tag, asset["name"], "--yes", "--repo", repo)
   gh("release", "upload", tag, *map(str, sorted(destination.iterdir())), "--clobber", "--repo", repo)
-  release = json.loads(gh("api", f"repos/{repo}/releases/tags/{tag}"))
+  release = json.loads(gh("api", endpoint))
   digests = {a["name"]: a["digest"] for a in release["assets"]}
   for name in expected:
     if digests.get(name) != "sha256:" + hashlib.sha256((destination / name).read_bytes()).hexdigest():
@@ -98,7 +104,7 @@ def publish():
   if set(digests) != expected:
     raise RuntimeError("Unexpected remote release assets")
   gh("release", "edit", tag, "--draft=false", "--repo", repo)
-  if json.loads(gh("api", f"repos/{repo}/releases/tags/{tag}")).get("immutable") is not True:
+  if json.loads(gh("api", endpoint)).get("immutable") is not True:
     raise RuntimeError("Published release is not immutable")
 
 
