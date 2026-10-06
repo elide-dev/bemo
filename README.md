@@ -1,3 +1,5 @@
+![Bemo](./docs/images/banner.png)
+
 # Bemo
 
 A shared Rust native transport for Elide and stock Netty, with JVM FFM and
