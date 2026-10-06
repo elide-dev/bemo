@@ -24,8 +24,6 @@ jobs:
       attestations: write
       artifact-metadata: write
     uses: ./.github/workflows/on.verify.yml
-    secrets:
-      CODECOV_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.CODECOV_TOKEN || '' }}
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [verify]

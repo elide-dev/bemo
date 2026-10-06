@@ -4,11 +4,12 @@ A shared Rust native transport for Elide and stock Netty, with JVM FFM and
 GraalVM Native Image C bindings. Cargo builds native code; Elide resolves JVM
 dependencies, compiles Java, and produces JARs.
 
-**Status: transport extracted and integration-tested on macOS ARM64.** Rust owns
+**Status: transport extracted and integration-tested.** Rust owns
 buffers, socket drivers, TLS, HTTP, and workload accounting. Stock Netty 4.2
 runs through either JVM FFM or Native Image C bindings, without an Elide runtime.
 The Elide transport ABI 3 C symbols are preserved; Java APIs use `dev.elide.bemo`.
-Linux and Windows qualification is wired into CI; Maven artifacts remain unpublished.
+Rust CI passes on Linux, macOS, and Windows; JVM and packaging qualification
+covers Linux x86-64 and macOS ARM64. Maven artifacts remain unpublished.
 
 ## Layout
 
@@ -64,8 +65,8 @@ Cargo workspace:
 
 ```toml
 [dependencies]
-bemo = { git = "https://github.com/elide-dev/dokar", rev = "<full-commit-sha>" }
-bemo-ffi = { git = "https://github.com/elide-dev/dokar", rev = "<full-commit-sha>" }
+bemo = { git = "https://github.com/elide-dev/bemo", rev = "<full-commit-sha>" }
+bemo-ffi = { git = "https://github.com/elide-dev/bemo", rev = "<full-commit-sha>" }
 ```
 
 The Maven coordinates are `dev.elide.bemo:bemo-api`, `bemo-ffm`,
@@ -99,9 +100,12 @@ platform classifier JAR; the no-argument constructor extracts and loads the
 shared library automatically. Static archives ship in the Native Image classifier.
 See [native loading](docs/native-loading.md) for configuration. Netty TLS uses
 a package-private ALPN adapter and currently requires the classpath rather than JPMS. See [architecture](docs/architecture.md), [extraction boundaries](docs/extraction.md),
+[Netty I/O ownership and batching](docs/transport-io.md),
 [publishing](docs/publishing.md), and [CI](docs/ci.md).
 
 Licensed under Apache-2.0.
 
 Test XML, coverage, and continuous CPU/RPS/RSS benchmarks are described in
 [the measurement guide](docs/measurement.md).
+ASAN, TSAN, Miri, and bounded native fuzzing are described in
+[native safety verification](docs/native-safety.md).

@@ -26,11 +26,11 @@ layouts, capabilities, ownership rules, and allocator behavior stay unchanged.
 Both Java bindings use the renamed metadata symbols and library. No compatibility
 aliases are needed because no release has been published.
 
-The GitHub repository remains `elide-dev/dokar` until its hosting rename is
-selected. Repository URLs and signing identities must describe the actual
-repository, independently of the Java and Maven namespace. A hosting rename also
-requires updating Git remotes, source links, consumer verification examples,
-and the Codecov/CodSpeed integrations before publishing new provenance.
+The GitHub repository is now `elide-dev/bemo`. Repository URLs and signing
+identities use that name. Codecov/CodSpeed registrations must follow the hosting
+rename before publishing new performance or provenance evidence. Cargo.lock
+must keep renamed packages in Cargo's canonical order; otherwise its first
+normalization changes the benchmark source fingerprint.
 
 Validate with `make build`, `make check`, `make test`, `make test-native-image`,
 the Python tool tests including `tools/test_git_dependency.py`, `make package`,

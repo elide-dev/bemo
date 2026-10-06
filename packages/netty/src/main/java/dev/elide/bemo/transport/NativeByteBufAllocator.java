@@ -69,6 +69,15 @@ public final class NativeByteBufAllocator extends AbstractByteBufAllocator
     return new NativeByteBuf(this, handle, length);
   }
 
+  NativeByteBuf received(long handle, int length, java.nio.ByteBuffer bytes) {
+    try {
+      return new NativeByteBuf(this, handle, length, bytes);
+    } catch (RuntimeException | Error error) {
+      api.bufferRelease(handle);
+      throw error;
+    }
+  }
+
   NativeByteBuf received(long handle) {
     return new NativeByteBuf(this, handle);
   }

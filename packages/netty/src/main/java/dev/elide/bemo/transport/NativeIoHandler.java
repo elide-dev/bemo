@@ -43,11 +43,52 @@ public final class NativeIoHandler implements IoHandler {
   private final LongObjectHashMap<Registration> sockets = new LongObjectHashMap<>();
   private final Completion completion = new Completion();
   private volatile long driver;
+  private final AtomicBoolean wakeupPending = new AtomicBoolean();
   private long workload;
   private long owner;
   private long batch;
   private @Nullable ByteBuffer events;
   @Nullable NativeByteBufAllocator allocator;
+  private boolean inlineWrites;
+  private long sendStaging;
+  private @Nullable ByteBuffer sendStagingView;
+
+  private void releaseSendStaging() {
+    sendStagingView = null;
+    if (sendStaging != 0) api.bufferRelease(sendStaging);
+    sendStaging = 0;
+  }
+
+  long trySendInlineDirect(long workload, long socket, ByteBuffer source) {
+    if (!inlineWrites) return 0;
+    if (source.remaining() > 128 * 1024)
+      source = source.duplicate().limit(source.position() + 128 * 1024);
+    return api.socketSendInline(workload, driver, socket, source);
+  }
+
+  long trySendInline(long workload, long socket, ByteBuffer[] buffers, int count, int length) {
+    if (!inlineWrites) return 0;
+    ByteBuffer target = sendStagingView;
+    if (target == null || target.capacity() < length) {
+      releaseSendStaging();
+      sendStaging = api.bufferNew(owner, length);
+      if (sendStaging == 0) return 0;
+      sendStagingView = target = api.bufferView(sendStaging);
+    }
+    target.clear().limit(length);
+    for (int i = 0; i < count && target.hasRemaining(); i++) {
+      ByteBuffer source = buffers[i];
+      int copied = Math.min(source.remaining(), target.remaining());
+      target.put(target.position(), source, source.position(), copied);
+      target.position(target.position() + copied);
+    }
+    if (target.hasRemaining()) throw new IllegalStateException("Incomplete native send batch");
+    long written = api.socketSendInline(workload, driver, socket, target.flip());
+    // Asynchronous fallback owns separate immutable storage; free reusable staging first.
+    if (written == 0) releaseSendStaging();
+    return written;
+  }
+
   private long iteration;
   private String backendName = "uninitialized";
 
@@ -114,6 +155,7 @@ public final class NativeIoHandler implements IoHandler {
           "Native transport initialization failed",
           status == 0 ? null : NativeTransportException.operation("driver", status));
     }
+    inlineWrites = api.supportsInlineWrites() && api.driverBackend(driver) == 1;
     backendName = DriverSelection.observe(api, driver, owner, backend).driver();
     events = api.bufferView(batch).order(ByteOrder.nativeOrder());
     allocator = new NativeByteBufAllocator(api, owner);
@@ -124,6 +166,8 @@ public final class NativeIoHandler implements IoHandler {
   @Override
   public int run(IoHandlerContext context) {
     if (driver == 0) return 0;
+    // Reset before checking the task queue: a producer racing with this poll must signal it.
+    wakeupPending.set(false);
     long started = System.nanoTime();
     long timeout = context.canBlock() ? Math.max(0, context.delayNanos(started)) : 0;
     TransportEvents.Batch flight = TransportEvents.batch(driver, backendName, limit, timeout);
@@ -205,7 +249,9 @@ public final class NativeIoHandler implements IoHandler {
   @Override
   public void wakeup() {
     long current = driver;
-    if (current != 0) api.driverWake(current);
+    if (current != 0
+        && !executor.isExecutorThread(Thread.currentThread())
+        && wakeupPending.compareAndSet(false, true)) api.driverWake(current);
   }
 
   @Override
@@ -262,6 +308,7 @@ public final class NativeIoHandler implements IoHandler {
     }
     driver = 0;
     api.bufferRelease(batch);
+    releaseSendStaging();
     if (flight != null) {
       flight.end();
       if (flight.shouldCommit()) {

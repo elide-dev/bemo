@@ -12,6 +12,7 @@ workspace = true
 [features]
 default = ["bundled-mimalloc"]
 bundled-mimalloc = ["dep:libmimalloc-sys"]
+rust-allocator = []
 
 [dependencies]
 compio-buf = { workspace = true }

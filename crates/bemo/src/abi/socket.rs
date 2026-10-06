@@ -61,6 +61,20 @@ pub struct NativeEvent {
   pub reserved: u32,
 }
 
+/// A receive admission result (32 bytes on supported 64-bit platforms).
+#[repr(C)]
+#[derive(Default)]
+pub struct ReceiveResult {
+  /// Nonzero only for a pending receive, completed through ordinary driver polling.
+  pub operation: u64,
+  /// Newly owned mutable handle for immediate positive bytes; otherwise zero.
+  pub buffer: u64,
+  /// Initialized storage valid until this handle is frozen, submitted, or released.
+  pub address: *mut std::ffi::c_void,
+  /// Immediate byte count, EOF zero, or negative portable error; zero while pending.
+  pub result: i64,
+}
+
 pub(super) fn address(handle: u64) -> Option<SocketAddr> {
   let buffers = lock(registry(handle));
   let Storage::Frozen(buffer) = buffers.get(&handle)? else {
@@ -361,6 +375,83 @@ pub fn elide_transport_socket_receive_new(workload: u64, driver: u64, socket: u6
   })
 }
 
+/// Allocate and submit a receive, returning an immediate result without queueing a completion.
+/// Returns zero while pending, one for immediate bytes/EOF/error, or INVALID on admission failure.
+/// Pending storage remains charged until native retirement; immediate positive storage is owned
+/// by the returned handle and exposes only its initialized byte count.
+///
+/// # Safety
+/// `output` must be aligned and writable. Serialize access to its returned mutable address and
+/// abandon it before freezing, submitting, or releasing the returned buffer handle.
+pub unsafe fn elide_transport_socket_receive_new_result(
+  workload: u64,
+  driver: u64,
+  socket: u64,
+  owner: u64,
+  capacity: u64,
+  output: *mut ReceiveResult,
+) -> i32 {
+  if output.is_null() || !output.is_aligned() {
+    return INVALID;
+  }
+  // SAFETY: The caller supplies aligned writable descriptor storage.
+  unsafe { output.write(ReceiveResult::default()) };
+  let Ok(capacity) = usize::try_from(capacity) else {
+    return INVALID;
+  };
+  DRIVERS.with(|drivers| {
+    let mut drivers = drivers.borrow_mut();
+    let Some(state) = drivers.0.get_mut(&driver) else {
+      return INVALID;
+    };
+    if !owned(state, socket, workload) {
+      return INVALID;
+    }
+    let Some(connection) = state.sockets.get(&socket) else {
+      return INVALID;
+    };
+    let Some(budget) = budget(owner) else {
+      return INVALID;
+    };
+    let Ok(storage) = Buffer::receive(capacity, budget) else {
+      return INVALID;
+    };
+    match state.driver.receive_with_result(connection, storage) {
+      Ok(crate::driver::ReceiveSubmission::Pending(operation)) => {
+        state.operations.insert(operation, Operation::raw(socket, 0));
+        // SAFETY: Validated output, and no handle or foreign view is published while pending.
+        unsafe { (*output).operation = operation };
+        0
+      }
+      Ok(crate::driver::ReceiveSubmission::Complete { result, buffer, .. }) => {
+        let mut descriptor = ReceiveResult {
+          result: result.map_or_else(error_code, |size| size as i64),
+          ..ReceiveResult::default()
+        };
+        if descriptor.result > 0 {
+          let handle = identity();
+          if handle == 0 {
+            return INVALID;
+          }
+          let mut buffers = lock(registry(handle));
+          buffers.insert(handle, Storage::Mutable(buffer.into_initialized()));
+          let Some(Storage::Mutable(storage)) = buffers.get_mut(&handle) else {
+            unreachable!()
+          };
+          descriptor.buffer = handle;
+          // Derive the address last, after initialization and registry insertion. No later
+          // mutable reborrow of this storage may invalidate the foreign view before return.
+          descriptor.address = storage.buf_mut_ptr().cast();
+        }
+        // SAFETY: Validated output; positive storage now belongs to its returned handle.
+        unsafe { output.write(descriptor) };
+        1
+      }
+      Err(_) => INVALID,
+    }
+  })
+}
+
 /// Lease a frozen buffer region for a send. The original handle remains independently owned.
 pub fn elide_transport_socket_send(
   workload: u64,
@@ -398,6 +489,106 @@ pub fn elide_transport_socket_send(
       return 0;
     };
     match state.driver.send(connection, storage) {
+      Ok(operation) => {
+        state.operations.insert(operation, Operation::raw(socket, 0));
+        operation
+      }
+      Err(_) => 0,
+    }
+  })
+}
+
+/// Try one nonblocking polling-backend send. Returns bytes sent, zero to use asynchronous
+/// submission (unsupported backend or backpressure), or a negative transport error.
+/// No operation/completion is created, and no source address is retained after return.
+///
+/// # Safety
+/// `source` must point to `length` initialized bytes without concurrent mutation until return.
+pub unsafe fn elide_transport_socket_send_inline(
+  workload: u64,
+  driver: u64,
+  socket: u64,
+  source: *const u8,
+  length: u64,
+) -> i64 {
+  let Ok(length) = usize::try_from(length) else {
+    return -1;
+  };
+  if source.is_null() || length == 0 || length > 128 * 1024 {
+    return -1;
+  }
+  DRIVERS.with(|drivers| {
+    let mut drivers = drivers.borrow_mut();
+    let Some(state) = drivers.0.get_mut(&driver) else {
+      return -1;
+    };
+    if !owned(state, socket, workload) {
+      return -1;
+    }
+    let Some(connection) = state.sockets.get(&socket) else {
+      return -1;
+    };
+    // SAFETY: The caller supplies initialized bytes, borrowed only during the nonblocking call.
+    let bytes = unsafe { std::slice::from_raw_parts(source, length) };
+    state
+      .driver
+      .try_send(connection, bytes)
+      .map_or_else(error_code, |sent| sent.unwrap_or(0) as i64)
+  })
+}
+
+/// Lease up to 64 frozen regions for one vectored send. Handles remain independently owned.
+/// Each descriptor is a native-endian triple of buffer handle, offset, and length.
+/// Descriptors are copied before this call returns; buffer storage stays leased until completion.
+///
+/// # Safety
+/// `regions` must point to `count * 3` initialized, aligned u64 values for the duration of this call.
+/// No descriptor or buffer may be mutated concurrently with this call.
+pub unsafe fn elide_transport_socket_send_gathered(
+  workload: u64,
+  driver: u64,
+  socket: u64,
+  regions: *const u64,
+  count: u32,
+) -> u64 {
+  if count == 0 || count > 64 || regions.is_null() || !regions.is_aligned() {
+    return 0;
+  }
+  // SAFETY: The caller supplies the descriptor range; count is bounded before reading it.
+  let regions = unsafe { std::slice::from_raw_parts(regions, count as usize * 3) };
+  let mut storage = Vec::with_capacity(count as usize);
+  for region in regions.as_chunks::<3>().0 {
+    let (handle, offset, length) = (region[0], region[1], region[2]);
+    let (Ok(offset), Ok(length)) = (usize::try_from(offset), usize::try_from(length)) else {
+      return 0;
+    };
+    let Some(end) = offset.checked_add(length) else {
+      return 0;
+    };
+    if length == 0 {
+      return 0;
+    }
+    let buffers = lock(registry(handle));
+    let Some(Storage::Frozen(buffer)) = buffers.get(&handle) else {
+      return 0;
+    };
+    let Ok(view) = buffer.slice(offset..end) else {
+      return 0;
+    };
+    storage.push(view);
+  }
+  DRIVERS.with(|drivers| {
+    let mut drivers = drivers.borrow_mut();
+    let Some(state) = drivers.0.get_mut(&driver) else {
+      return 0;
+    };
+    if !owned(state, socket, workload) {
+      return 0;
+    }
+    let Some(connection) = state.sockets.get(&socket) else {
+      return 0;
+    };
+    match state.driver.send_vectored(connection, storage) {
       Ok(operation) => {
         state.operations.insert(operation, Operation::raw(socket, 0));
         operation
@@ -518,7 +709,8 @@ pub unsafe fn elide_transport_driver_poll(driver: u64, timeout_ns: u64, batch: u
     sweep(state);
     super::serving::prepare(state);
     // Requests parsed on an earlier poll that did not fit its batch go first.
-    let mut out: Vec<NativeEvent> = Vec::with_capacity(maximum);
+    let mut scratch = std::mem::take(&mut state.raw_poll);
+    let out = &mut scratch.out;
     while out.len() < maximum {
       let Some(event) = state.http.overflow.pop_front() else {
         break;
@@ -537,15 +729,14 @@ pub unsafe fn elide_transport_driver_poll(driver: u64, timeout_ns: u64, batch: u
     let Ok(events) = state.driver.poll_batch(timeout, maximum) else {
       return INVALID;
     };
-    let events: Vec<Event> = events.collect();
-    let mut http_events = std::collections::VecDeque::new();
-    for event in events {
-      process_event(state, event, &mut out, &mut http_events);
+    scratch.events.extend(events);
+    for event in scratch.events.drain(..) {
+      process_event(state, event, out, &mut scratch.http_events);
     }
     // Re-attempt HTTP sends that were deferred by driver op-limit backpressure. poll_batch
     // has drained completions above, so any slot freed by another socket's completion is now
     // available; a still-saturated driver re-defers without sending.
-    super::http::retry_deferred(state, &mut out);
+    super::http::retry_deferred(state, out);
     let count = out.len().min(maximum);
     for (index, event) in out.drain(..count).enumerate() {
       // SAFETY: The buffer owns count event-sized slots; write_unaligned does not assume byte-buffer alignment.
@@ -557,7 +748,8 @@ pub unsafe fn elide_transport_driver_poll(driver: u64, timeout_ns: u64, batch: u
           .write_unaligned(event)
       };
     }
-    state.http.overflow.extend(out);
+    state.http.overflow.extend(out.drain(..));
+    state.raw_poll = scratch;
     // An idle poll is the point at which retained receive storage is no longer earning its budget.
     if count == 0 {
       crate::buffer::pool_trim();
@@ -737,7 +929,7 @@ thread_local! {
 struct CallbackPoll;
 
 #[derive(Default)]
-pub(super) struct CallbackScratch {
+pub(super) struct PollScratch {
   events: Vec<Event>,
   out: Vec<NativeEvent>,
   http_events: std::collections::VecDeque<NativeEvent>,

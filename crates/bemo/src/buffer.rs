@@ -19,16 +19,34 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use compio_buf::{IoBuf, IoBufMut, SetLen};
 
-#[cfg(all(feature = "bundled-mimalloc", not(miri), not(target_vendor = "apple")))]
+#[cfg(all(
+  feature = "bundled-mimalloc",
+  feature = "rust-allocator",
+  not(miri),
+  not(target_vendor = "apple")
+))]
+compile_error!("Select either bundled-mimalloc or rust-allocator, not both");
+
+#[cfg(all(
+  feature = "bundled-mimalloc",
+  not(feature = "rust-allocator"),
+  not(miri),
+  not(target_vendor = "apple")
+))]
 use libmimalloc_sys::{mi_free, mi_malloc};
 
-#[cfg(all(not(feature = "bundled-mimalloc"), not(miri), not(target_vendor = "apple")))]
+#[cfg(all(
+  not(feature = "bundled-mimalloc"),
+  not(feature = "rust-allocator"),
+  not(miri),
+  not(target_vendor = "apple")
+))]
 unsafe extern "C" {
   fn mi_malloc(size: usize) -> *mut c_void;
   fn mi_free(pointer: *mut c_void);
 }
 
-#[cfg(any(miri, target_vendor = "apple"))]
+#[cfg(any(miri, target_vendor = "apple", feature = "rust-allocator"))]
 use rust_alloc::{mi_free, mi_malloc};
 
 // The bundled allocator is still linked under miri, just never called from here.
@@ -40,7 +58,7 @@ use libmimalloc_sys as _;
 /// instances and the host interposer frees them as foreign. `mi_free` takes no size, so the layout
 /// rides in a header ahead of the returned pointer; the header is `MI_ALIGN` wide to keep payload
 /// alignment at mimalloc's guarantee.
-#[cfg(any(miri, target_vendor = "apple"))]
+#[cfg(any(miri, target_vendor = "apple", feature = "rust-allocator"))]
 mod rust_alloc {
   use std::alloc::{Layout, alloc, dealloc};
   use std::ffi::c_void;

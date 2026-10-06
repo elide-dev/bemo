@@ -230,6 +230,38 @@ class BackendTransport implements TransportNative {
   }
 
   @Override
+  public boolean supportsInlineWrites() {
+    return delegate.supportsInlineWrites();
+  }
+
+  @Override
+  public long socketSendInline(long workload, long driver, long socket, ByteBuffer source) {
+    return delegate.socketSendInline(workload, driver, socket, source);
+  }
+
+  @Override
+  public boolean supportsGatheredWrites() {
+    return delegate.supportsGatheredWrites();
+  }
+
+  @Override
+  public long socketSendGathered(
+      long workload, long driver, long socket, long[] regions, int count) {
+    return delegate.socketSendGathered(workload, driver, socket, regions, count);
+  }
+
+  @Override
+  public boolean supportsReceiveResults() {
+    return delegate.supportsReceiveResults();
+  }
+
+  @Override
+  public ReceiveResult socketReceiveNewResult(
+      long workload, long driver, long socket, long owner, long capacity) {
+    return delegate.socketReceiveNewResult(workload, driver, socket, owner, capacity);
+  }
+
+  @Override
   public long socketSend(
       long workload, long driver, long socket, long buffer, long offset, long length) {
     return delegate.socketSend(workload, driver, socket, buffer, offset, length);

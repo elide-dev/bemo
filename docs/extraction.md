@@ -8,6 +8,12 @@ The Rust handle layer remains in `bemo::abi`, without unmangled exports;
 `include/elide_transport.h`. This preserves crate-private state and ownership
 invariants without exposing transport internals across crates.
 
+`bemo-ffi` declares Cargo's `links = "bemo"` identity and supplies its header
+directory as `DEP_BEMO_INCLUDE` to direct consumers' build scripts. Embedders
+derive export lists and compiler includes from that pinned dependency instead
+of keeping another header copy. Cargo rejects two independently versioned Bemo
+FFI packages in one graph, preventing duplicate C boundaries.
+
 | Elide source | Bemo destination | Constraints |
 | --- | --- | --- |
 | `crates/netty-transport/src/{buffer,driver,http,tls}*` | `crates/bemo` | Preserve runtime independence and per-crate feature choices |
@@ -21,7 +27,7 @@ invariants without exposing transport internals across crates.
 | `packages/base/main/io/netty/handler/ssl` | `packages/netty` | Package-private ALPN integration requires explicit compatibility coverage |
 | `crates/netty-transport/tests` | Rust and shared binding contracts here | Preserve backend, shutdown, ownership, TLS, and reentrant-close cases |
 
-Bemo pins CompIO at `61a04b75f7c6299a41c5b3cacb17b5c2d96f824f`, based on Elide's
+Bemo pins CompIO at `029af1602c7701dd4fc607c9c857a26144153b14`, based on Elide's
 `8feca49de69cb8090f18405741982b416a4beda9`. The two polling dependencies in that
 fork now directly pin `1198249b4e54fa430dc6f76b058ad0912bd6bbea`. No source is
 vendored. ntex-httparse is directly pinned at
@@ -56,9 +62,9 @@ public GraalVM buffer views; standard exceptions replace Elide-specific helpers.
 Neither Truffle annotations nor test-only runtime shims are shipped.
 
 Both bindings pass the channel, allocator, TLS, callback, lifecycle, reentrant
-close, JFR, and JSSE/OpenSSL contracts on macOS ARM64. Rust tests cover HTTP/1,
-HTTP/2, native TLS, workload isolation, topology, and ownership behavior. CI
-must still qualify Linux and Windows after this repository is hosted.
+close, JFR, and JSSE/OpenSSL contracts. CI qualifies JVM FFM on Linux and macOS
+with JDK 22/25, Native Image on Linux, and Rust on Linux/macOS/Windows. Rust tests
+cover HTTP/1, HTTP/2, native TLS, workload isolation, topology, and ownership.
 
 Elide's working tree has not been changed. Its cutover must remove the old Rust
 implementation and duplicate Java classes, including the ALPN helper, then

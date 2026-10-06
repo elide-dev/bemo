@@ -27,6 +27,21 @@ mod send_zc;
 #[cfg(target_os = "linux")]
 mod uring;
 
+/// A receive either retains kernel ownership or returns its initialized storage immediately.
+pub enum ReceiveSubmission {
+  /// The driver owns storage until the ordinary receive completion.
+  Pending(u64),
+  /// No operation remains outstanding and no completion is queued.
+  Complete {
+    /// Identity used by the compatibility wrapper when it queues a completion.
+    id: u64,
+    /// Kernel byte count or transport error.
+    result: io::Result<usize>,
+    /// Exclusive storage with only the initialized prefix exposed.
+    buffer: Buffer,
+  },
+}
+
 /// Requested or selected native I/O backend.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -811,6 +826,25 @@ impl Driver {
   /// # Errors
   /// Returns the original buffer with the error if admission fails.
   pub fn receive(&mut self, connection: &Connection, buffer: Buffer) -> Result<u64, (io::Error, Buffer)> {
+    match self.receive_with_result(connection, buffer)? {
+      ReceiveSubmission::Pending(id) => Ok(id),
+      ReceiveSubmission::Complete { id, result, buffer } => {
+        self.complete_event(Event::Received { id, result, buffer });
+        Ok(id)
+      }
+    }
+  }
+
+  /// Submit one receive, returning an already completed read without a later handoff.
+  /// Pending reads preserve the same cancellation and retirement rules as [`Self::receive`].
+  ///
+  /// # Errors
+  /// Returns the original buffer with the error if admission fails.
+  pub fn receive_with_result(
+    &mut self,
+    connection: &Connection,
+    buffer: Buffer,
+  ) -> Result<ReceiveSubmission, (io::Error, Buffer)> {
     let id = match self.admit(connection, &connection.read) {
       Ok(id) => id,
       Err(error) => return Err((error, buffer)),
@@ -833,10 +867,58 @@ impl Driver {
             lane: connection.read.clone(),
           },
         );
+        Ok(ReceiveSubmission::Pending(id))
       }
-      PushEntry::Ready(result) => self.complete_event(received(id, result)),
+      PushEntry::Ready(BufResult(result, operation)) => {
+        let mut buffer = operation.into_inner();
+        // SAFETY: Successful completion initialized exactly result bytes; errors expose none.
+        unsafe { buffer.set_len(result.as_ref().copied().unwrap_or(0)) };
+        Ok(ReceiveSubmission::Complete { id, result, buffer })
+      }
     }
-    Ok(id)
+  }
+
+  /// Try one nonblocking send on the polling backend without allocating an operation.
+  /// `None` requests normal asynchronous submission; no source storage is retained.
+  ///
+  /// # Errors
+  /// Rejects failed/closed drivers, foreign connections, and socket errors.
+  pub fn try_send(&mut self, connection: &Connection, bytes: &[u8]) -> io::Result<Option<usize>> {
+    self.check_failed()?;
+    if self.closing {
+      return Err(io::ErrorKind::BrokenPipe.into());
+    }
+    if !Rc::ptr_eq(&self.owner, &connection.owner) {
+      return Err(io::ErrorKind::InvalidInput.into());
+    }
+    if bytes.is_empty() {
+      return Err(io::ErrorKind::InvalidInput.into());
+    }
+    if self.backend() != Backend::Polling || connection.write.get() || self.transient_outstanding() >= self.limit {
+      return Ok(None);
+    }
+    #[cfg(unix)]
+    {
+      use std::os::fd::AsRawFd;
+      #[cfg(target_vendor = "apple")]
+      let flags = 0; // attach sets SO_NOSIGPIPE and O_NONBLOCK.
+      #[cfg(not(target_vendor = "apple"))]
+      let flags = libc::MSG_NOSIGNAL;
+      // SAFETY: The live nonblocking socket borrows initialized bytes only until send returns.
+      let sent = unsafe { libc::send(connection.socket.as_raw_fd(), bytes.as_ptr().cast(), bytes.len(), flags) };
+      if sent >= 0 {
+        return Ok(Some(sent as usize));
+      }
+      let error = io::Error::last_os_error();
+      if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) {
+        return Ok(None);
+      }
+      Err(error)
+    }
+    #[cfg(not(unix))]
+    {
+      Ok(None)
+    }
   }
 
   /// Submit a send; its immutable lease prevents mutation until native completion.

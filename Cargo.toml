@@ -6,13 +6,13 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/elide-dev/dokar"
+repository = "https://github.com/elide-dev/bemo"
 
 [workspace.dependencies]
 bemo = { path = "crates/bemo", version = "0.1.0", default-features = false }
 
-compio-buf = { version = "=0.8.3", git = "https://github.com/elide-tools/compio.git", rev = "61a04b75f7c6299a41c5b3cacb17b5c2d96f824f" }
-compio-driver = { version = "=0.12.5", features = ["polling"], git = "https://github.com/elide-tools/compio.git", rev = "61a04b75f7c6299a41c5b3cacb17b5c2d96f824f" }
+compio-buf = { version = "=0.8.3", git = "https://github.com/elide-tools/compio.git", rev = "029af1602c7701dd4fc607c9c857a26144153b14" }
+compio-driver = { version = "=0.12.5", features = ["polling"], git = "https://github.com/elide-tools/compio.git", rev = "029af1602c7701dd4fc607c9c857a26144153b14" }
 nohash-hasher = { version = "0.2.0" }
 ntex-httparse = { version = "=2.2.0", git = "https://github.com/elide-tools/ntex-httparse", rev = "104a6749f9b8c973e99e9f84cfd2adcfdef96bbf" }
 h2 = { version = "0.4.19" }

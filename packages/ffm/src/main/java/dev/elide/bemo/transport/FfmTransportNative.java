@@ -68,7 +68,12 @@ public final class FfmTransportNative implements TransportNative {
   private final MethodHandle socketAddress;
   private final MethodHandle socketReceive;
   private final MethodHandle socketReceiveNew;
+  private final @Nullable MethodHandle socketReceiveNewResult;
   private final MethodHandle socketSend;
+  private final @Nullable MethodHandle socketSendInline;
+  private final @Nullable MethodHandle socketSendGathered;
+  private static final ThreadLocal<MemorySegment> SEND_REGIONS =
+      ThreadLocal.withInitial(() -> Arena.ofAuto().allocate(64 * 24, 8));
   private final MethodHandle socketClose;
   private final MethodHandle driverPoll;
   private final MethodHandle socketHttp;
@@ -517,6 +522,23 @@ public final class FfmTransportNative implements TransportNative {
             ValueLayout.JAVA_LONG,
             ValueLayout.JAVA_LONG,
             ValueLayout.JAVA_LONG);
+    socketReceiveNewResult =
+        symbols
+            .find("elide_transport_socket_receive_new_result")
+            .map(
+                symbol ->
+                    Linker.nativeLinker()
+                        .downcallHandle(
+                            symbol,
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.ADDRESS)))
+            .orElse(null);
     socketSend =
         bind(
             symbols,
@@ -528,6 +550,38 @@ public final class FfmTransportNative implements TransportNative {
             ValueLayout.JAVA_LONG,
             ValueLayout.JAVA_LONG,
             ValueLayout.JAVA_LONG);
+    socketSendInline =
+        symbols
+            .find("elide_transport_socket_send_inline")
+            .map(
+                symbol ->
+                    Linker.nativeLinker()
+                        .downcallHandle(
+                            symbol,
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_LONG)))
+            .orElse(null);
+    socketSendGathered =
+        symbols
+            .find("elide_transport_socket_send_gathered")
+            .map(
+                symbol ->
+                    Linker.nativeLinker()
+                        .downcallHandle(
+                            symbol,
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_INT)))
+            .orElse(null);
     socketClose =
         bind(
             symbols,
@@ -925,10 +979,84 @@ public final class FfmTransportNative implements TransportNative {
   }
 
   @Override
+  public boolean supportsReceiveResults() {
+    return socketReceiveNewResult != null;
+  }
+
+  @Override
+  public ReceiveResult socketReceiveNewResult(
+      long workload, long driver, long socket, long owner, long capacity) {
+    MethodHandle receive = socketReceiveNewResult;
+    if (receive == null)
+      throw new UnsupportedOperationException("Immediate native receive results");
+    MemorySegment output = BUFFER_DESCRIPTOR.get();
+    final int status;
+    try {
+      status = (int) receive.invokeExact(workload, driver, socket, owner, capacity, output);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+    if (status < 0)
+      throw new IllegalStateException("Native receive allocation or admission failed");
+    long operation = output.get(ValueLayout.JAVA_LONG, 0);
+    long buffer = output.get(ValueLayout.JAVA_LONG, 8);
+    long result = output.get(ValueLayout.JAVA_LONG, 24);
+    try {
+      ByteBuffer bytes =
+          result > 0
+              ? output.get(ValueLayout.ADDRESS, 16).reinterpret(result).asByteBuffer()
+              : null;
+      return new ReceiveResult(operation, buffer, result, bytes);
+    } catch (RuntimeException | Error error) {
+      if (buffer != 0) bufferRelease(buffer);
+      throw error;
+    }
+  }
+
+  @Override
   public long socketSend(
       long workload, long driver, long socket, long buffer, long offset, long length) {
     try {
       return (long) socketSend.invokeExact(workload, driver, socket, buffer, offset, length);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public boolean supportsInlineWrites() {
+    return socketSendInline != null;
+  }
+
+  @Override
+  public long socketSendInline(long workload, long driver, long socket, ByteBuffer source) {
+    MethodHandle send = socketSendInline;
+    if (send == null) throw new UnsupportedOperationException("Inline native writes");
+    if (!source.isDirect() || !source.hasRemaining() || source.remaining() > 128 * 1024) return -1;
+    MemorySegment bytes = MemorySegment.ofBuffer(source);
+    long length = source.remaining();
+    try {
+      return (long) send.invokeExact(workload, driver, socket, bytes, length);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public boolean supportsGatheredWrites() {
+    return socketSendGathered != null;
+  }
+
+  @Override
+  public long socketSendGathered(
+      long workload, long driver, long socket, long[] regions, int count) {
+    if (count < 1 || count > 64 || regions.length < count * 3) return 0;
+    MethodHandle send = socketSendGathered;
+    if (send == null) throw new UnsupportedOperationException("Gathered native writes");
+    MemorySegment descriptors = SEND_REGIONS.get();
+    MemorySegment.copy(MemorySegment.ofArray(regions), 0, descriptors, 0, count * 24L);
+    try {
+      return (long) send.invokeExact(workload, driver, socket, descriptors, count);
     } catch (Throwable error) {
       throw failure(error);
     }

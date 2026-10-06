@@ -11,7 +11,5 @@ concurrency:
 jobs:
   verify:
     uses: ./.github/workflows/on.verify.yml
-    secrets:
-      CODECOV_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.CODECOV_TOKEN || '' }}
 # Verification uploads unsigned Maven bundles. Publishing is a separate maintainer
 # step documented in docs/publishing.md; no secrets are exposed to PR builds.

@@ -2461,6 +2461,71 @@ fn native_http_tls_pipeline_resumes_across_admission_and_record_boundaries() {
 
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_http_tls_large_response_retries_inline_yields_and_backpressure() {
+  use rustls::pki_types::ServerName;
+  use std::sync::Arc;
+  for send_capacity in [4096, 1024 * 1024] {
+    let (mut h, config) = tls_fixture();
+    assert_eq!(elide_transport_socket_option(h.driver, h.socket, 4, send_capacity), 0);
+    assert_eq!(elide_transport_socket_option(h.driver, h.socket, 1, 1), 0);
+    let payload: Vec<u8> = (0..2 * 1024 * 1024 + 17)
+      .map(|index| ((index * 131 + index / 257) % 251) as u8)
+      .collect();
+    let peer = h.peer.try_clone().unwrap();
+    let (start, wait) = std::sync::mpsc::channel();
+    let client = std::thread::spawn(move || {
+      let client = rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+      let mut stream = rustls::StreamOwned::new(client, peer);
+      stream
+        .write_all(b"GET /large HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .unwrap();
+      stream.flush().unwrap();
+      wait.recv_timeout(Duration::from_secs(5)).unwrap();
+      let mut wire = Vec::new();
+      stream.read_to_end(&mut wire).unwrap();
+      wire
+    });
+    let exchange = h.take(EVENT_REQUEST, 1)[0].value;
+    respond(h.driver, exchange, 200, &[], &payload);
+    assert_eq!(elide_transport_http_free(h.driver, exchange), 0);
+    start.send(()).unwrap();
+    let expired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let timeout = expired.clone();
+    let driver = h.driver;
+    let (finished, waiting) = std::sync::mpsc::channel::<()>();
+    let watchdog = std::thread::spawn(move || {
+      if matches!(
+        waiting.recv_timeout(Duration::from_secs(10)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+      ) {
+        timeout.store(true, std::sync::atomic::Ordering::Release);
+        elide_transport_driver_wake(driver);
+      }
+    });
+    while !h.pending.iter().any(|event| event.kind == EVENT_CLOSED) {
+      // No timer or unrelated request may be needed to resume an inline drive yield.
+      h.poll(u64::MAX);
+      assert!(
+        !expired.load(std::sync::atomic::Ordering::Acquire),
+        "inline TLS progress stalled"
+      );
+    }
+    drop(finished);
+    watchdog.join().unwrap();
+    h.take(EVENT_CLOSED, 1);
+    let wire = client.join().unwrap();
+    let replies = responses(&wire);
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].1, payload);
+    assert_eq!(elide_transport_driver_release(h.driver), 0);
+    assert_eq!(elide_transport_buffer_release(h.batch), 0);
+    assert_eq!(elide_transport_owner_used(h.owner), 0);
+    assert_eq!(elide_transport_owner_release(h.owner), 0);
+  }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn freed_pipeline_handles_cannot_replace_queued_responses() {
   let mut h = harness();
   let mut peer = h.peer.try_clone().unwrap();

@@ -66,8 +66,10 @@ its Java compiler output, so packaging uses its working `jar` command directly.
 Compilation uses `--release 22`, exact per-artifact classpaths, and warnings as
 errors. Compatibility overrides retain narrowly scoped warning suppressions.
 
-Native classifiers identify OS, architecture, and Linux libc. The current
-`linux-x86_64-gnu` artifact does not promise a glibc floor below its builder.
-A release must establish and test that floor before broad binary compatibility
-is claimed. The pinned Rust nightly is the qualified compiler; no independent
-MSRV guarantee is made yet.
+Native classifiers identify OS, architecture, and Linux libc. Qualification
+targets Ubuntu 24.04/glibc 2.39 on Linux x86-64 and macOS 15 on ARM64. Packaging
+checks the shared library's glibc symbol requirements or Mach-O deployment
+target and rejects requirements above those floors. CI executes packaged shared
+and static consumers on those builders. Earlier operating systems, musl JVM
+artifacts, and Windows JVM artifacts have no release qualification. The pinned
+Rust nightly is the qualified compiler; no independent MSRV guarantee is made.

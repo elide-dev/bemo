@@ -6,14 +6,16 @@ from pathlib import Path
 
 
 def compare(current, baseline):
-  old = {row["case"]: row for row in baseline}
+  def key(row):
+    return (row["case"], row.get("transport", "bemo"), row.get("tls_provider", "native"))
+  old = {key(row): row for row in baseline}
   messages = []
   for row in current:
-    before = old.get(row["case"])
+    before = old.get(key(row))
     if before is None:
       continue
     # Changing the workload invalidates its baseline, even when the display name is unchanged.
-    keys = ("requests", "warmup_rounds", "payload_bytes", "clients", "tls", "gzip", "host", "java_version", "workload_sha256")
+    keys = ("requests", "warmup_rounds", "payload_bytes", "clients", "tls", "gzip", "host", "java_version", "workload_sha256", "requested_backend", "driver", "auto_fallback", "http_provider", "runtime", "binding", "process_scope", "load_generator_transport", "load_generator_tls_provider", "gzip_provider", "socket_buffer_bytes")
     if any(row["samples"][0].get(k) != before["samples"][0].get(k) for k in keys):
       messages.append(f"{row['case']}: workload/environment changed; baseline comparison skipped")
       continue

@@ -18,6 +18,70 @@ class ComparisonTests(unittest.TestCase):
     self.assertIn("skipped", compare(current, baseline)[0])
     self.assertEqual(compare(baseline, baseline), [])
 
+  def test_different_transports_do_not_overwrite_each_other(self):
+    rows = [{"case": "same", "transport": transport, "tls_provider": "jdk",
+             "median_requests_per_second": rps, "max_peak_rss_bytes": None,
+             "samples": [{"requests": 100}]} for transport, rps in (("bemo", 100), ("epoll", 1000))]
+    current = copy.deepcopy(rows)
+    current[0]["median_requests_per_second"] = 60
+    self.assertEqual(len(compare(current, rows)), 1)
+
+  def test_transport_comparison_requires_matching_tls_and_load(self):
+    sample = {"clients": 4, "requests": 100, "warmup_rounds": 20, "tls_provider": "jdk",
+              "java_version": "stock", "host": "same", "workload_sha256": "same",
+              "requests_per_second": 100}
+    rows = [{"case": "plain", "transport": transport, "tls_provider": "jdk",
+             "median_requests_per_second": 100, "median_latency_p99_ns": 10,
+             "samples": [copy.deepcopy(sample)]} for transport in ("bemo", "epoll")]
+    self.assertEqual(bench.comparisons(rows)[0]["bemo_over_comparator_rps"], 1)
+    rows[1]["samples"][0]["tls_provider"] = "other"
+    with self.assertRaisesRegex(RuntimeError, "incompatible"):
+      bench.comparisons(rows)
+
+  def test_default_compares_native_bemo_with_jdk_netty(self):
+    self.assertEqual(bench.selected_tls_provider("bemo", "auto"), "native")
+    self.assertEqual(bench.selected_tls_provider("kqueue", "auto"), "jdk")
+    self.assertEqual(bench.selected_tls_provider("bemo", "jdk"), "jdk")
+    sample = {"clients": 4, "requests": 100, "warmup_rounds": 20,
+              "java_version": "stock", "host": "same", "workload_sha256": "same",
+              "requests_per_second": 100}
+    rows = [{"case": "tls", "transport": transport, "tls_provider": provider,
+             "median_requests_per_second": 100, "median_latency_p99_ns": 10,
+             "samples": [dict(sample, tls_provider=provider)]}
+            for transport, provider in (("bemo", "native"), ("kqueue", "jdk"))]
+    result = bench.comparisons(rows)[0]
+    self.assertEqual(result["comparison_kind"], "full-stack")
+    self.assertEqual(result["tls_provider"], "native")
+    self.assertEqual(result["comparator_tls_provider"], "jdk")
+    rows[1]["samples"][0]["requests"] += 1
+    with self.assertRaisesRegex(RuntimeError, "incompatible"):
+      bench.comparisons(rows)
+
+  def test_native_http_comparison_is_full_stack_even_without_tls(self):
+    sample = {"clients": 4, "requests": 100, "warmup_rounds": 20, "tls_provider": "none",
+              "java_version": "stock", "host": "same", "workload_sha256": "same",
+              "requests_per_second": 100, "load_generator_transport": "kqueue",
+              "load_generator_tls_provider": "none", "process_scope": "server+client"}
+    rows = [{"case": "plain", "transport": transport, "tls_provider": "none",
+             "median_requests_per_second": 100, "median_latency_p99_ns": 10,
+             "samples": [dict(sample, http_provider=http, runtime=runtime, binding=binding)]}
+            for transport, http, runtime, binding in (("bemo", "native", "native-image", "capi"),
+                                                       ("kqueue", "netty", "jvm", "netty"))]
+    result = bench.comparisons(rows)[0]
+    self.assertEqual(result["comparison_kind"], "full-stack")
+    self.assertEqual(result["bemo_stack"]["binding"], "capi")
+    rows[1]["samples"][0]["load_generator_transport"] = "nio"
+    with self.assertRaisesRegex(RuntimeError, "incompatible"):
+      bench.comparisons(rows)
+
+  def test_baseline_rejects_changed_http_runtime(self):
+    baseline = [{"case": "plain", "transport": "bemo", "tls_provider": "none",
+                 "median_requests_per_second": 1000, "max_peak_rss_bytes": None,
+                 "samples": [{"requests": 100, "http_provider": "netty", "runtime": "jvm"}]}]
+    current = copy.deepcopy(baseline)
+    current[0]["samples"][0].update(http_provider="native", runtime="native-image")
+    self.assertIn("skipped", compare(current, baseline)[0])
+
 
 class ManifestTests(unittest.TestCase):
   def test_generated_reports_do_not_change_inputs_but_sources_and_artifacts_do(self):
@@ -48,6 +112,18 @@ class ManifestTests(unittest.TestCase):
           path.write_bytes(b"original")
         source.unlink()
         self.assertNotEqual(bench.snapshot()["sources_sha256"], baseline["sources_sha256"])
+
+  def test_lockfile_changes_are_never_excluded_from_source_hash(self):
+    # The rename failure came from Cargo normalizing package order in Cargo.lock.
+    # A real lock edit must still invalidate preparation rather than be ignored.
+    with tempfile.TemporaryDirectory() as temporary:
+      root = Path(temporary)
+      lock = root / "Cargo.lock"
+      lock.write_text('version = 4\n')
+      with patch.object(bench.build, "ROOT", root):
+        before = bench.digest([lock])
+        lock.write_text('version = 4\n# dependency changed\n')
+        self.assertNotEqual(bench.digest([lock]), before)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,10 @@ final class NativeByteBuf extends UnpooledDirectByteBuf {
     this(allocator, Allocation.received(allocator.api, handle, length), Integer.MAX_VALUE, length);
   }
 
+  NativeByteBuf(NativeByteBufAllocator allocator, long handle, int length, ByteBuffer bytes) {
+    this(allocator, new Allocation(allocator.api, handle, bytes), Integer.MAX_VALUE, length);
+  }
+
   NativeByteBuf(NativeByteBufAllocator allocator, long handle) {
     this(allocator, new Allocation(allocator.api, handle));
   }
@@ -41,6 +45,10 @@ final class NativeByteBuf extends UnpooledDirectByteBuf {
     this.initial = allocation;
     this.current = allocation;
     setIndex(0, length);
+  }
+
+  boolean isFrozen() {
+    return frozen;
   }
 
   long freeze() {
@@ -113,6 +121,12 @@ final class NativeByteBuf extends UnpooledDirectByteBuf {
         api.bufferRelease(handle);
         throw error;
       }
+    }
+
+    Allocation(TransportNative api, long handle, ByteBuffer bytes) {
+      this.api = api;
+      this.handle = handle;
+      this.bytes = bytes.order(java.nio.ByteOrder.BIG_ENDIAN);
     }
 
     static Allocation received(TransportNative api, long handle, int length) {

@@ -74,6 +74,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "bemo"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "bytes",
+ "codspeed-criterion-compat",
+ "compio-buf",
+ "compio-driver",
+ "h2",
+ "http",
+ "libc",
+ "libmimalloc-sys",
+ "nohash-hasher",
+ "ntex-httparse",
+ "rustls",
+ "socket2",
+ "tokio",
+]
+
+[[package]]
+name = "bemo-ffi"
+version = "0.1.0"
+dependencies = [
+ "bemo",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -244,7 +271,7 @@ dependencies = [
 [[package]]
 name = "compio-buf"
 version = "0.8.3"
-source = "git+https://github.com/elide-tools/compio.git?rev=61a04b75f7c6299a41c5b3cacb17b5c2d96f824f#61a04b75f7c6299a41c5b3cacb17b5c2d96f824f"
+source = "git+https://github.com/elide-tools/compio.git?rev=029af1602c7701dd4fc607c9c857a26144153b14#029af1602c7701dd4fc607c9c857a26144153b14"
 dependencies = [
  "libc",
 ]
@@ -252,7 +279,7 @@ dependencies = [
 [[package]]
 name = "compio-driver"
 version = "0.12.5"
-source = "git+https://github.com/elide-tools/compio.git?rev=61a04b75f7c6299a41c5b3cacb17b5c2d96f824f#61a04b75f7c6299a41c5b3cacb17b5c2d96f824f"
+source = "git+https://github.com/elide-tools/compio.git?rev=029af1602c7701dd4fc607c9c857a26144153b14#029af1602c7701dd4fc607c9c857a26144153b14"
 dependencies = [
  "bitflags",
  "cfg_aliases",
@@ -280,7 +307,7 @@ dependencies = [
 [[package]]
 name = "compio-log"
 version = "0.2.1"
-source = "git+https://github.com/elide-tools/compio.git?rev=61a04b75f7c6299a41c5b3cacb17b5c2d96f824f#61a04b75f7c6299a41c5b3cacb17b5c2d96f824f"
+source = "git+https://github.com/elide-tools/compio.git?rev=029af1602c7701dd4fc607c9c857a26144153b14#029af1602c7701dd4fc607c9c857a26144153b14"
 dependencies = [
  "tracing",
 ]
@@ -334,33 +361,6 @@ name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
-
-[[package]]
-name = "bemo"
-version = "0.1.0"
-dependencies = [
- "aws-lc-rs",
- "bytes",
- "codspeed-criterion-compat",
- "compio-buf",
- "compio-driver",
- "h2",
- "http",
- "libc",
- "libmimalloc-sys",
- "nohash-hasher",
- "ntex-httparse",
- "rustls",
- "socket2",
- "tokio",
-]
-
-[[package]]
-name = "bemo-ffi"
-version = "0.1.0"
-dependencies = [
- "bemo",
-]
 
 [[package]]
 name = "dunce"

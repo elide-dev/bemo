@@ -23,7 +23,7 @@ ELIDE = os.environ.get("ELIDE", "elide")
 MODULES = ("api", "ffm", "native-image", "netty")
 MAVEN_GROUP = "dev.elide.bemo"
 MAVEN_PATH = MAVEN_GROUP.replace(".", "/")
-REPOSITORY = "https://github.com/elide-dev/dokar"
+REPOSITORY = "https://github.com/elide-dev/bemo"
 
 
 def run(*args, **kwargs):
@@ -52,6 +52,20 @@ def netty():
       "netty-transport-native-unix-common")]
 
 
+def benchmark_netty():
+  """Stock native transports are benchmark dependencies, never published dependencies."""
+  system = platform.system()
+  arch = {"arm64": "aarch_64", "aarch64": "aarch_64", "x86_64": "x86_64"}.get(platform.machine())
+  dependencies = netty() + [jar_dependency("io.netty", f"netty-transport-classes-{backend}", VERSIONS["netty"])
+                            for backend in ("epoll", "kqueue")]
+  if system in ("Linux", "Darwin") and arch:
+    backend = "epoll" if system == "Linux" else "kqueue"
+    classifier = f"{'linux' if system == 'Linux' else 'osx'}-{arch}"
+    dependencies.append(jar_dependency("io.netty", f"netty-transport-native-{backend}",
+                                       VERSIONS["netty"], classifier))
+  return dependencies
+
+
 def classpath(paths):
   return os.pathsep.join(map(str, paths))
 
@@ -69,7 +83,10 @@ def deps():
 
 
 def rust(release=False):
-  run("cargo", "build", "--workspace", "--locked", *(["--release"] if release else []))
+  env = dict(os.environ)
+  if platform.system() == "Darwin":
+    env.setdefault("MACOSX_DEPLOYMENT_TARGET", "15.0")
+  run("cargo", "build", "--workspace", "--locked", *(["--release"] if release else []), env=env)
 
 
 def target_dir(release=False):
@@ -238,6 +255,7 @@ def test_rust(coverage=False):
 def fmt(check=False):
   deps()
   run("cargo", "fmt", "--package", "bemo", "--package", "bemo-ffi", *(["--check"] if check else []))
+  run("cargo", "fmt", "--manifest-path", "fuzz/Cargo.toml", *(["--check"] if check else []))
   formatter = jar_dependency("com.google.googlejavaformat", "google-java-format",
                              VERSIONS["java_format"], "all-deps")
   java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java")) + sorted((ROOT / "benchmarks").rglob("*.java"))
@@ -249,6 +267,7 @@ def check():
   run(sys.executable, ROOT / "tools/generate_exports.py", "--check")
   fmt(True)
   run("cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings")
+  run("cargo", "clippy", "--manifest-path", "fuzz/Cargo.toml", "--all-targets", "--locked", "--", "-D", "warnings")
   run("cargo", "doc", "--workspace", "--no-deps", "--locked", env={**os.environ, "RUSTDOCFLAGS": "-D warnings"})
   cargo = tomllib.loads((ROOT / "Cargo.toml").read_text())
   if VERSION.removesuffix("-SNAPSHOT") != cargo["workspace"]["package"]["version"]:

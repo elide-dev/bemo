@@ -46,16 +46,16 @@ unpublished changelog entry. Before merging that reset, inspect the existing
 release and its tag:
 
 ```sh
-gh api --paginate --slurp repos/elide-dev/dokar/releases \
+gh api --paginate --slurp repos/elide-dev/bemo/releases \
   --jq '.[][] | select(.tag_name == "v0.2.0") | {id, draft, immutable, target_commitish}'
-gh api repos/elide-dev/dokar/git/ref/tags/v0.2.0 --jq '.object'
+gh api repos/elide-dev/bemo/git/ref/tags/v0.2.0 --jq '.object'
 ```
 
 Only if it remains an unpublished draft for the failed revision, delete the draft
 and its tag to free the version:
 
 ```sh
-gh release delete v0.2.0 --repo elide-dev/dokar --cleanup-tag --yes
+gh release delete v0.2.0 --repo elide-dev/bemo --cleanup-tag --yes
 ```
 
 Then merge the fix and version reset and let Release Please open a fresh `0.2.0`
@@ -72,12 +72,12 @@ claim of Level 3 isolation or a reproducible/hermetic build. The dedicated
 An initial successful release and consumer verification are still required to
 qualify the deployed workflow; checking in YAML alone is not evidence of a level.
 
-Bemo is currently an internal GitHub repository. GitHub build attestations use
-its private Sigstore instance and authenticated repository access. The separate
-cosign signatures use public Fulcio/Rekor, making the signing identity and
-artifact hashes public. They provide publisher authentication, while build
-attestations identify the build. Release provenance bundles are attached for
-verification after Actions artifact retention expires.
+Bemo's GitHub repository is public. The release workflow uses GitHub build
+attestations and separate public Fulcio/Rekor cosign signatures. Signatures
+authenticate the publisher; build attestations identify the build. Release
+provenance bundles are attached for verification after Actions artifact
+retention expires. Signing identities must use the renamed `elide-dev/bemo`
+repository.
 
 ## Consumer verification
 
@@ -87,13 +87,13 @@ full tagged commit SHA:
 
 ```sh
 gh attestation verify bemo-VERSION-linux-x86_64-gnu-unsigned.zip \
-  --repo elide-dev/dokar --bundle provenance-ubuntu-24.04.json \
-  --signer-workflow elide-dev/dokar/.github/workflows/job.build.yml \
+  --repo elide-dev/bemo --bundle provenance-ubuntu-24.04.json \
+  --signer-workflow elide-dev/bemo/.github/workflows/job.build.yml \
   --source-ref refs/heads/main --source-digest TAGGED_COMMIT_SHA \
   --deny-self-hosted-runners
 cosign verify-blob bemo-VERSION-linux-x86_64-gnu-unsigned.zip \
   --bundle bemo-VERSION-linux-x86_64-gnu-unsigned.zip.sigstore.json \
-  --certificate-identity https://github.com/elide-dev/dokar/.github/workflows/job.release.yml@refs/heads/main \
+  --certificate-identity https://github.com/elide-dev/bemo/.github/workflows/job.release.yml@refs/heads/main \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

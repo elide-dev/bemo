@@ -7,6 +7,9 @@ from pathlib import Path
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+import json
+
+from native_compatibility import compatibility
 
 from build import MAVEN_GROUP, MAVEN_PATH, BUILD, MODULES, ROOT, VERSION, classifier, classpath, compile_java, java_tool, run, netty
 
@@ -70,6 +73,10 @@ def verify():
       assert Path(entries[0]).name == expected_library, "Unexpected published native library name"
       binary = Path(tmp) / Path(entries[0]).name
       binary.write_bytes(archive.read(entries[0]))
+    metadata = compatibility(binary)
+    evidence = BUILD / "reports/native-compatibility.json"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text(json.dumps(metadata, indent=2) + "\n")
     cp = [jars["api"], jars["ffm"]]
     tests = ROOT / "tests/java/dev/elide/bemo"
     output = BUILD / "tests/package"

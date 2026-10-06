@@ -37,7 +37,7 @@ jobs:
 
   transport:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     permissions:
       contents: read
       actions: read
@@ -89,7 +89,7 @@ jobs:
     runs-on: linux-amd64-bench
     env:
       CRITERION_HOME: ${{ github.workspace }}/target/criterion
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
@@ -101,8 +101,8 @@ jobs:
       - uses: ./.github/actions/setup-cargo-tools
         with:
           tools: codspeed
-      - run: make bench-prepare
       - run: cargo codspeed build -p bemo --bench tls --locked -m walltime
+      - run: make bench-prepare
       - name: Track TLS and end-to-end wall time
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
