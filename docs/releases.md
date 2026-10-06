@@ -2,8 +2,12 @@
 
 Release Please maintains a release PR independently of verification, following
 Bali's workflow split. Its simple version strategy updates `.version`, the
-Cargo workspace version, the core dependency constraint, and both workspace
-entries in `Cargo.lock`. Elide and generated Maven POMs read `.version` directly.
+Cargo workspace version, the core dependency constraint, both workspace
+entries in `Cargo.lock`, and the `bemo` entry in `fuzz/Cargo.lock`. The fuzz
+workspace has its own lockfile; keep its path dependency version in sync on every
+release bump. `bemo-fuzz` remains unpublished at `0.0.0`. `make check` validates
+both workspaces with `--locked`, so stale locks fail instead of being rewritten.
+Elide and generated Maven POMs read `.version` directly.
 The initial manifest records `0.1.0`; the next release PR selects the next version
 from Conventional Commits. Snapshot builds cannot publish a release.
 
