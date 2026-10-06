@@ -1,18 +1,73 @@
 ![Bemo](./docs/images/banner.png)
 
-# Bemo
+[![Discord](https://img.shields.io/discord/1119121740161884252?b2&logo=discord&logoColor=white&label=Discord)](https://elide.dev/discord)
+![Java 21+](https://img.shields.io/badge/-Java%2021%2B-blue.svg?logo=openjdk&logoColor=white)
+![Rust 2024](https://img.shields.io/badge/-Rust%202024-orange.svg?logo=rust&logoColor=white)
+[![codecov](https://codecov.io/gh/elide-dev/bemo/graph/badge.svg?token=gWxa2IrgIO)](https://codecov.io/gh/elide-dev/bemo)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/elide-dev/bemo)
 
-A shared Rust native transport for Elide and stock Netty, with JVM FFM and
-GraalVM Native Image C bindings. Cargo builds native code; Elide resolves JVM
-dependencies, compiles Java, and produces JARs.
+> A [_Bemo_][0] is a traditional, small open-air minibus or motorized rickshaw used as fast local **transport, especially in [Bali](https://github.com/elide-dev/bali)**.
 
-**Status: transport extracted and integration-tested.** Rust owns
-buffers, socket drivers, TLS, HTTP, and workload accounting. Stock Netty 4.2
-runs through either JVM FFM or Native Image C bindings, without an Elide runtime.
-The Elide transport ABI 3 C symbols are preserved; Java APIs use `dev.elide.bemo`.
-Rust CI passes on Linux, macOS, and Windows; JVM and packaging qualification
-covers Linux x86-64 and macOS ARM64. Maven snapshots are published to
-[GitHub Packages](docs/publishing.md).
+---
+
+# Netty fortified by Rust
+
+_Bemo_ is a drop-in [native transport](https://netty.io/wiki/native-transports.html) for [Netty](https://netty.io), built with Rust, using best-of-breed APIs and libraries like [`io_uring`](https://en.wikipedia.org/wiki/Io_uring), [`tokio`](https://tokio.rs/), [`aws-lc-rs`](https://github.com/aws/aws-lc-rs), [`rustls`](https://github.com/rustls/rustls), [`zlib-rs`](https://trifectatech.org/blog/zlib-rs-is-faster-than-c/), [`ntex`](https://ntex.rs/), and [`simdutf`](https://github.com/simdutf/simdutf).
+
+| Status | Feature |
+| ------ | ------- |
+| ✅ Drop-in | Replacement for Netty native transports (`io_uring`, `epoll`, `kqueue`) |
+| ✅ Drop-in | Replacement for Netty "Tomcat Native" (`tcnative`) TLS |
+| ✅ JVM parity | Meets or beats Netty's stock native transports on JVM |
+| ✅ SVM parity | Beats Netty's native transports via `native-image` |
+
+_Bemo_ is used as the main transport for [Elide](https://github.com/elide-dev/elide).
+
+## Usage
+
+**Via Rust:**
+
+```toml
+[dependencies]
+bemo = { git = "https://github.com/elide-dev/bemo", rev = "<full-commit-sha>" }
+bemo-ffi = { git = "https://github.com/elide-dev/bemo", rev = "<full-commit-sha>" }
+```
+
+**Via JVM/SVM:**
+
+The Maven coordinates are `dev.elide.bemo:bemo-api`, `bemo-ffm`,
+`bemo-native-image`, and `bemo-netty`. Snapshot artifacts, sources, Javadocs,
+and native classifiers are available from [GitHub Packages](docs/publishing.md). The FFM and
+Native Image artifacts depend on the API artifact. GraalVM SDK dependencies
+are confined to the Native Image artifact and marked `provided`.
+
+```java
+import dev.elide.bemo.transport.FfmTransportNative;
+import dev.elide.bemo.transport.NativeIoHandler;
+import dev.elide.bemo.transport.NativeServerSocketChannel;
+import dev.elide.bemo.transport.Workload;
+import io.netty.channel.MultiThreadIoEventLoopGroup;
+
+var transport = new FfmTransportNative();
+var group = new MultiThreadIoEventLoopGroup(
+    2, NativeIoHandler.newFactory(transport, 0, 128, 8 * 1024 * 1024));
+// Supply group and NativeServerSocketChannel.class to a Netty ServerBootstrap.
+// After channels are closed:
+group.shutdownGracefully().sync();
+Workload.close(transport, Workload.DEFAULT);
+```
+
+For Native Image, construct `dev.elide.bemo.transport.svm.CapiTransportNative` instead.
+The transport binding retains its library for process lifetime; caller-owned
+workloads and event loops have explicit shutdown. See the executable contracts
+in `tests/transport/java` for complete TCP, Unix socket, and TLS examples.
+
+Run with `--enable-native-access=ALL-UNNAMED`. Include the base FFM JAR and its
+platform classifier JAR; the no-argument constructor extracts and loads the
+shared library automatically. Static archives ship in the Native Image classifier.
+See [native loading](docs/native-loading.md) for configuration. Netty TLS uses
+a package-private ALPN adapter and currently requires the classpath rather than JPMS. See [architecture](docs/architecture.md), [extraction boundaries](docs/extraction.md),
+[Netty I/O ownership and batching](docs/transport-io.md).
 
 ## Performance
 
@@ -85,51 +140,7 @@ Cargo `CARGO_TARGET_DIR` is supported. Cross-compilation is not wired into the
 host binding tests or packaging commands. Build commands share output folders;
 run them sequentially in a checkout.
 
-## Consume
-
-After hosting this repository, pin an actual Bemo commit in the consuming
-Cargo workspace:
-
-```toml
-[dependencies]
-bemo = { git = "https://github.com/elide-dev/bemo", rev = "<full-commit-sha>" }
-bemo-ffi = { git = "https://github.com/elide-dev/bemo", rev = "<full-commit-sha>" }
-```
-
-The Maven coordinates are `dev.elide.bemo:bemo-api`, `bemo-ffm`,
-`bemo-native-image`, and `bemo-netty`. Snapshot artifacts, sources, Javadocs,
-and native classifiers are available from [GitHub Packages](docs/publishing.md). The FFM and
-Native Image artifacts depend on the API artifact. GraalVM SDK dependencies
-are confined to the Native Image artifact and marked `provided`.
-
-```java
-import dev.elide.bemo.transport.FfmTransportNative;
-import dev.elide.bemo.transport.NativeIoHandler;
-import dev.elide.bemo.transport.NativeServerSocketChannel;
-import dev.elide.bemo.transport.Workload;
-import io.netty.channel.MultiThreadIoEventLoopGroup;
-
-var transport = new FfmTransportNative();
-var group = new MultiThreadIoEventLoopGroup(
-    2, NativeIoHandler.newFactory(transport, 0, 128, 8 * 1024 * 1024));
-// Supply group and NativeServerSocketChannel.class to a Netty ServerBootstrap.
-// After channels are closed:
-group.shutdownGracefully().sync();
-Workload.close(transport, Workload.DEFAULT);
-```
-
-For Native Image, construct `dev.elide.bemo.transport.svm.CapiTransportNative` instead.
-The transport binding retains its library for process lifetime; caller-owned
-workloads and event loops have explicit shutdown. See the executable contracts
-in `tests/transport/java` for complete TCP, Unix socket, and TLS examples.
-
-Run with `--enable-native-access=ALL-UNNAMED`. Include the base FFM JAR and its
-platform classifier JAR; the no-argument constructor extracts and loads the
-shared library automatically. Static archives ship in the Native Image classifier.
-See [native loading](docs/native-loading.md) for configuration. Netty TLS uses
-a package-private ALPN adapter and currently requires the classpath rather than JPMS. See [architecture](docs/architecture.md), [extraction boundaries](docs/extraction.md),
-[Netty I/O ownership and batching](docs/transport-io.md),
-[publishing](docs/publishing.md), and [CI](docs/ci.md).
+## Licensing
 
 Licensed under Apache-2.0.
 
@@ -137,3 +148,5 @@ Test XML, coverage, and continuous CPU/RPS/RSS benchmarks are described in
 [the measurement guide](docs/measurement.md).
 ASAN, TSAN, Miri, and bounded native fuzzing are described in
 [native safety verification](docs/native-safety.md).
+
+[0]: https://en.wikipedia.org/wiki/Share_taxi#Indonesia
