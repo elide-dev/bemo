@@ -103,6 +103,15 @@ use native HTTP and Rustls/aws-lc-rs for Bemo. Results record server runtime,
 binding, HTTP provider, TLS provider, actual backend, and load-generator stack.
 Full-stack comparisons are labeled as such, including plain HTTP comparisons.
 
+On Linux, qualify both Bemo backends: `--backend 1` forces polling (epoll), and
+`--backend 2` forces io_uring. AUTO can fall back to polling when ring setup
+fails; inspect the reported `driver` and `auto_fallback` before interpreting a
+run as io_uring evidence. A restrictive `RLIMIT_MEMLOCK` can cause ring setup to
+fail with `ENOMEM`. Provision sufficient locked memory for the benchmark task
+and record its limits. Use the same limits for both servers and their common
+client, while retaining matched heap sizes and socket settings. Archive each
+backend's reports before the next run, since summary filenames are shared.
+
 Gzip is application compression, not a native Bemo codec: the native HTTP server
 uses `java.util.zip.GZIPOutputStream` per response; the comparator uses Netty's
 `HttpContentCompressor`. Both clients use the same decompressor and verify
@@ -166,6 +175,10 @@ python3 tools/bench.py run --case tls-gzip-65536 --samples 1
 python3 tools/bench.py run --clients 32 --transports bemo,netty-native,nio
 python3 tools/bench.py run --transports bemo --runtime jvm
 python3 tools/bench.py run --http-provider netty --runtime jvm --tls-provider jdk
+# Linux backend comparisons, each paired with Netty's native epoll server:
+python3 tools/bench.py run --backend 2 --case tls-identity-65536
+# Archive build/reports/benchmarks before switching backends.
+python3 tools/bench.py run --backend 1 --case tls-identity-65536
 # Use a specific stock JDK for local measurements:
 BEMO_BENCH_JAVA=/path/to/jdk/bin/java make bench-transport
 # Fast functionality check, not a performance baseline:
