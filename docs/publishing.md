@@ -68,12 +68,56 @@ metadata and transport ownership operations. `make test-native-image` separately
 checks the complete statically linked Java transport contracts.
 
 The Maven group is `dev.elide.bemo` and the repository is `elide-dev/bemo`.
+The current Maven registry is GitHub Packages at
+`https://maven.pkg.github.com/elide-dev/bemo`.
 Central namespace ownership must be verified before a release.
 The initial `.version` is a snapshot, intentionally unsuitable for a Central
 release. Qualification targets glibc 2.39/Linux x86-64 and macOS 15/ARM64;
 packaging verifies binary requirements and CI runs consumers on those builders.
 The first signed release and its consumer provenance verification still require
 a successful merged-source release run.
+
+## GitHub Packages
+
+After a main push passes verification, `job.packages.yml` downloads the tested
+Linux and macOS bundles from that same run and verifies their build attestations.
+It merges their Maven repositories, requiring common Java artifacts to be
+identical, and publishes all four modules with sources, Javadocs, and both native
+classifiers. Maven's pinned deploy plugin only uploads existing artifacts; Cargo
+and Elide continue to own all compilation and JAR generation. Publication then
+downloads every POM and JAR and checks it against the verified staged bytes.
+
+Snapshot versions publish on verified main pushes using Maven's timestamped
+snapshot metadata. Stable versions publish only from the main revision identified
+by their release tag; later development commits do not overwrite that version.
+The publishing job follows the GitHub release job and uses the release environment
+and `GITHUB_TOKEN` with `packages: write`. PR verification receives no publishing
+credentials. Maven Central remains a separate publishing step.
+
+Consumers add this repository alongside Central:
+
+```xml
+<repository>
+  <id>github</id>
+  <url>https://maven.pkg.github.com/elide-dev/bemo</url>
+  <snapshots><enabled>true</enabled></snapshots>
+</repository>
+```
+
+GitHub's Maven registry requires authentication for public packages too. Configure
+the matching server in Maven settings using a classic token with `read:packages`,
+or use a workflow token granted access to this package:
+
+```xml
+<server>
+  <id>github</id>
+  <username>${env.GITHUB_USER}</username>
+  <password>${env.GITHUB_TOKEN}</password>
+</server>
+```
+
+See [GitHub's Maven registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry)
+for authentication and repository access.
 
 ## Release preparation
 

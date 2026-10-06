@@ -315,7 +315,13 @@ def pom(path, artifact, dependencies):
   scm = add(project, "scm")
   add(scm, "url", REPOSITORY)
   add(scm, "connection", f"scm:git:{REPOSITORY}.git")
-  add(scm, "developerConnection", "scm:git:ssh://git@github.com/elide-dev/dokar.git")
+  add(scm, "developerConnection", "scm:git:ssh://git@github.com/elide-dev/bemo.git")
+  distribution = add(project, "distributionManagement")
+  for kind in ("repository", "snapshotRepository"):
+    repository = add(distribution, kind)
+    add(repository, "id", "github")
+    add(repository, "name", "GitHub Packages")
+    add(repository, "url", "https://maven.pkg.github.com/elide-dev/bemo")
   if dependencies:
     deps_node = add(project, "dependencies")
     for group, name, version, scope in dependencies:

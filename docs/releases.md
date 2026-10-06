@@ -14,6 +14,12 @@ that tested commit, downloads artifacts from the same workflow run, and verifies
 their provenance against the build workflow, main ref, source commit, and hosted
 runner identity. It never recompiles release assets.
 
+The separate GitHub Packages job runs after verification and the release job.
+It verifies and merges the same platform bundles, then uploads the existing
+Maven artifacts and verifies their remote bytes. Snapshot main pushes also
+publish to GitHub Packages; stable versions publish from their tagged revision
+only. See [Maven delivery](publishing.md#github-packages).
+
 The release environment scopes publication. The job signs every platform ZIP,
 provenance bundle, and checksum list with public Sigstore keyless signing. It
 verifies each signature before upload, checks uploaded asset digests, then
