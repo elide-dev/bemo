@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-06",
+  "commit": "e69a09f75f57b3b9bce4d8ce1ae660431e392ae3",
+  "run_url": "https://github.com/elide-dev/bemo/actions/runs/37399667254",
+  "artifact": "transport-evidence",
+  "runner": "GitHub-hosted ubuntu-24.04 x86-64",
+  "summary": "linux-x86_64.json"
+}

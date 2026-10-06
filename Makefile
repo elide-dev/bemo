@@ -49,6 +49,14 @@ bench-prepare:
 bench-transport:
 	$(PYTHON) tools/bench.py run
 
+.PHONY: bench-graphs
+build/chart-venv/.deps: tools/chart-requirements.txt
+	$(PYTHON) -m venv build/chart-venv
+	build/chart-venv/bin/python -m pip install -r tools/chart-requirements.txt
+	touch $@
+bench-graphs: build/chart-venv/.deps
+	build/chart-venv/bin/python tools/plot_bench.py $(CHART_ARGS)
+
 .PHONY: fuzz fuzz-smoke test-asan test-tsan test-miri
 fuzz:
 	$(PYTHON) tools/verify.py fuzz

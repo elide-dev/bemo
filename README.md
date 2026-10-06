@@ -9,7 +9,32 @@ buffers, socket drivers, TLS, HTTP, and workload accounting. Stock Netty 4.2
 runs through either JVM FFM or Native Image C bindings, without an Elide runtime.
 The Elide transport ABI 3 C symbols are preserved; Java APIs use `dev.elide.bemo`.
 Rust CI passes on Linux, macOS, and Windows; JVM and packaging qualification
-covers Linux x86-64 and macOS ARM64. Maven artifacts remain unpublished.
+covers Linux x86-64 and macOS ARM64. Maven snapshots are published to
+[GitHub Packages](docs/publishing.md).
+
+## Performance
+
+Bemo puts HTTP parsing, response encoding, socket I/O, and Rustls/aws-lc-rs TLS
+in Rust. These comparisons run Bemo as an optimized Native Image against stock
+OpenJDK Netty with its native epoll transport. Both use the same external client.
+
+![Throughput across all eight HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput.svg)
+
+![Identity throughput and p99 latency at measured 1 KiB and 64 KiB payload sizes](docs/performance/graphs/payload-curves.svg)
+
+![Server CPU per request and combined server/client memory for all workloads](docs/performance/graphs/efficiency.svg)
+
+Snapshot: Linux x86-64, three paired samples per workload,
+[green CI run on October 6, 2026](https://github.com/elide-dev/bemo/actions/runs/37399667254).
+These are closed-loop, full-stack comparisons on a shared hosted runner.
+Gzip includes application compression; its plaintext performance and large TLS
+identity responses still need work. Memory is the sum of process lifetime
+high-water marks, including the client. Lines connect measured endpoints;
+they do not predict intermediate payload sizes.
+
+The charts and their raw samples are checked in. Run `make bench-graphs` to
+reproduce them; see [updating the charts](docs/performance/README.md) for
+re-benching, data provenance, and refresh commands.
 
 ## Layout
 
@@ -70,7 +95,8 @@ bemo-ffi = { git = "https://github.com/elide-dev/bemo", rev = "<full-commit-sha>
 ```
 
 The Maven coordinates are `dev.elide.bemo:bemo-api`, `bemo-ffm`,
-`bemo-native-image`, and `bemo-netty`. These are staged locally, not published. The FFM and
+`bemo-native-image`, and `bemo-netty`. Snapshot artifacts, sources, Javadocs,
+and native classifiers are available from [GitHub Packages](docs/publishing.md). The FFM and
 Native Image artifacts depend on the API artifact. GraalVM SDK dependencies
 are confined to the Native Image artifact and marked `provided`.
 

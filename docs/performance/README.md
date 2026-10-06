@@ -1,0 +1,75 @@
+# Reproducible performance charts
+
+The README's SVGs come from `tools/plot_bench.py`, with Matplotlib and its
+dependencies pinned in `tools/chart-requirements.txt`. The default input is
+`data/provenance.json`, which names the raw benchmark summary beside it.
+Every SVG embeds the source SHA-256 and CI run URL. Generation has no timestamps
+or random chart IDs; identical input and rendering dependencies reproduce the
+same SVG bytes. Fonts are embedded as paths for consistent browser rendering.
+Chart generation requires Python 3.12+; the core build still supports Python 3.11+.
+
+```sh
+make bench-graphs
+```
+
+This creates an isolated environment under `build/chart-venv` and renders the
+three checked-in SVGs. It does not run benchmarks or upload metrics. PNG export
+and alternate destinations are available:
+
+```sh
+make bench-graphs CHART_ARGS='--output build/chart-preview --png'
+```
+
+## Refresh from a benchmark
+
+Prepare and run the existing complete matrix, with at least three samples:
+
+```sh
+make bench-prepare
+make bench-transport
+cp build/reports/benchmarks/summary-all.json docs/performance/data/linux-x86_64.json
+```
+
+Alternatively, download `transport-evidence` from a completed CI run:
+
+```sh
+gh run download <run-id> --repo elide-dev/bemo --name transport-evidence --dir build/readme-bench/latest
+cp build/readme-bench/latest/summary-all.json docs/performance/data/linux-x86_64.json
+```
+
+Update `data/provenance.json` with the actual date, full measured commit, run URL,
+artifact name, runner description, and summary filename. For local measurements,
+use an evidence URL that readers can access and identify the host accurately.
+Then run `make bench-graphs` and review the data and images together. Keep raw
+samples: medians, sample ranges, CPU costs, and memory maxima are computed from
+them, rather than copied from summary aggregates or written into plotting code.
+
+The renderer refuses incomplete matrices, fewer than three samples, mismatched
+commits/environments, backend fallbacks, mixed drivers, unexpected runtime/codec
+stacks, and invalid metrics. It currently requires Linux RSS measurements and
+all eight workloads with the same sampling/connection settings. The one-sample
+per-command CodSpeed wall-time summaries are not suitable for these charts.
+For a dedicated runner, execute the full paired matrix there and retain its
+summary and environment evidence. Do not combine samples from different hosts
+or present hosted-runner variation as a statistically established win.
+
+## Reading the charts
+
+- Throughput dots are sample medians; whiskers span the minimum and maximum of
+  the samples, not confidence intervals. Percentages divide the two medians.
+- Payload curves show only the measured 1 KiB and 64 KiB identity bodies.
+  Lines connect those endpoints without fitting or inventing intermediate data.
+  Additional curve points require matching benchmark cases and renderer changes.
+- Server CPU is the median measured server CPU time per completed request.
+- Memory is the maximum sample sum of server/client lifetime `VmHWM`, including
+  startup and warmup. It is not a simultaneous peak, server-only RSS, or heap size.
+
+The current snapshot uses Bemo Native Image `-O3`, native HTTP, Rustls/aws-lc-rs,
+and io_uring against stock OpenJDK Netty epoll/JDK TLS. Four persistent clients
+use the same external OpenJDK Netty NIO load generator. Each server has one I/O
+thread; server/client heaps are 256 MiB each. Each sample warms 5,000 rounds,
+then measures 25,000 rounds per client, completing 100,000 requests. Gzip uses
+application compression, with compressible fixed-pattern bodies. These compare
+the complete stacks, including their different HTTP/TLS implementations.
+See [measurement methodology](../measurement.md) for timing, ownership,
+backend selection, and environment controls.

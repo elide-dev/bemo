@@ -58,6 +58,9 @@ each run. Native and JVM XML have separate directories.
 
 ## Performance measurement
 
+The README's performance graphics are generated from checked-in raw samples
+with `make bench-graphs`. See [chart provenance and refresh instructions](performance/README.md).
+
 `check.bench.yml` is called by the reusable `on.verify.yml` flow for PRs, main
 pushes, scheduled checks, and manual dispatch.
 It follows Bali's and Komodo's split between CPU simulation and wall time.
