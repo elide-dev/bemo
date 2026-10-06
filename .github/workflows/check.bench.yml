@@ -45,12 +45,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-bench
       - name: Check report and comparison logic
         run: python3 -m unittest discover -s tools -p 'test_*.py'
       - run: make bench-prepare
       - name: Measure RPS and whole-process RSS
-        run: make bench-transport
+        run: |
+          sudo -n prlimit --pid $$ --memlock=unlimited:unlimited
+          make bench-transport
       - name: Fetch most recent main baseline
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,7 +99,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-bench
       - uses: ./.github/actions/setup-cargo-tools
         with:
           tools: codspeed
@@ -109,6 +111,7 @@ jobs:
           mode: walltime
           runner-version: '5.2.1'
           run: |
+            sudo -n prlimit --pid $$ --memlock=unlimited:unlimited
             cargo codspeed run
             codspeed run
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

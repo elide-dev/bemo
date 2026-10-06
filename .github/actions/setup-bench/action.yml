@@ -1,0 +1,18 @@
+name: Setup Bemo benchmarks
+description: Stock OpenJDK load generator and GraalVM Native Image server compiler
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup
+    - name: Retain stock OpenJDK for the comparator and load generator
+      shell: bash
+      run: echo "BEMO_BENCH_JAVA=$JAVA_HOME/bin/java" >> "$GITHUB_ENV"
+    - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      with:
+        distribution: graalvm
+        java-version: '25'
+    - name: Verify both benchmark runtimes
+      shell: bash
+      run: |
+        "$BEMO_BENCH_JAVA" -version
+        native-image --version
