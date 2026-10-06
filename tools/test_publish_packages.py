@@ -128,6 +128,20 @@ class PackagePublishingTest(unittest.TestCase):
             '</snapshotVersions></versioning></metadata>').encode()
       with patch.object(packages, "read_remote", side_effect=lambda url, headers: remote[url]):
         packages.verify_remote(output, "0.1.0-SNAPSHOT", {})
+        for url in list(remote):
+          if not url.endswith("maven-metadata.xml"):
+            continue
+          metadata = packages.ET.fromstring(remote[url])
+          versioning = metadata.find("versioning")
+          snapshot = packages.ET.SubElement(versioning, "snapshot")
+          packages.ET.SubElement(snapshot, "timestamp").text = "20261006.000000"
+          packages.ET.SubElement(snapshot, "buildNumber").text = "1"
+          entries = versioning.find("snapshotVersions")
+          for entry in list(entries):
+            if entry.findtext("classifier") in packages.release.PLATFORMS.values():
+              entries.remove(entry)
+          remote[url] = packages.ET.tostring(metadata)
+        packages.verify_remote(output, "0.1.0-SNAPSHOT", {})
         jar = next(url for url in remote if url.endswith(".jar"))
         remote[jar] = b"changed"
         with self.assertRaisesRegex(RuntimeError, "differs from verified staging"):

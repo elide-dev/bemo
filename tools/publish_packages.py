@@ -98,14 +98,21 @@ def verify_remote(repository, value, headers, url=REGISTRY):
     artifact = f"bemo-{module}"
     directory = f"dev/elide/bemo/{artifact}/{value}"
     versions = {}
+    snapshot_version = None
     if value.endswith("-SNAPSHOT"):
       metadata = ET.fromstring(read_remote(f"{url}/{directory}/maven-metadata.xml", headers))
+      timestamp = metadata.findtext("versioning/snapshot/timestamp")
+      number = metadata.findtext("versioning/snapshot/buildNumber")
+      if timestamp and number:
+        snapshot_version = f"{value.removesuffix('SNAPSHOT')}{timestamp}-{number}"
       for entry in metadata.findall("versioning/snapshotVersions/snapshotVersion"):
         versions[(entry.findtext("extension"), entry.findtext("classifier") or "")] = entry.findtext("value")
     for path in sorted((repository / directory).iterdir()):
       extension = path.suffix[1:]
       classifier = path.stem[len(f"{artifact}-{value}"):].removeprefix("-")
-      resolved = versions.get((extension, classifier)) if value.endswith("-SNAPSHOT") else value
+      # Registries may omit classifier entries; Maven also resolves snapshots
+      # from the shared timestamp and build number. Still verify every byte.
+      resolved = (versions.get((extension, classifier)) or snapshot_version) if value.endswith("-SNAPSHOT") else value
       if not resolved:
         raise RuntimeError(f"Published snapshot metadata is missing {path.name}")
       filename = f"{artifact}-{resolved}" + (f"-{classifier}" if classifier else "") + f".{extension}"
