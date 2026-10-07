@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Signature and generated-source failure contracts for the svmgen integration."""
+"""Signature and generated-source failure contracts for the Myna integration."""
 import unittest
 import subprocess
 import re
@@ -16,21 +16,29 @@ class SeamTest(unittest.TestCase):
 
   def test_signature_drift(self):
     with self.assertRaisesRegex(RuntimeError, 'signature'):
-      seam.verify_signatures({'query': ('u32', [])}, {'query': ('u64', [])}, {})
+      seam.verify_signatures({'query': ('u32', [])}, {'query': ('u64', [])})
 
   def test_missing_callback(self):
     with self.assertRaisesRegex(RuntimeError, 'coverage'):
-      seam.verify_signatures({'poll': ('i32', [('callback', 'callback_t')])}, {}, {})
+      seam.verify_signatures({'poll': ('i32', [('callback', 'callback_t')])}, {})
 
-  def test_shape_guard(self):
-    with self.assertRaisesRegex(RuntimeError, 'generated Java'):
-      seam.adapt_java('package alien; public final class Surprise {}')
+  def test_all_callback_imports_are_described(self):
+    functions = seam.descriptor_functions(seam.DESCRIPTOR.read_text())
+    self.assertEqual(len(functions), 90)
+    for suffix in ('callback', 'batch_callback'):
+      self.assertIn('elide_transport_driver_poll_' + suffix, functions)
+
+  def test_callback_signature_drift(self):
+    descriptor = seam.DESCRIPTOR.read_text().replace(
+        'param events type=ptr<void>', 'param events type=u64', 1)
+    with self.assertRaisesRegex(RuntimeError, 'Callback.*signature'):
+      seam.validate_descriptor(descriptor)
 
   def test_untracked_sources_do_not_enter_pinned_build(self):
     with tempfile.TemporaryDirectory() as tmp:
       root = Path(tmp)
       subprocess.run(['git', 'init', '-q', root], check=True)
-      sources = root / 'src/main/java/dev/elide/seam'
+      sources = root / 'src/main/java/dev/elide/myna'
       sources.mkdir(parents=True)
       tracked = sources / 'Tracked.java'
       tracked.write_text('class Tracked {}')

@@ -1,7 +1,6 @@
 # Bemo public C ABI inventory. Handles are integers; pointers borrow caller memory.
-# Callback function pointers are inventoried separately in callbacks.json.
 # Leaf contracts preserve reviewed existing Native Image transition policies.
-module bemo abi=3 target=aarch64-apple-darwin java_package=dev.elide.bemo.svm.generated java_class=BemoNatives
+module bemo abi=3 target=aarch64-apple-darwin java_package=dev.elide.bemo.svm.generated java_class=BemoNatives c_context=dev.elide.bemo.svm.BemoDirectives c_library=bemo_ffi c_library_static=true
 
 struct elide_transport_buffer_view_t size=32 align=8
   field address type=ptr<void> offset=0
@@ -508,4 +507,33 @@ end
 
 import elide_transport_workload_close symbol=elide_transport_workload_close return=i32 error=no_failure
   param workload type=u64
+end
+
+callback elide_transport_event_callback_t return=i32 java_type=dev.elide.bemo.transport.svm.CapiTransportNative.EventPointerCallback
+  param context type=ptr<void>
+  param event type=ptr<void>
+end
+
+callback elide_transport_event_batch_callback_t return=i32 java_type=dev.elide.bemo.transport.svm.CapiTransportNative.PollCallback
+  param context type=ptr<void>
+  param events type=ptr<void>
+  param count type=u32
+end
+
+import elide_transport_driver_poll_callback symbol=elide_transport_driver_poll_callback return=i32 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param timeoutNanos type=u64
+  param maximum type=u32
+  param callback type=fn<elide_transport_event_callback_t>
+  param context type=ptr<void>
+end
+
+import elide_transport_driver_poll_batch_callback symbol=elide_transport_driver_poll_batch_callback return=i32 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param timeoutNanos type=u64
+  param maximum type=u32
+  param callback type=fn<elide_transport_event_batch_callback_t>
+  param context type=ptr<void>
 end

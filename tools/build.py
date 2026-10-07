@@ -405,7 +405,6 @@ def package():
     shutil.copy2(ROOT / "include" / name, resource)
   for name in ("seam.json", "seam.abi", "seam.ll"):
     shutil.copy2(seam.output() / name, resource)
-  shutil.copy2(ROOT / "seams/callbacks.json", resource)
   for name in ("LICENSE", "NOTICE"):
     shutil.copy2(ROOT / name, native / "META-INF" / name)
   prefix = stage / MAVEN_PATH / "bemo-native-image" / VERSION / f"bemo-native-image-{VERSION}"

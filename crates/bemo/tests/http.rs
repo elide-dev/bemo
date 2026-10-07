@@ -389,7 +389,7 @@ struct CallbackState {
   stop: bool,
 }
 
-unsafe extern "C" fn on_request(context: u64, event: *const NativeEvent) -> i32 {
+unsafe extern "C" fn on_request(context: *mut std::ffi::c_void, event: *const NativeEvent) -> i32 {
   // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
   let state = unsafe { &mut *(context as *mut CallbackState) };
   // SAFETY: The driver supplies a live initialized event for this synchronous callback.
@@ -457,7 +457,7 @@ fn callback_request(close: bool) {
         50_000_000,
         8,
         Some(on_request),
-        &mut state as *mut CallbackState as u64,
+        &mut state as *mut CallbackState as *mut std::ffi::c_void,
       )
     };
     assert!(count >= 0);
@@ -511,7 +511,7 @@ fn callback_poll_retains_pipeline_after_callback_stops() {
         50_000_000,
         8,
         Some(on_request),
-        &mut state as *mut CallbackState as u64,
+        &mut state as *mut CallbackState as *mut std::ffi::c_void,
       )
     };
     assert!(count >= 0);
@@ -531,14 +531,19 @@ fn callback_batch_request(stop: bool) {
     offered: Vec<u32>,
     stop: bool,
   }
-  unsafe extern "C" fn consume(context: u64, events: *const NativeEvent, count: u32) -> i32 {
+  unsafe extern "C" fn consume(context: *mut std::ffi::c_void, events: *const NativeEvent, count: u32) -> i32 {
     // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut BatchState) };
     state.offered.push(count);
     let consumed = if state.stop { 1 } else { count };
     for i in 0..consumed {
       // SAFETY: The loop stays within the batch and passes the live nested callback context synchronously.
-      unsafe { on_request(&mut state.callback as *mut CallbackState as u64, events.add(i as usize)) };
+      unsafe {
+        on_request(
+          &mut state.callback as *mut CallbackState as *mut std::ffi::c_void,
+          events.add(i as usize),
+        )
+      };
     }
     if state.stop {
       -(consumed as i32)
@@ -573,7 +578,7 @@ fn callback_batch_request(stop: bool) {
         50_000_000,
         8,
         Some(consume),
-        &mut state as *mut BatchState as u64,
+        &mut state as *mut BatchState as *mut std::ffi::c_void,
       )
     };
     assert!(count >= 0);
@@ -609,7 +614,7 @@ fn callback_batch_consumes_pipeline_in_one_upcall() {
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn callback_poll_revalidates_after_driver_release() {
-  unsafe extern "C" fn release(context: u64, event: *const NativeEvent) -> i32 {
+  unsafe extern "C" fn release(context: *mut std::ffi::c_void, event: *const NativeEvent) -> i32 {
     // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut (u64, Vec<i32>)) };
     // SAFETY: The driver supplies a live initialized event for this synchronous callback.
@@ -641,7 +646,7 @@ fn callback_poll_revalidates_after_driver_release() {
         50_000_000,
         8,
         Some(release),
-        &mut state as *mut (u64, Vec<i32>) as u64,
+        &mut state as *mut (u64, Vec<i32>) as *mut std::ffi::c_void,
       )
     };
     assert_eq!(status, if state.1.is_empty() { 0 } else { -1 });
@@ -663,7 +668,7 @@ fn callback_batch_releases_unconsumed_requests_with_driver() {
     released: bool,
   }
 
-  unsafe extern "C" fn release(context: u64, events: *const NativeEvent, count: u32) -> i32 {
+  unsafe extern "C" fn release(context: *mut std::ffi::c_void, events: *const NativeEvent, count: u32) -> i32 {
     // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut ReleaseState) };
     // SAFETY: The driver supplies a live initialized event for this synchronous callback.
@@ -709,7 +714,7 @@ fn callback_batch_releases_unconsumed_requests_with_driver() {
         50_000_000,
         8,
         Some(release),
-        &mut state as *mut ReleaseState as u64,
+        &mut state as *mut ReleaseState as *mut std::ffi::c_void,
       )
     };
     assert_eq!(status, if state.released { -1 } else { 0 });
@@ -1513,7 +1518,7 @@ fn callback_cork_coalesces_the_initial_pipeline_send() {
     exchanges: Vec<u64>,
     statuses: Vec<i32>,
   }
-  unsafe extern "C" fn reply(context: u64, event: *const NativeEvent) -> i32 {
+  unsafe extern "C" fn reply(context: *mut std::ffi::c_void, event: *const NativeEvent) -> i32 {
     // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let replies = unsafe { &mut *(context as *mut Replies) };
     // SAFETY: The driver supplies a live initialized event for this synchronous callback.
@@ -1557,7 +1562,7 @@ fn callback_cork_coalesces_the_initial_pipeline_send() {
           50_000_000,
           8,
           Some(reply),
-          &mut replies as *mut Replies as u64,
+          &mut replies as *mut Replies as *mut std::ffi::c_void,
         )
       } >= 0
     );

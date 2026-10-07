@@ -67,3 +67,26 @@ Passed `make fmt`, `make build`, `make check`, `make test`, `make test-native-im
 The staged macOS ARM64 archive contains 307 bitcode and 524 native members. The extracted classifier linked and ran its ownership consumer through ThinLTO, and saved optimized linker IR contained a Bemo definition. Linux CI is configured but was not executed locally. LLVM provisioning extraction/checksum contracts passed; the large upstream distribution downloads were not installed locally, where LLVM 23.1.1 was already available.
 
 Ruling: select the AWS-LC cc builder and LLVM AR/RANLIB on macOS. A direct reproduction showed Apple ar omitting bcm bitcode as an unknown architecture, causing a missing CPU setup symbol. The LLVM-archived dependency passed the actual consumer link.
+
+## Myna 0.5.0 follow-up
+
+Updated the generator pin to `34a0213e0ce05a7d46d351e2208ed9518b802a98`
+from `https://github.com/elide-dev/myna`. Native Image linkage configuration
+and both callback poll imports now live in the descriptor; removed the Java
+annotation rewrite and separate callback inventory. Bemo retains its public
+callback carriers, entry-point literal, isolate dispatch, and lifecycle policy.
+Development overrides now use `MYNA_HOME`.
+
+The first Myna ThinLTO application exposed the existing `u64` Rust callback
+context versus `void *` header mismatch. Aligned both Rust callback APIs and
+the generated FFI exports with pointer contexts; existing reentrant, close,
+release, and batch callback contracts now pass pointers. C ABI declarations
+and Java consumer interfaces retain their existing signatures.
+
+Follow-up verification: `make build`, `make check`, `make test` (working stock
+JDK override), `make test-native-image`, `make test-bitcode`, `make package`,
+and extracted `tools/verify_package.py` passed on macOS ARM64. All 307 Rust
+tests and 48 Python tooling tests passed. Linux target generation freshness
+passed; execution on Linux awaits CI. Myna applied all 90 functions to the
+archive. Reviewed this follow-up diff locally, including pointer contexts,
+callback retention, clean class directories, and pinned generator/helper paths.

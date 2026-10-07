@@ -101,15 +101,15 @@ def toolchain():
 def apply(archive, contracts):
   config = tool('llvm-config')
   llvm_dir = subprocess.check_output([config, '--cmakedir'], text=True).strip()
-  checkout = Path(os.environ.get('SVMGEN_HOME', ROOT / 'build/tools/svmgen')).resolve()
-  helper_dir = ROOT / 'build/tools/svmgen-llvm'
+  checkout = Path(os.environ.get('MYNA_HOME', ROOT / 'build/tools/myna')).resolve()
+  helper_dir = ROOT / 'build/tools/myna-llvm'
   seam.run('cmake', '-S', checkout / 'llvm', '-B', helper_dir,
            f'-DLLVM_DIR={llvm_dir}', '-DCMAKE_BUILD_TYPE=Release',
            f'-DCMAKE_C_COMPILER={tool("clang")}', f'-DCMAKE_CXX_COMPILER={tool("clang++")}')
   seam.run('cmake', '--build', helper_dir, '--parallel', '4')
   # The helper owns all ABI/contract validation. Invoke it directly from the
   # build driver so JVM subprocess configuration cannot affect native tooling.
-  seam.run(helper_dir / 'svmgen-llvm', '--contracts', contracts, '--input', archive,
+  seam.run(helper_dir / 'myna-llvm', '--contracts', contracts, '--input', archive,
            '--output', ARCHIVE)
 
 
@@ -138,7 +138,7 @@ def build():
   original = DIRECTORY / 'cargo' / seam.target_triple() / 'bitcode/libbemo_ffi.a'
   apply(original, metadata / 'seam.ll')
   members = inventory(ARCHIVE.read_bytes())
-  pins = json.loads((ROOT / 'tools/versions.json').read_text())['svmgen']
+  pins = json.loads((ROOT / 'tools/versions.json').read_text())['myna']
   manifest = {'schema': 1, 'target': seam.target_triple(), 'archive': ARCHIVE.name,
               'sha256': hashlib.sha256(ARCHIVE.read_bytes()).hexdigest(), 'toolchain': versions,
               'rustflags': flags, 'profile': 'bitcode', 'generator': pins,

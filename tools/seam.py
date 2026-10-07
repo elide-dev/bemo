@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pinned svmgen generation, ABI inventory checks, and Bemo annotation integration."""
+"""Pinned Myna generation, ABI inventory checks, and callback contracts."""
 import argparse
 import json
 import os
@@ -14,7 +14,6 @@ BUILD = ROOT / 'build/seam'
 DESCRIPTOR = ROOT / 'seams/bemo.seam'
 JAVA = ROOT / 'packages/native-image/src/main/java/dev/elide/bemo/svm/generated/BemoNatives.java'
 CANONICAL_TARGET = 'aarch64-apple-darwin'
-PACKAGE = 'dev.elide.bemo.svm.generated'
 
 
 def run(*args, **kwargs):
@@ -69,31 +68,35 @@ def descriptor_functions(text):
   return functions
 
 
-def verify_signatures(headers, descriptors, callbacks):
-  if set(headers) != set(descriptors) | set(callbacks) or set(descriptors) & set(callbacks):
-    raise RuntimeError('Seam symbol coverage differs from public headers/callback inventory')
+def verify_signatures(headers, descriptors):
+  if set(headers) != set(descriptors):
+    raise RuntimeError('Seam symbol coverage differs from public headers')
   for symbol, signature in headers.items():
-    candidate = descriptors.get(symbol, callbacks.get(symbol))
+    candidate = descriptors[symbol]
     candidate = (candidate[0], [tuple(p) for p in candidate[1]])
     if signature != candidate:
       raise RuntimeError(f'Seam signature mismatch: {symbol}: {signature} != {candidate}')
 
 
-def validate_descriptor():
+def validate_descriptor(descriptor=None):
+  descriptor = descriptor if descriptor is not None else DESCRIPTOR.read_text()
   headers = {}
   for name in ('bemo.h', 'elide_transport.h'):
     headers.update(header_functions((ROOT / 'include' / name).read_text()))
-  callbacks = json.loads((ROOT / 'seams/callbacks.json').read_text())
   text = (ROOT / 'include/elide_transport.h').read_text()
   callback_types = re.findall(r'typedef int32_t \(\*(elide_transport_event_(?:batch_)?callback_t)\)\((.*?)\);', text, re.S)
-  expected_callbacks = {
-      'elide_transport_event_callback_t': 'void *context, const void *event',
-      'elide_transport_event_batch_callback_t': 'void *context, const void *events, uint32_t count',
-  }
-  actual_callbacks = {name: re.sub(r'\s+', ' ', params).strip() for name, params in callback_types}
-  if actual_callbacks != expected_callbacks:
-    raise RuntimeError('Callback function-pointer signature drift; review handwritten adapters')
-  descriptor = DESCRIPTOR.read_text()
+  callbacks = {}
+  for name, params in callback_types:
+    parsed = header_functions(f'int32_t {name}({params});')[name]
+    callbacks[name] = parsed
+  declared_callbacks = {}
+  for match in re.finditer(r'^callback (\w+) return=(\S+)[^\n]*\n(.*?)^end$', descriptor, re.M | re.S):
+    name, returns, body = match.groups()
+    declared_callbacks[name] = (returns, re.findall(r'^\s*param (\w+) type=(\S+)', body, re.M))
+  if callbacks != declared_callbacks:
+    raise RuntimeError('Callback function-pointer signature drift')
+  for name, (returns, params) in headers.items():
+    headers[name] = (returns, [(param, f'fn<{typ}>' if typ in callbacks else typ) for param, typ in params])
   records = re.findall(r'^struct (\w+) size=(\d+) align=(\d+)\n(.*?)^end$', descriptor, re.M | re.S)
   for name, _, _, body in records:
     record = re.search(r'typedef struct \{([^}]+)\}\s*' + name + r';', text)
@@ -108,7 +111,7 @@ def validate_descriptor():
     expected = re.findall(r'^\s*field (\w+) type=(\S+)', body, re.M)
     if fields != expected:
       raise RuntimeError(f'Record field signature drift: {name}')
-  verify_signatures(headers, descriptor_functions(DESCRIPTOR.read_text()), callbacks)
+  verify_signatures(headers, descriptor_functions(descriptor))
 
 
 def validate_rust_signatures():
@@ -134,6 +137,17 @@ def validate_rust_signatures():
     types = []
     for parameter in arguments(body):
       typ = parameter.split(':', 1)[1].strip()
+      callback = re.fullmatch(r'Option<unsafe extern "C" fn\((.*)\) -> i32>', typ)
+      if callback:
+        abi_types = [item.strip() for item in arguments(callback[1])]
+        expected_types = ['*mut c_void', '*const NativeEvent']
+        callback_name = 'elide_transport_event_callback_t'
+        if name == 'elide_transport_driver_poll_batch_callback':
+          expected_types.append('u32')
+          callback_name = 'elide_transport_event_batch_callback_t'
+        if abi_types != expected_types:
+          raise RuntimeError(f'Rust callback signature mismatch: {name}')
+        typ = f'fn<{callback_name}>'
       pointer = re.match(r'\*(?:const|mut) (.+)', typ)
       if pointer:
         pointee = pointer[1].split('::')[-1]
@@ -162,7 +176,7 @@ def verify_layouts(directory):
 
 def generator_sources(checkout):
   tracked = subprocess.check_output(['git', '-C', str(checkout), 'ls-files',
-                                    'src/main/java/dev/elide/seam'], text=True).splitlines()
+                                    'src/main/java/dev/elide/myna'], text=True).splitlines()
   # Compile only git-tracked sources. Untracked files must not alter output
   # while provenance reports the pinned clean revision.
   return sorted(checkout / path for path in tracked
@@ -171,21 +185,21 @@ def generator_sources(checkout):
 
 def generator():
   """Compile the pinned dependency with Elide; overrides must use that same revision."""
-  pins = json.loads((ROOT / 'tools/versions.json').read_text())['svmgen']
-  checkout = Path(os.environ.get('SVMGEN_HOME', ROOT / 'build/tools/svmgen')).resolve()
+  pins = json.loads((ROOT / 'tools/versions.json').read_text())['myna']
+  checkout = Path(os.environ.get('MYNA_HOME', ROOT / 'build/tools/myna')).resolve()
   if not checkout.exists():
     run('git', 'clone', pins['repository'], checkout)
     run('git', '-C', checkout, 'checkout', '--detach', pins['revision'])
   revision = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip()
   if subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain', '--untracked-files=no'], text=True).strip():
-    raise RuntimeError('svmgen tracked sources must be clean for reproducible generation')
+    raise RuntimeError('myna tracked sources must be clean for reproducible generation')
   if revision != pins['revision']:
-    if 'SVMGEN_HOME' in os.environ:
-      raise RuntimeError('svmgen revision differs from tools/versions.json; refresh the pin and regenerate')
+    if 'MYNA_HOME' in os.environ:
+      raise RuntimeError('myna revision differs from tools/versions.json; refresh the pin and regenerate')
     run('git', '-C', checkout, 'fetch', 'origin', pins['revision'])
     run('git', '-C', checkout, 'checkout', '--detach', pins['revision'])
     revision = pins['revision']
-  directory = ROOT / 'build/tools/svmgen-classes' / revision
+  directory = ROOT / 'build/tools/myna-classes' / revision
   if not (directory / '.compiled-tracked').exists():
     import shutil
     shutil.rmtree(directory, ignore_errors=True)
@@ -193,32 +207,7 @@ def generator():
     inputs = generator_sources(checkout)
     run(os.environ.get('ELIDE', 'elide'), 'javac', '--', '--release', '22', '-d', directory, *inputs)
     (directory / '.compiled-tracked').write_text(revision + '\n')
-  return [os.environ.get('ELIDE', 'elide'), 'java', '--', '-cp', str(directory), 'dev.elide.seam.cli.Main']
-
-
-def adapt_java(source):
-  package = f'package {PACKAGE};'
-  declaration = 'public final class BemoNatives {'
-  if source.count(package) != 1 or source.count(declaration) != 1 or 'Generated by svmgen.' not in source:
-    raise RuntimeError('Unexpected generated Java shape; review the pinned svmgen backend')
-  source = source.replace(package, package + '''
-
-import java.util.List;
-import org.graalvm.nativeimage.c.CContext;
-import org.graalvm.nativeimage.c.function.CLibrary;
-''')
-  source = source.replace(declaration, '''/** Raw generated imports for Bemo ABI 1 and transport ABI 3. */
-@CContext(BemoNatives.Headers.class)
-@CLibrary(value = "bemo_ffi", requireStatic = true)
-''' + declaration + '''
-  public static final class Headers implements CContext.Directives {
-    @Override
-    public List<String> getHeaderFiles() {
-      return List.of("<bemo.h>", "<elide_transport.h>");
-    }
-  }
-''')
-  return source
+  return [os.environ.get('ELIDE', 'elide'), 'java', '--', '-cp', str(directory), 'dev.elide.myna.cli.Main']
 
 
 def generate(check=False, target=None):
@@ -233,7 +222,7 @@ def generate(check=False, target=None):
     destination.mkdir(parents=True, exist_ok=True)
     verify_layouts(destination)
     run(*cli, 'generate', DESCRIPTOR, '--out', destination, '--target', triple)
-  source = adapt_java((output(CANONICAL_TARGET) / 'BemoNatives.java').read_text())
+  source = (output(CANONICAL_TARGET) / 'BemoNatives.java').read_text()
   from build import VERSIONS, jar_dependency
   formatter = jar_dependency('com.google.googlejavaformat', 'google-java-format', VERSIONS['java_format'], 'all-deps')
   with tempfile.TemporaryDirectory(prefix='bemo-seam-') as tmp:

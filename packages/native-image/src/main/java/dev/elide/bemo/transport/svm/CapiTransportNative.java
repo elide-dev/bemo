@@ -17,7 +17,6 @@ import org.graalvm.nativeimage.StackValue;
 import org.graalvm.nativeimage.c.CContext;
 import org.graalvm.nativeimage.c.function.CEntryPoint;
 import org.graalvm.nativeimage.c.function.CEntryPointLiteral;
-import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.nativeimage.c.function.CFunctionPointer;
 import org.graalvm.nativeimage.c.function.CLibrary;
 import org.graalvm.nativeimage.c.function.InvokeCFunctionPointer;
@@ -537,7 +536,16 @@ public final class CapiTransportNative implements TransportNative {
     return driverPoll0(driver, timeoutNanos, batch, maximum);
   }
 
-  private interface PollCallback extends CFunctionPointer {
+  /** Native single-event callback carrier for the public C ABI. */
+  public interface EventPointerCallback extends CFunctionPointer {
+    /** Receives a single event using the caller's opaque context. */
+    @InvokeCFunctionPointer
+    int invoke(VoidPointer context, VoidPointer event);
+  }
+
+  /** Native event batch callback retained by the polling adapter. */
+  public interface PollCallback extends CFunctionPointer {
+    /** Receives a batch on the polling isolate thread. */
     @InvokeCFunctionPointer
     int invoke(IsolateThread thread, Pointer events, int count);
   }
@@ -553,6 +561,8 @@ public final class CapiTransportNative implements TransportNative {
 
   private static final ThreadLocal<PollState> POLL_STATE = ThreadLocal.withInitial(PollState::new);
 
+  // Invoked through the Native Image entry-point literal above.
+  @SuppressWarnings({"UnusedMethod", "UnusedVariable"})
   @CEntryPoint
   private static int pollEvent(IsolateThread thread, Pointer events, int count) {
     PollState state = POLL_STATE.get();
@@ -577,15 +587,6 @@ public final class CapiTransportNative implements TransportNative {
     }
   }
 
-  @CFunction("elide_transport_driver_poll_batch_callback")
-  private static native int driverPollCallback0(
-      long workload,
-      long driver,
-      long timeoutNanos,
-      int maximum,
-      PollCallback callback,
-      IsolateThread thread);
-
   @Override
   public boolean supportsPollCallback() {
     return true;
@@ -599,13 +600,13 @@ public final class CapiTransportNative implements TransportNative {
     state.callback = java.util.Objects.requireNonNull(callback);
     try {
       int count =
-          driverPollCallback0(
+          BemoNatives.elide_transport_driver_poll_batch_callback(
               workload,
               driver,
               timeoutNanos,
               maximum,
               POLL_CALLBACK.getFunctionPointer(),
-              CurrentIsolate.getCurrentThread());
+              WordFactory.pointer(CurrentIsolate.getCurrentThread().rawValue()));
       if (state.failure instanceof Error error) throw error;
       if (state.failure instanceof RuntimeException failure) throw failure;
       if (state.failure != null) throw new AssertionError(state.failure);

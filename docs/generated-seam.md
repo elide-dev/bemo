@@ -1,10 +1,14 @@
 # Generated Native Image imports and ThinLTO libraries
 
-Bemo uses a pinned [svmgen](https://github.com/elide-dev/svmgen) revision to
-produce its raw Native Image C imports. The descriptor is `seams/bemo.seam`;
-`seams/callbacks.json` inventories the two callback signatures that remain
-handwritten. Existing Java adapters retain handle ownership, lifecycle checks,
-callback dispatch, and exception translation.
+Bemo uses a pinned [Myna](https://github.com/elide-dev/myna) revision to
+produce all 90 raw Native Image C imports. `seams/bemo.seam` includes both
+callback signatures and references Bemo’s public function-pointer interfaces.
+Myna emits `@CContext` and `@CLibrary` directly from the descriptor, using
+Bemo’s header directives. Existing Java adapters retain handle ownership,
+lifecycle checks, callback dispatch, entry-point literals, and exception
+translation. Generation requires no annotation rewriting. Rust callback contexts
+use `*mut c_void`, matching the existing `void *` C contract; Rust callers pass
+context pointers and use `null_mut()` for a null context.
 
 ## Generation
 
@@ -23,11 +27,11 @@ committed `BemoNatives.java` against fresh generation. C signatures, Rust export
 signatures, callback function-pointer types, and record layouts must agree.
 The generated Java source is included in the ordinary sources JAR.
 
-For development, set `SVMGEN_HOME` to a clean checkout at the recorded revision.
+For development, set `MYNA_HOME` to a clean checkout at the recorded revision.
 When updating the generator, fast-forward that checkout, review the changed
 interfaces, update the revision in `tools/versions.json`, run
 `make generate-seam`, and rerun the contracts. Never move CI onto an unpinned
-branch. The generator output has no runtime dependency on svmgen.
+branch. The generator output has no runtime dependency on Myna.
 
 Common Java artifacts use the canonical `aarch64-apple-darwin` descriptor.
 The generated Java `ABI_FINGERPRINT` identifies that canonical descriptor;
@@ -51,7 +55,7 @@ The additional Maven classifier is `<platform>-thinlto` on
 - `libbemo_ffi_thinlto.a`, a regular static archive containing LLVM bitcode and
   required native members;
 - the public headers, target-specific seam JSON, fingerprint and LLVM contracts;
-- the explicit callback inventory and a manifest with archive digest, member
+- a manifest with archive digest, member
   coverage, compiler versions, flags, and generator revision.
 
 Resources live under `META-INF/native/<platform>/`, as in the ordinary native
@@ -88,7 +92,7 @@ exercise the ordinary static library; the variant's C consumer independently
 proves its linker path. Merely pointing Native Image at bitcode without an
 LTO-capable linker is insufficient.
 
-`svmgen`'s LLVM helper applies the generated contracts to the actual bitcode
+`Myna`'s LLVM helper applies the generated contracts to the actual bitcode
 archive before consumer indexing, preserving native members and rebuilding the
 archive index and modified module summaries. The initial descriptor makes no
 new LLVM optimizer promises. Existing reviewed Native Image leaf-call policies

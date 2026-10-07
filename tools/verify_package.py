@@ -150,7 +150,7 @@ def verify():
     with zipfile.ZipFile(variant_jar) as archive:
       resource = f"META-INF/native/{classifier()}/"
       for name in ("libbemo_ffi_thinlto.a", "manifest.json", "bemo.h", "elide_transport.h",
-                   "seam.json", "seam.abi", "seam.ll", "callbacks.json"):
+                   "seam.json", "seam.abi", "seam.ll"):
         (variant_dir / name).write_bytes(archive.read(resource + name))
     manifest = json.loads((variant_dir / "manifest.json").read_text())
     binary = variant_dir / "libbemo_ffi_thinlto.a"

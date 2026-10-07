@@ -16,10 +16,6 @@
   "checker": "4.3.0",
   "nullaway_dataflow": "4.2.3",
   "dataflow": "3.49.5-eisop1",
-  "svmgen": {
-    "repository": "https://github.com/elide-dev/svmgen.git",
-    "revision": "1bde5a11b1f25446e6410c27e6484546b4379c7d"
-  },
   "llvm": {
     "version": "23.1.1",
     "archives": {
@@ -32,5 +28,9 @@
         "sha256": "64220f1c99132ef7e580447781b84f96fbba6862a43a8f6522b423052cd67502"
       }
     }
+  },
+  "myna": {
+    "repository": "https://github.com/elide-dev/myna.git",
+    "revision": "34a0213e0ce05a7d46d351e2208ed9518b802a98"
   }
 }

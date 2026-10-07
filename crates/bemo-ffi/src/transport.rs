@@ -2,6 +2,7 @@
 //! C exports preserving Elide transport ABI 3.
 #![allow(clippy::too_many_arguments)]
 use bemo::abi::{BufferView, NativeEvent, ReceiveResult};
+use std::ffi::c_void;
 /// Forward to [`bemo::abi::engine::elide_transport_engine_context_new`].
 ///
 /// # Safety
@@ -603,8 +604,8 @@ pub unsafe extern "C" fn elide_transport_driver_poll_callback(
   driver: u64,
   timeout_ns: u64,
   maximum: u32,
-  callback: Option<unsafe extern "C" fn(u64, *const NativeEvent) -> i32>,
-  context: u64,
+  callback: Option<unsafe extern "C" fn(*mut c_void, *const NativeEvent) -> i32>,
+  context: *mut c_void,
 ) -> i32 {
   // SAFETY: the exported contract is identical to the Rust handle API.
   unsafe { bemo::abi::elide_transport_driver_poll_callback(workload, driver, timeout_ns, maximum, callback, context) }
@@ -620,8 +621,8 @@ pub unsafe extern "C" fn elide_transport_driver_poll_batch_callback(
   driver: u64,
   timeout_ns: u64,
   maximum: u32,
-  callback: Option<unsafe extern "C" fn(u64, *const NativeEvent, u32) -> i32>,
-  context: u64,
+  callback: Option<unsafe extern "C" fn(*mut c_void, *const NativeEvent, u32) -> i32>,
+  context: *mut c_void,
 ) -> i32 {
   // SAFETY: the exported contract is identical to the Rust handle API.
   unsafe {

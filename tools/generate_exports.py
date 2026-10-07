@@ -28,6 +28,7 @@ def generate():
 //! C exports preserving Elide transport ABI 3.
 #![allow(clippy::too_many_arguments)]
 use bemo::abi::{BufferView, NativeEvent, ReceiveResult};
+use std::ffi::c_void;
 ''']
   names = set()
   base = ROOT / "crates/bemo/src"

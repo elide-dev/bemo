@@ -198,12 +198,12 @@ fn conflicting_workloads_share_a_driver_and_close_independently() {
   let address = endpoint(large, listener.local_addr().unwrap());
   assert_eq!(elide_transport_socket_connect(small, driver, address), 0);
   assert_eq!(elide_transport_driver_new(small, common::backend() as u32, 4), 0);
-  unsafe extern "C" fn untouched(_: u64, _: *const NativeEvent, _: u32) -> i32 {
+  unsafe extern "C" fn untouched(_: *mut std::ffi::c_void, _: *const NativeEvent, _: u32) -> i32 {
     0
   }
   let poll =
     // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
-    |workload| unsafe { elide_transport_driver_poll_batch_callback(workload, driver, 0, 8, Some(untouched), 0) };
+    |workload| unsafe { elide_transport_driver_poll_batch_callback(workload, driver, 0, 8, Some(untouched), std::ptr::null_mut()) };
   assert_eq!(poll(small), INVALID, "closed callback workload");
   assert!(poll(large) >= 0, "open callback workload");
 
