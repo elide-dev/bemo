@@ -32,6 +32,34 @@ fn encode(compressor: &mut Compress, input: &[u8], output: &mut [u8]) -> usize {
   end + 8
 }
 
+#[cfg(feature = "zlib-rs")]
+fn checksums(input: &[u8], random: bool, iterations: usize) {
+  let size = input.len();
+  let expected = crc32fast::hash(input);
+  for (algorithm, hash) in [
+    ("crc32fast", crc32fast::hash as fn(&[u8]) -> u32),
+    (
+      "zlib-rs",
+      (|bytes: &[u8]| zlib_rs::crc32::crc32(0, bytes)) as fn(&[u8]) -> u32,
+    ),
+  ] {
+    assert_eq!(hash(input), expected);
+    for _ in 0..1000 {
+      black_box(hash(black_box(input)));
+    }
+    for sample in 0..3 {
+      let start = Instant::now();
+      for _ in 0..iterations {
+        black_box(hash(black_box(input)));
+      }
+      let nanos = start.elapsed().as_nanos() as f64 / iterations as f64;
+      println!(
+        "{{\"kind\":\"checksum\",\"algorithm\":\"{algorithm}\",\"size\":{size},\"random\":{random},\"sample\":{sample},\"ns_per_checksum\":{nanos}}}"
+      );
+    }
+  }
+}
+
 fn main() {
   let iterations: usize = std::env::args()
     .nth(1)
@@ -46,7 +74,14 @@ fn main() {
   } else {
     "zlib"
   };
-  for size in [1024, 65536] {
+  let levels: Vec<u32> = std::env::args()
+    .nth(2)
+    .unwrap_or_else(|| "6".into())
+    .split(',')
+    .map(|value| value.parse().unwrap())
+    .collect();
+  assert!(!levels.is_empty() && levels.iter().all(|level| *level <= 9));
+  for size in [1024, 65536, 131072] {
     for random in [false, true] {
       let pattern = b"{\"message\":\"bemo transport benchmark\",\"value\":12345}\n";
       let mut state = 17u64;
@@ -62,29 +97,33 @@ fn main() {
           }
         })
         .collect();
-      #[cfg(not(feature = "zlib-rs"))]
-      let mut compressor = Compress::new(Compression::new(6), false);
       #[cfg(feature = "zlib-rs")]
-      let mut compressor = Compress::new(6, false, 15);
-      let mut output = vec![0; size + size / 8 + 1024];
-      let length = encode(&mut compressor, &input, &mut output);
-      let mut decoded = Vec::new();
-      flate2::read::GzDecoder::new(&output[..length])
-        .read_to_end(&mut decoded)
-        .unwrap();
-      assert_eq!(decoded, input);
-      for _ in 0..1000 {
-        black_box(encode(&mut compressor, black_box(&input), &mut output));
-      }
-      for sample in 0..3 {
-        let start = Instant::now();
-        for _ in 0..iterations {
-          black_box(encode(&mut compressor, black_box(&input), black_box(&mut output)));
+      checksums(&input, random, iterations);
+      for level in &levels {
+        #[cfg(not(feature = "zlib-rs"))]
+        let mut compressor = Compress::new(Compression::new(*level), false);
+        #[cfg(feature = "zlib-rs")]
+        let mut compressor = Compress::new(*level as i32, false, 15);
+        let mut output = vec![0; size + size / 8 + 1024];
+        let length = encode(&mut compressor, &input, &mut output);
+        let mut decoded = Vec::new();
+        flate2::read::GzDecoder::new(&output[..length])
+          .read_to_end(&mut decoded)
+          .unwrap();
+        assert_eq!(decoded, input);
+        for _ in 0..1000 {
+          black_box(encode(&mut compressor, black_box(&input), &mut output));
         }
-        let nanos = start.elapsed().as_nanos() as f64 / iterations as f64;
-        println!(
-          "{{\"backend\":\"{backend}\",\"size\":{size},\"random\":{random},\"sample\":{sample},\"level\":6,\"compressed_bytes\":{length},\"ns_per_member\":{nanos}}}"
-        );
+        for sample in 0..3 {
+          let start = Instant::now();
+          for _ in 0..iterations {
+            black_box(encode(&mut compressor, black_box(&input), black_box(&mut output)));
+          }
+          let nanos = start.elapsed().as_nanos() as f64 / iterations as f64;
+          println!(
+            "{{\"backend\":\"{backend}\",\"size\":{size},\"random\":{random},\"sample\":{sample},\"level\":{level},\"compressed_bytes\":{length},\"ns_per_member\":{nanos}}}"
+          );
+        }
       }
     }
   }
