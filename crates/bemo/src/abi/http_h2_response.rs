@@ -176,12 +176,14 @@ impl Response {
     self.body_bytes = total;
     self.final_queued = final_part;
     self.queued_bytes += if self.bodiless { 0 } else { length };
+    // An empty view preserves the allocation lease without sending or crediting payload bytes.
+    let bytes = if self.bodiless {
+      bytes.slice(0..0).unwrap()
+    } else {
+      bytes
+    };
     self.parts.push_back(Part {
-      bytes: if self.bodiless {
-        Bytes::new()
-      } else {
-        Bytes::from_owner(bytes)
-      },
+      bytes: Bytes::from_owner(bytes),
       accepted: 0,
       sent: 0,
       final_part,
@@ -376,6 +378,53 @@ mod tests {
     }
     assert!(response.wire_complete());
     assert_eq!(budget.used(), 0);
+  }
+
+  #[test]
+  fn bodiless_retained_storage_waits_for_header_ack_or_cancellation() {
+    for (status, head_only) in [(200, true), (204, false), (205, false), (304, false)] {
+      for cancel in [false, true] {
+        let (mut pair, id, _incoming) = fixture_method(if head_only { "HEAD" } else { "GET" });
+        let budget = Budget::new(16);
+        let mut storage = Buffer::new(16, budget.clone()).unwrap();
+        storage.write(0, b"body").unwrap();
+        let frozen = storage.freeze();
+        let mut response = Response::new(&mut pair.server, id, status, &[], &[], 4, true, head_only, &budget).unwrap();
+        response.enqueue(frozen.slice(0..4).unwrap(), true).unwrap();
+        drop(frozen);
+        assert_eq!(budget.used(), 16, "accepted storage must survive caller release");
+        for _ in 0..8 {
+          response.progress(&mut pair.server, id).unwrap();
+          pair.tick();
+        }
+        assert_eq!(
+          budget.used(),
+          16,
+          "progress without physical acknowledgement grants no release"
+        );
+        assert!(response.take_events().is_empty());
+        assert!(!response.wire_complete());
+        assert!(pair.marks.iter().all(|mark| mark.stream != id || mark.kind != DATA));
+        if cancel {
+          let events = response.cancel();
+          assert_eq!(events.len(), 2);
+          assert!(events.iter().all(|result| *result < 0));
+          assert!(response.cancel().is_empty());
+        } else {
+          for mark in std::mem::take(&mut pair.marks) {
+            if mark.stream == id {
+              response.acknowledge(&mark);
+            }
+          }
+          let events = response.take_events();
+          assert_eq!(events.len(), 2);
+          assert!(events[0] > 0);
+          assert_eq!(events[1], 0);
+          assert!(response.wire_complete());
+        }
+        assert_eq!(budget.used(), 0);
+      }
+    }
   }
 
   #[test]
