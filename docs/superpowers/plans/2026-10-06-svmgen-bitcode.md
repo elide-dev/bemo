@@ -90,3 +90,26 @@ tests and 48 Python tooling tests passed. Linux target generation freshness
 passed; execution on Linux awaits CI. Myna applied all 90 functions to the
 archive. Reviewed this follow-up diff locally, including pointer contexts,
 callback retention, clean class directories, and pinned generator/helper paths.
+
+## Elide native toolchain follow-up
+
+CI’s clean packaging exposed the formatter installation order; fixed seam
+generation to install its pinned Java dependency. Subsequent platform jobs
+exposed missing SDK selection for upstream Clang and mismatched LLVM RTTI
+settings. Adopted the commit-pinned `elide-dev/toolchain/action` with release
+`2026.10.0` (LLVM 23.1.2), following the bundle’s target environment. Native
+tools remain exactly pinned while Rust must match the LLVM major. The helper
+uses LLVM’s RTTI configuration and separate CMake caches per compiler
+installation; macOS consumer links use Bemo’s deployment target.
+
+Package staging and extracted FFM/static/ThinLTO verification passed locally
+with the actual Elide bundle, the macOS 26 SDK, and the working stock JVM
+override. The local macOS 27 SDK’s new `arm64e.x1` TAPI format is unsupported
+by this LLVM linker; explicit SDK selection was needed for that local test.
+The CI target jobs will establish runner compatibility.
+
+Final checks: initial and cached helper builds, package staging, extracted
+package verification, `make check`, and 50 Python tooling tests passed.
+Compiler selection follows the action’s target aliases so repeated CMake
+configuration preserves `-fno-rtti`; the ThinLTO consumer passes an explicit
+Darwin target and deployment floor to override the bundle’s default floor.

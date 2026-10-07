@@ -69,10 +69,19 @@ the manifest reports every member rather than claiming full IR coverage.
 Use compatible LLVM tools for building, application, and final linkage.
 `LLVM_BIN` selects the tool directory; executables missing there are looked up
 on `PATH` (for example, Homebrew's separately installed LLD).
-The build checks Clang, LLD, and LLVM helper libraries against rustc's LLVM
-version. Package CI downloads the exact LLVM 23.1.1 distributions and validates
-the SHA-256 digests recorded in `tools/versions.json`; `tools/setup_llvm.py`
-can provision the same distributions locally. It uses LLVM archiving tools for dependency objects: Apple's archiver
+The build requires matching LLVM majors between Rust and the native toolchain,
+and exact pinned versions for Clang, LLD, and LLVM helper libraries. Package CI
+uses the commit-pinned `elide-dev/toolchain/action` with release `2026.10.0`
+(LLVM 23.1.2). The action verifies bundle checksums and supplies target compiler,
+linker, and SDK settings. Its native library archives also carry ThinLTO
+bitcode. `tools/setup_llvm.py` can provision the same release locally using
+the SHA-256 digests in `tools/versions.json`. Activate the bundle’s target
+environment with `elide-toolchain env --target <triple>`; select its `bin`
+directory with `LLVM_BIN`.
+
+The helper follows LLVM’s RTTI setting, and macOS compiler/linker calls
+receive the selected `SDKROOT`. It uses LLVM archiving tools for dependency
+objects: Apple's archiver
 can silently drop bitcode members whose architecture it cannot read.
 
 For a C consumer, after extracting the classifier to a directory:

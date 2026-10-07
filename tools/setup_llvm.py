@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Install an exact checksummed LLVM distribution for package CI."""
+"""Install the pinned checksummed Elide native toolchain locally."""
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -38,13 +39,13 @@ def install():
   if triple not in pins['archives']:
     raise RuntimeError(f'No pinned LLVM distribution for {triple}; configure LLVM_BIN manually')
   archive_pin = pins['archives'][triple]
-  destination = seam.ROOT / 'build/tools' / f'llvm-{pins["version"]}-{triple}'
+  destination = seam.ROOT / 'build/tools' / f'elide-toolchain-{pins["toolchain_version"]}-{triple}'
   marker = destination / '.installed-sha256'
   if not marker.exists() or marker.read_text().strip() != archive_pin['sha256']:
     destination.parent.mkdir(parents=True, exist_ok=True)
     archive = Path(str(destination) + '.tar.xz')
     if not archive.exists() or digest(archive) != archive_pin['sha256']:
-      print(f'Downloading pinned LLVM {pins["version"]} for {triple}', flush=True)
+      print(f'Downloading pinned Elide toolchain {pins["toolchain_version"]} for {triple}', flush=True)
       temporary = archive.with_suffix('.download')
       try:
         with urllib.request.urlopen(archive_pin['url'], timeout=600) as source, temporary.open('wb') as output:
@@ -61,14 +62,19 @@ def install():
         raise RuntimeError(f'Pinned LLVM distribution lacks {relative}')
     marker.write_text(archive_pin['sha256'] + '\n')
   binary_dir = destination / 'bin'
-  os.environ['LLVM_BIN'] = str(binary_dir)
+  target = 'arm64-apple-darwin' if triple == 'aarch64-apple-darwin' else triple
+  native_env = json.loads(subprocess.check_output(
+      [binary_dir / 'elide-toolchain', 'env', '--target', target, '--format', 'json'], text=True))
+  native_env['LLVM_BIN'] = str(binary_dir)
+  os.environ.update(native_env)
   import bitcode
   bitcode.toolchain()
   if os.environ.get('GITHUB_PATH'):
     with Path(os.environ['GITHUB_PATH']).open('a') as output:
       output.write(str(binary_dir) + '\n')
     with Path(os.environ['GITHUB_ENV']).open('a') as output:
-      output.write('LLVM_BIN=' + str(binary_dir) + '\n')
+      for key, value in native_env.items():
+        output.write(key + '=' + value + '\n')
   print(f'Installed LLVM tools: {binary_dir}')
   return binary_dir
 

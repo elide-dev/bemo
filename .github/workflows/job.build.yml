@@ -21,8 +21,17 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Install checksummed LLVM toolchain
-        run: python3 tools/setup_llvm.py
+      - name: Read native toolchain version
+        id: native-version
+        run: python3 -c 'import json; print("version=" + json.load(open("tools/versions.json"))["llvm"]["toolchain_version"])' >> "$GITHUB_OUTPUT"
+      - name: Install Elide native toolchain
+        id: native-toolchain
+        uses: elide-dev/toolchain/action@53b07cdc93ca8d9ba1be65725aa3362e1d4c1c09
+        with:
+          version: ${{ steps.native-version.outputs.version }}
+          target: ${{ runner.os == 'Linux' && 'x86_64-unknown-linux-gnu' || 'arm64-apple-darwin' }}
+      - name: Select LLVM tools
+        run: echo "LLVM_BIN=${{ steps.native-toolchain.outputs.home }}/bin" >> "$GITHUB_ENV"
       - name: Stage Maven artifacts
         run: make package
       - name: Validate staged artifacts

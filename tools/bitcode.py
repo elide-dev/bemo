@@ -84,28 +84,56 @@ def tool(name):
 
 def toolchain():
   rust = subprocess.check_output(['rustc', '-vV'], cwd=ROOT, text=True)
-  llvm = re.search(r'^LLVM version: (\S+)', rust, re.M)[1]
+  rust_llvm = re.search(r'^LLVM version: (\S+)', rust, re.M)[1]
+  llvm = json.loads((ROOT / 'tools/versions.json').read_text())['llvm']['version']
+  if rust_llvm.split('.')[0] != llvm.split('.')[0]:
+    raise RuntimeError(f'Toolchain LLVM {llvm} must match rustc LLVM major {rust_llvm}')
   clang = subprocess.check_output([tool('clang'), '--version'], text=True)
   if not re.search(r'clang version ' + re.escape(llvm) + r'\b', clang):
-    raise RuntimeError(f'Clang must match rustc LLVM {llvm}; configure LLVM_BIN')
+    raise RuntimeError(f'Clang must match pinned LLVM {llvm}; configure LLVM_BIN')
   linker_name = 'ld64.lld' if seam.target_triple().endswith('apple-darwin') else 'ld.lld'
   linker = subprocess.check_output([tool(linker_name), '--version'], text=True)
   if llvm not in linker:
-    raise RuntimeError(f'LLD must match rustc LLVM {llvm}; configure LLVM_BIN')
+    raise RuntimeError(f'LLD must match pinned LLVM {llvm}; configure LLVM_BIN')
   config = subprocess.check_output([tool('llvm-config'), '--version'], text=True).strip()
   if config != llvm:
-    raise RuntimeError(f'LLVM helper libraries must match rustc LLVM {llvm}')
-  return {'rustc': rust.strip(), 'clang': clang.splitlines()[0], 'linker': linker.strip(), 'llvm': llvm}
+    raise RuntimeError(f'LLVM helper libraries must match pinned LLVM {llvm}')
+  versions = {'rustc': rust.strip(), 'clang': clang.splitlines()[0], 'linker': linker.strip(), 'llvm': llvm}
+  if os.environ.get('ELIDE_TOOLCHAIN_HOME'):
+    helper = Path(os.environ['ELIDE_TOOLCHAIN_HOME']) / 'bin/elide-toolchain'
+    versions['elideToolchain'] = subprocess.check_output([helper, 'version'], text=True).strip()
+  return versions
+
+
+def native_environment():
+  env = dict(os.environ)
+  if seam.target_triple().endswith('apple-darwin') and not env.get('SDKROOT'):
+    # Upstream Clang distributions do not discover Xcode's SDK automatically.
+    env['SDKROOT'] = subprocess.check_output(
+        ['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip()
+  return env
 
 
 def apply(archive, contracts):
   config = tool('llvm-config')
   llvm_dir = subprocess.check_output([config, '--cmakedir'], text=True).strip()
   checkout = Path(os.environ.get('MYNA_HOME', ROOT / 'build/tools/myna')).resolve()
-  helper_dir = ROOT / 'build/tools/myna-llvm'
+  env = native_environment()
+  c_compiler = env.get('CC', tool('clang'))
+  cxx_compiler = env.get('CXX', tool('clang++'))
+  # Match the target toolchain file and keep distinct compiler caches.
+  compiler_key = hashlib.sha256((llvm_dir + cxx_compiler).encode()).hexdigest()[:12]
+  helper_dir = ROOT / 'build/tools/myna-llvm' / compiler_key
+  options = []
+  if subprocess.check_output([config, '--has-rtti'], text=True).strip() == 'NO':
+    # The helper must use the same RTTI mode as its LLVM libraries.
+    options.append('-DCMAKE_CXX_FLAGS=' + env.get('CXXFLAGS', '') + ' -fno-rtti')
+  if env.get('SDKROOT'):
+    options.append('-DCMAKE_OSX_SYSROOT=' + env['SDKROOT'])
   seam.run('cmake', '-S', checkout / 'llvm', '-B', helper_dir,
            f'-DLLVM_DIR={llvm_dir}', '-DCMAKE_BUILD_TYPE=Release',
-           f'-DCMAKE_C_COMPILER={tool("clang")}', f'-DCMAKE_CXX_COMPILER={tool("clang++")}')
+           f'-DCMAKE_C_COMPILER={c_compiler}', f'-DCMAKE_CXX_COMPILER={cxx_compiler}',
+           *options, env=env)
   seam.run('cmake', '--build', helper_dir, '--parallel', '4')
   # The helper owns all ABI/contract validation. Invoke it directly from the
   # build driver so JVM subprocess configuration cannot affect native tooling.
@@ -118,7 +146,7 @@ def build():
   DIRECTORY.mkdir(parents=True, exist_ok=True)
   metadata = seam.generate(check=True)
   flags = '-Clinker-plugin-lto'
-  env = dict(os.environ)
+  env = native_environment()
   env.pop('CARGO_ENCODED_RUSTFLAGS', None)
   env['RUSTFLAGS'] = flags
   # Native dependencies can inherit linker-plugin LTO through cc. Archive
@@ -162,11 +190,16 @@ def verify(archive, directory):
     saved_file.unlink()
   for saved_file in directory.glob('*.bc'):
     saved_file.unlink()
+  deployment = []
+  if seam.target_triple().endswith('apple-darwin'):
+    minimum = os.environ.get('MACOSX_DEPLOYMENT_TARGET', '15.0')
+    arch = seam.target_triple().split('-')[0].replace('aarch64', 'arm64')
+    deployment = [f'--target={arch}-apple-macos{minimum}', '-mmacosx-version-min=' + minimum]
   libraries = ['-ldl', '-lpthread', '-lm'] if seam.target_triple().endswith('linux-gnu') else []
   headers = Path(archive).parent if (Path(archive).parent / 'bemo.h').exists() else ROOT / 'include'
-  seam.run(tool('clang'), '-O2', '-flto=thin', '-fuse-ld=lld', saved,
+  seam.run(tool('clang'), '-O2', '-flto=thin', '-fuse-ld=lld', *deployment, saved,
            '-std=c11', '-Wall', '-Wextra', '-Werror', '-I', headers,
-           ROOT / 'tests/static.c', archive, *libraries, '-o', binary)
+           ROOT / 'tests/static.c', archive, *libraries, '-o', binary, env=native_environment())
   seam.run(binary)
   # LLD places per-member intermediate files alongside the input archive.
   files = list(directory.rglob('*.opt.bc'))
