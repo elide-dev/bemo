@@ -1,10 +1,32 @@
 """Preserve raw sample authority while merging alternating benchmark invocations."""
+import json
+from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 import bench_pair
 
 
 class PairedBenchmarkAggregationTest(unittest.TestCase):
+  def test_new_payload_size_runs_through_an_older_case_registry(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      (root / 'tools').mkdir()
+      (root / 'tools/bench.py').write_text("""import argparse,json
+CASES={'plain-identity-65536':(False,False,65536)}
+def main():
+  parser=argparse.ArgumentParser()
+  parser.add_argument('command')
+  parser.add_argument('--case',choices=tuple(CASES))
+  parser.add_argument('--rounds');parser.add_argument('--warmup')
+  parser.add_argument('--samples');parser.add_argument('--transports')
+  args=parser.parse_args()
+  print(json.dumps(CASES[args.case]))
+""")
+      result = subprocess.check_output(bench_pair.measure_command('tls-gzip-131072', 25000, 5000, 'bemo,epoll'), cwd=root, text=True)
+      self.assertEqual(json.loads(result), [True, True, 131072])
+
   def test_samples_stay_separate_and_aggregates_use_raw_measurements(self):
     rows = []
     for transport in ('bemo', 'epoll'):

@@ -5,7 +5,7 @@ on:
       before:
         description: Pre-optimization commit or ref
         required: true
-        default: 'd46a3658547654490cf5fcb1c063242728df7f99'
+        default: 'a4d3cc5bf0ce505335c8d7270e698a27e64318fc'
       after:
         description: Post-optimization commit or ref
         required: true
@@ -54,7 +54,7 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-bench
       - name: Qualify standalone gzip backends on the same host
-        run: python3 tools/compression_probe.py --iterations 2000
+        run: python3 tools/compression_probe.py --backends zlib-rs --levels 1 3 6 --iterations 2000
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

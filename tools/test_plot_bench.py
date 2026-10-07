@@ -26,7 +26,7 @@ class PerformanceChartTest(unittest.TestCase):
     for row in self.rows:
       row["median_requests_per_second"] = -1
     meta, groups = self.load(self.rows)
-    self.assertEqual(len(groups), 16)
+    self.assertEqual(len(groups), len(meta["cases"]) * 2)
     self.assertEqual(charts.values(groups, charts.CASES[0], "bemo", "requests_per_second"), expected)
     self.assertEqual(len(meta["sha256"]), 64)
 
@@ -58,6 +58,35 @@ class PerformanceChartTest(unittest.TestCase):
     gzip['samples'][0]['gzip_provider'] = ('zlib-rs' if gzip['samples'][1]['gzip_provider'] == 'java.util.zip' else 'java.util.zip')
     with self.assertRaisesRegex(ValueError, 'Mixed gzip'):
       self.load(rows)
+
+  def test_gzip_level_is_valid_and_consistent_within_each_stack(self):
+    rows = copy.deepcopy(self.rows)
+    gzip = next(row for row in rows if row['transport'] == 'bemo' and '-gzip-' in row['case'])
+    gzip['samples'][0]['gzip_level'] = 10
+    with self.assertRaisesRegex(ValueError, 'Invalid gzip level'):
+      self.load(rows)
+    gzip['samples'][0]['gzip_level'] = 3 if gzip['samples'][1].get('gzip_level', 6) != 3 else 1
+    with self.assertRaisesRegex(ValueError, 'Mixed gzip levels'):
+      self.load(rows)
+
+  def test_extended_payload_matrix_is_complete_and_legacy_archives_still_load(self):
+    meta, groups = self.load(self.rows)
+    self.assertIn(len(groups), (16, 24))
+    if len(groups) == 16:
+      for row in list(self.rows):
+        if row['case'].endswith('-65536'):
+          extended = copy.deepcopy(row)
+          extended['case'] = extended['case'].replace('-65536', '-131072')
+          for sample in extended['samples']:
+            sample['case'] = extended['case']
+            sample['payload_bytes'] = 131072
+          self.rows.append(extended)
+    meta, groups = self.load(self.rows)
+    self.assertEqual(len(groups), 24)
+    self.assertEqual(meta['payload_sizes'], [1024, 65536, 131072])
+    incomplete = [row for row in self.rows if not (row['case'] == 'tls-gzip-131072' and row['transport'] == 'bemo')]
+    with self.assertRaisesRegex(ValueError, 'Incomplete'):
+      self.load(incomplete)
 
   def test_invalid_metrics_are_rejected(self):
     for value in (None, 0, -1, float("nan"), float("inf")):

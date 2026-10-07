@@ -15,7 +15,7 @@ import time
 import build
 
 CASES = {f"{'tls' if tls else 'plain'}-{'gzip' if gzip else 'identity'}-{size}": (tls, gzip, size)
-         for tls in (False, True) for gzip in (False, True) for size in (1024, 65536)}
+         for tls in (False, True) for gzip in (False, True) for size in (1024, 65536, 131072)}
 OUTPUT = build.BUILD / "reports/benchmarks"
 
 
@@ -42,8 +42,8 @@ def comparisons(summary):
                       "comparison_kind": "full-stack" if bemo_tls != comparator_tls or any(
                           bemo["samples"][0].get(key) != other["samples"][0].get(key)
                           for key in ("http_provider", "runtime")) else "transport",
-                      "bemo_stack": {key: bemo["samples"][0].get(key) for key in ("http_provider", "runtime", "binding")},
-                      "comparator_stack": {key: other["samples"][0].get(key) for key in ("http_provider", "runtime", "binding")},
+                      "bemo_stack": {key: bemo["samples"][0].get(key) for key in ("http_provider", "runtime", "binding", "gzip_provider", "gzip_level")},
+                      "comparator_stack": {key: other["samples"][0].get(key) for key in ("http_provider", "runtime", "binding", "gzip_provider", "gzip_level")},
                       "clients": bemo["samples"][0]["clients"],
                       "bemo_over_comparator_rps": bemo["median_requests_per_second"] / other["median_requests_per_second"],
                       "sample_rps_ratios": ratios,
@@ -215,6 +215,7 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
                  runtime=actual_runtime, binding="capi" if native_http and runtime == "native-image" else "ffm" if transport == "bemo" else "netty",
                  load_generator_transport=client_transport, load_generator_tls_provider="jdk" if tls else "none",
                  process_scope="server+client", gzip_provider=ready.get("gzip_provider", "java.util.zip") if native_http and gzip else "netty" if gzip else "none",
+                 gzip_level=ready.get("gzip_level", 6) if gzip else 0,
                  workload_sha256=digest([*sorted((build.ROOT / "benchmarks/java").glob("*.java")), Path(__file__).resolve()]),
                  case=case, socket_buffer_bytes=socket_buffer, requested_backend=backend if transport == "bemo" else 0,
                  commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=build.ROOT, text=True).strip(),

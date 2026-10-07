@@ -33,6 +33,13 @@ def aggregate(rows):
   return list(groups.values())
 
 
+def measure_command(case, rounds, warmup, transports):
+  # Extend the old CLI registry without changing its client or sampling code.
+  bootstrap = "import sys,json; sys.path.insert(0,'tools'); import bench; bench.CASES.update(json.loads(sys.argv.pop(1))); bench.main()"
+  return [sys.executable, '-c', bootstrap, json.dumps(bench.CASES), 'run', '--case', case,
+          '--rounds', str(rounds), '--warmup', str(warmup), '--samples', '1', '--transports', transports]
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--before', required=True)
@@ -59,7 +66,7 @@ def main():
     'affinity': sorted(os.sched_getaffinity(0)),
     'rounds': args.rounds, 'warmup_rounds': args.warmup, 'samples': args.samples,
     'clients': 4, 'version_order': 'alternates by case and sample',
-    'transport_order': 'alternates by sample',
+    'transport_order': 'alternates by sample', 'cases': bench.CASES,
   }
   (output / 'environment.json').write_text(json.dumps(environment, indent=2) + '\n')
   with tempfile.TemporaryDirectory(prefix='bemo-bench-pair-') as temporary:
@@ -83,9 +90,7 @@ def main():
           for name in versions:
             worktree = worktrees[name]
             print(f'Measuring {case}, sample {sample + 1}/{args.samples}, {name}, {transports}', flush=True)
-            subprocess.run([sys.executable, 'tools/bench.py', 'run', '--case', case,
-                            '--rounds', str(args.rounds), '--warmup', str(args.warmup),
-                            '--samples', '1', '--transports', transports], cwd=worktree, check=True)
+            subprocess.run(measure_command(case, args.rounds, args.warmup, transports), cwd=worktree, check=True)
             source = worktree / f'build/reports/benchmarks/summary-{case}.json'
             measured = json.loads(source.read_text())
             assert {s['commit'] for row in measured for s in row['samples']} == {commits[name]}
@@ -95,7 +100,7 @@ def main():
             (output / name / 'samples' / f'{case}-{sample}.json').write_bytes(source.read_bytes())
       for name, measured in rows.items():
         summary = aggregate(measured)
-        assert len(summary) == 16 and all(len(row['samples']) == args.samples for row in summary)
+        assert len(summary) == len(cases) * 2 and all(len(row['samples']) == args.samples for row in summary)
         (output / name / 'summary-all.json').write_text(json.dumps(summary, indent=2) + '\n')
         (output / name / 'summary-all-comparison.json').write_text(
             json.dumps(bench.comparisons(summary), indent=2) + '\n')
