@@ -68,7 +68,18 @@ Bemo/Netty launch order across samples. The complete matrix takes roughly half
 an hour or more; the workflow allows 90 minutes. It uploads
 `paired-transport-evidence`, containing both complete summaries, individual raw
 samples, logs, resolved commits, CPU details, and allowed affinity. Its token
-has read-only repository permissions and it runs no publishing jobs.
+has read-only repository permissions and it runs no publishing jobs. Separate
+jobs run the shared Rust/JVM/Native Image and safety contracts. The transport
+host first compares standalone compression backends; `compression-evidence`
+records the actual pinned zlib-rs provider alongside zlib and zlib-ng.
+
+A separate host qualifies retain/drop, slice/drop, and exclusive recovery against
+the pre-stack plain-Arc baseline (`499a6f3`). It prepares both versions before
+three alternating ownership samples, each using 30 Criterion measurements after
+one second of warmup and two seconds of measurement. `lease-evidence` includes
+raw logs, parsed nanosecond estimates, commits, CPU, and affinity. This addresses
+the earlier cross-CPU simulation comparison without changing ownership merely
+to improve an instrumented estimate.
 
 The underlying Linux command is:
 

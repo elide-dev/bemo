@@ -5,17 +5,45 @@ on:
       before:
         description: Pre-optimization commit or ref
         required: true
-        default: '499a6f3dc4037fa8b7e264fe4928e7c3305b665a'
+        default: 'd46a3658547654490cf5fcb1c063242728df7f99'
       after:
         description: Post-optimization commit or ref
         required: true
-        default: 'a0537b44c9d17ac312e18adb08500cd1069913ed'
+        default: 'main'
 permissions:
   contents: read
 concurrency:
   group: readme-benchmarks-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  rust:
+    uses: ./.github/workflows/check.rust.yml
+  jvm:
+    uses: ./.github/workflows/check.jvm.yml
+  native-image:
+    uses: ./.github/workflows/check.native-image.yml
+  safety:
+    uses: ./.github/workflows/check.safety.yml
+  leases:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bench
+      - name: Measure pre-stack and current ownership costs on one host
+        env:
+          BEMO_LEASE_AFTER: ${{ inputs.after }}
+        run: python3 tools/bench_leases.py --before 499a6f3dc4037fa8b7e264fe4928e7c3305b665a --after "$BEMO_LEASE_AFTER"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: lease-evidence
+          path: build/reports/lease-paired/
+          if-no-files-found: error
+          retention-days: 30
   transport:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
