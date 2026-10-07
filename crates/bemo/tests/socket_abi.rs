@@ -454,22 +454,22 @@ fn polls_reject_invalid_batches_drivers_and_callbacks() {
   // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
   assert_eq!(unsafe { elide_transport_driver_poll(0, 0, frozen_batch, 1) }, INVALID);
 
-  unsafe extern "C" fn never(_: u64, _: *const NativeEvent) -> i32 {
+  unsafe extern "C" fn never(_: *mut std::ffi::c_void, _: *const NativeEvent) -> i32 {
     unreachable!("no events are dispatched for an unknown driver")
   }
   assert_eq!(
     // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
-    unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 1, None, 0) },
+    unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 1, None, std::ptr::null_mut()) },
     INVALID
   );
   assert_eq!(
     // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
-    unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 0, Some(never), 0) },
+    unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 0, Some(never), std::ptr::null_mut()) },
     INVALID
   );
   assert_eq!(
     // SAFETY: The callback and its stack context stay live throughout synchronous polling on the owner thread.
-    unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 1, Some(never), 0) },
+    unsafe { elide_transport_driver_poll_callback(common::workload(), 0, 0, 1, Some(never), std::ptr::null_mut()) },
     INVALID
   );
   assert_eq!(elide_transport_socket_discard(0), INVALID);

@@ -1,9 +1,9 @@
 package dev.elide.bemo.svm;
 
 import dev.elide.bemo.TransportNative;
+import dev.elide.bemo.svm.generated.BemoNatives;
 import java.util.List;
 import org.graalvm.nativeimage.c.CContext;
-import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.nativeimage.c.function.CLibrary;
 
 /** Native Image binding to the same ABI, linked from Cargo's static library. */
@@ -26,11 +26,13 @@ public final class CapiTransportNative implements TransportNative {
     }
   }
 
-  @CFunction("bemo_abi_version")
-  private static native int nativeAbiVersion();
+  private static int nativeAbiVersion() {
+    return BemoNatives.bemo_abi_version();
+  }
 
-  @CFunction("bemo_capabilities")
-  private static native long nativeCapabilities();
+  private static long nativeCapabilities() {
+    return BemoNatives.bemo_capabilities();
+  }
 
   @Override
   public int abiVersion() {

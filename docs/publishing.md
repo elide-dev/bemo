@@ -148,3 +148,10 @@ See [release automation and verification](releases.md).
 
 See [Central's artifact requirements](https://central.sonatype.org/publish/requirements/)
 and [Portal upload layout](https://central.sonatype.org/publish/publish-portal-upload/).
+
+Native Image additionally stages `<platform>-thinlto` classifiers. Their
+archive, target contracts, and manifest are verified from the staged JAR through
+a real ThinLTO ownership consumer. Cross-platform merging and deployment include
+these variants alongside the ordinary classifiers; common Java artifacts stay
+platform-independent. Staging requires LLVM/Clang/LLD compatible with the pinned
+Rust compiler. See [generated seams](generated-seam.md).

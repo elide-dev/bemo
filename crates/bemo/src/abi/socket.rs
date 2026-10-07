@@ -955,8 +955,8 @@ pub unsafe fn elide_transport_driver_poll_callback(
   driver: u64,
   timeout_ns: u64,
   maximum: u32,
-  callback: Option<unsafe extern "C" fn(u64, *const NativeEvent) -> i32>,
-  context: u64,
+  callback: Option<unsafe extern "C" fn(*mut c_void, *const NativeEvent) -> i32>,
+  context: *mut c_void,
 ) -> i32 {
   let Some(callback) = callback else {
     return INVALID;
@@ -984,8 +984,8 @@ pub unsafe fn elide_transport_driver_poll_batch_callback(
   driver: u64,
   timeout_ns: u64,
   maximum: u32,
-  callback: Option<unsafe extern "C" fn(u64, *const NativeEvent, u32) -> i32>,
-  context: u64,
+  callback: Option<unsafe extern "C" fn(*mut c_void, *const NativeEvent, u32) -> i32>,
+  context: *mut c_void,
 ) -> i32 {
   let Some(callback) = callback else {
     return INVALID;

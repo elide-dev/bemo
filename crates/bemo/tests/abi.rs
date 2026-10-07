@@ -282,7 +282,7 @@ fn callback_batch_retirement_reclaims_an_unconsumed_receive() {
     value: u64,
     statuses: Vec<i32>,
   }
-  unsafe extern "C" fn retire(context: u64, events: *const NativeEvent, count: u32) -> i32 {
+  unsafe extern "C" fn retire(context: *mut std::ffi::c_void, events: *const NativeEvent, count: u32) -> i32 {
     // SAFETY: The polling caller supplied this live, exclusively accessed stack context for the callback.
     let state = unsafe { &mut *(context as *mut State) };
     assert_eq!(count, 1);
@@ -325,7 +325,7 @@ fn callback_batch_retirement_reclaims_an_unconsumed_receive() {
         50_000_000,
         8,
         Some(retire),
-        &mut state as *mut State as u64,
+        &mut state as *mut State as *mut std::ffi::c_void,
       )
     };
     assert_eq!(result, if state.value == 0 { 0 } else { INVALID });

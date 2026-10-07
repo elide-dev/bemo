@@ -15,5 +15,23 @@
   "jspecify": "1.0.1",
   "checker": "4.3.0",
   "nullaway_dataflow": "4.2.3",
-  "dataflow": "3.49.5-eisop1"
+  "dataflow": "3.49.5-eisop1",
+  "llvm": {
+    "version": "23.1.2",
+    "toolchain_version": "2026.10.0",
+    "archives": {
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-linux-amd64.tar.xz",
+        "sha256": "e966f3a9e8fa210e5018ae6e4a834874577e2288b27a6c9edfe5e264de0fd035"
+      },
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-darwin-arm64.tar.xz",
+        "sha256": "e39b6430f36b3d3d20439a42e9047b6edb64d0c2a9277e69afd35e290dc93064"
+      }
+    }
+  },
+  "myna": {
+    "repository": "https://github.com/elide-dev/myna.git",
+    "revision": "34a0213e0ce05a7d46d351e2208ed9518b802a98"
+  }
 }
