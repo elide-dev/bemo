@@ -81,11 +81,11 @@ The basic matrix compares Bemo Native Image `-O3` with native HTTP, io_uring and
 Rustls/aws-lc-rs against OpenJDK Netty epoll with Netty HTTP and JDK TLS.
 It measures the complete stacks, including the different server runtimes.
 
-![Throughput across twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput.svg?v=29652ad54cad)
+![Throughput across twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput-29652ad54cad.svg)
 
-![Identity throughput and p99 latency at 1 KiB, 64 KiB, and 128 KiB](docs/performance/graphs/payload-curves.svg?v=29652ad54cad)
+![Identity throughput and p99 latency at 1 KiB, 64 KiB, and 128 KiB](docs/performance/graphs/payload-curves-29652ad54cad.svg)
 
-![Server CPU and combined server/client memory across all workloads](docs/performance/graphs/efficiency.svg?v=29652ad54cad)
+![Server CPU and combined server/client memory across all workloads](docs/performance/graphs/efficiency-29652ad54cad.svg)
 
 The Spring Boot and Micronaut comparisons hold the runtime fixed within each
 row. Native Images use `-O3` with the portable `x86-64-v3` default target.

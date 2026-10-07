@@ -13,7 +13,12 @@ make bench-graphs
 ```
 
 This creates an isolated environment under `build/chart-venv` and renders the
-three checked-in SVGs. It does not run benchmarks or upload metrics. PNG export
+three checked-in SVGs. Each filename includes the first 12 characters of the
+source data SHA-256, so GitHub image redirects cannot reuse an older chart URL.
+When the evidence changes, update all three README image paths to the generated
+filenames and remove the superseded SVGs. Query strings on relative image links
+do not survive GitHub’s redirect to raw content.
+It does not run benchmarks or upload metrics. PNG export
 and alternate destinations are available:
 
 ```sh

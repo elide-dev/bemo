@@ -154,6 +154,7 @@ def render(meta, groups, output, png=False):
     return fig, axes[0]
 
   def save(fig, name, description):
+    name = f"{Path(name).stem}-{meta['sha256'][:12]}.svg"
     fig.savefig(output / name, format="svg", facecolor=BG,
                 metadata={"Date": None, "Creator": "tools/plot_bench.py", "Title": description,
                           "Description": f"Source SHA-256: {meta['sha256']}. {meta['run_url']}"})
