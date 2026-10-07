@@ -211,6 +211,7 @@ pub struct Connection {
   budget: Budget,
   /// Bytes of an incomplete head or trailer block carried across receives.
   partial: Vec<u8>,
+  head_progress: HeadProgress,
   body: Option<Body>,
   /// Consume the current body without emitting segments or its end.
   discard: bool,
@@ -223,6 +224,7 @@ impl Connection {
     Self {
       budget,
       partial: Vec::new(),
+      head_progress: HeadProgress::default(),
       body: None,
       discard: false,
       closed: false,
@@ -282,7 +284,8 @@ impl Connection {
       }
       if self.partial.is_empty() {
         // Fast path: the head starts at `cursor` inside this receive.
-        match parse_head(&bytes[cursor..]) {
+        let mut progress = HeadProgress::default();
+        match progress.parse(&bytes[cursor..]) {
           Ok(Status::Complete(head)) => {
             let Ok(slice) = FrozenBuffer::slice(&frozen, cursor..cursor + head.len) else {
               self.fail(ParseError::OutOfMemory, out);
@@ -296,10 +299,12 @@ impl Connection {
             }
           }
           Ok(Status::Partial) => {
+            self.head_progress = progress;
             if bytes.len() - cursor > MAX_HEAD_BYTES {
               self.fail(ParseError::HeadTooLarge, out);
               return None;
             }
+            self.partial.reserve((bytes.len() - cursor).max(128));
             self.partial.extend_from_slice(&bytes[cursor..]);
             return None;
           }
@@ -313,7 +318,7 @@ impl Connection {
         let room = MAX_HEAD_BYTES.saturating_sub(self.partial.len());
         let take = room.min(bytes.len() - cursor);
         self.partial.extend_from_slice(&bytes[cursor..cursor + take]);
-        match parse_head(&self.partial) {
+        match self.head_progress.parse(&self.partial) {
           Ok(Status::Complete(head)) => {
             // Bytes past the head belong to the body or the next request; only
             // the head itself is copied into owned storage.
@@ -557,6 +562,7 @@ impl Connection {
   fn fail(&mut self, error: ParseError, out: &mut VecDeque<Outcome>) {
     self.closed = true;
     self.partial.clear();
+    self.head_progress = HeadProgress::default();
     self.body = None;
     self.discard = false;
     out.push_back(Outcome::Error(error));
@@ -574,6 +580,7 @@ fn chunk_size(line: &[u8]) -> Result<u64, ParseError> {
   }
 }
 
+#[derive(Debug)]
 struct Head {
   len: usize,
   method: Method,
@@ -588,38 +595,78 @@ fn span(pos: SlicePos, base: usize) -> Range<u32> {
   (pos.start + base) as u32..(pos.end + base) as u32
 }
 
-fn parse_head(src: &[u8]) -> Result<Status<Head>, ParseError> {
-  let mut line = HeadParser::default();
-  let line_len = match line.parse(src) {
-    Ok(Status::Complete(len)) => len,
-    Ok(Status::Partial) => return Ok(Status::Partial),
-    Err(_) => return Err(ParseError::BadRequest),
-  };
-  let mut headers = Vec::new();
-  let mut close = false;
-  let mut keep_alive = false;
-  let parsed = parse_headers(src, line_len, &mut |span| {
-    if src[range(&span.name)].eq_ignore_ascii_case(b"connection") {
-      let value = &src[range(&span.value)];
-      close |= token_present(value, b"close");
-      keep_alive |= token_present(value, b"keep-alive");
+/// Cache validated complete lines while retaining strict parsing of the current incomplete line.
+#[derive(Debug, Default)]
+struct HeadProgress {
+  head: Option<Head>,
+  cursor: usize,
+  close: bool,
+  keep_alive: bool,
+}
+
+impl HeadProgress {
+  #[inline]
+  fn parse(&mut self, src: &[u8]) -> Result<Status<Head>, ParseError> {
+    if self.head.is_none() {
+      let mut line = HeadParser::default();
+      self.cursor = match line.parse(src) {
+        Ok(Status::Complete(len)) => len,
+        Ok(Status::Partial) => return Ok(Status::Partial),
+        Err(_) => return Err(ParseError::BadRequest),
+      };
+      self.head = Some(Head {
+        len: 0,
+        method: Method::from_bytes(&src[line.method.start..line.method.end]),
+        method_span: span(line.method, 0),
+        path: span(line.path, 0),
+        version: line.version,
+        headers: Vec::new(),
+        keep_alive: false,
+      });
     }
-    headers.push(span);
-  })?;
-  let Status::Complete(cursor) = parsed else {
-    return Ok(Status::Partial);
-  };
-  let version = line.version;
-  let keep_alive = !close && (version != 0 || keep_alive);
-  Ok(Status::Complete(Head {
-    len: cursor,
-    method: Method::from_bytes(&src[line.method.start..line.method.end]),
-    method_span: span(line.method, 0),
-    path: span(line.path, 0),
-    version,
-    headers,
-    keep_alive,
-  }))
+    let head = self.head.as_mut().unwrap();
+    loop {
+      if head.headers.len() > MAX_HEADERS {
+        return Err(ParseError::HeadTooLarge);
+      }
+      let mut header = Header::default();
+      match header.parse(&src[self.cursor..]) {
+        Ok(Status::Complete(HeaderParsed::Header(len))) => {
+          let field = HeaderSpan {
+            name: span(header.name, self.cursor),
+            value: span(header.value, self.cursor),
+          };
+          if src[range(&field.name)].eq_ignore_ascii_case(b"connection") {
+            let value = &src[range(&field.value)];
+            self.close |= token_present(value, b"close");
+            self.keep_alive |= token_present(value, b"keep-alive");
+          }
+          head.headers.push(field);
+          self.cursor += len;
+        }
+        Ok(Status::Complete(HeaderParsed::Eof(len))) => {
+          self.cursor += len;
+          if self.cursor > MAX_HEAD_BYTES {
+            return Err(ParseError::HeadTooLarge);
+          }
+          let mut head = self.head.take().unwrap();
+          head.len = self.cursor;
+          head.keep_alive = !self.close && (head.version != 0 || self.keep_alive);
+          *self = Self::default();
+          return Ok(Status::Complete(head));
+        }
+        Ok(Status::Partial) => {
+          return if src.len() > MAX_HEAD_BYTES {
+            Err(ParseError::HeadTooLarge)
+          } else {
+            Ok(Status::Partial)
+          };
+        }
+        Err(ntex_httparse::Error::TooManyHeaders) => return Err(ParseError::HeadTooLarge),
+        Err(_) => return Err(ParseError::BadRequest),
+      }
+    }
+  }
 }
 
 /// Parse a header block starting at `start` through its blank line; returns the end offset.
@@ -685,6 +732,132 @@ mod tests {
 
   fn budget() -> Budget {
     Budget::new(1 << 20)
+  }
+
+  fn reference_head(src: &[u8]) -> Result<Status<Head>, ParseError> {
+    let mut line = HeadParser::default();
+    let line_len = match line.parse(src) {
+      Ok(Status::Complete(len)) => len,
+      Ok(Status::Partial) => return Ok(Status::Partial),
+      Err(_) => return Err(ParseError::BadRequest),
+    };
+    let mut headers = Vec::new();
+    let mut close = false;
+    let mut keep_alive = false;
+    let parsed = parse_headers(src, line_len, &mut |span| {
+      if src[range(&span.name)].eq_ignore_ascii_case(b"connection") {
+        let value = &src[range(&span.value)];
+        close |= token_present(value, b"close");
+        keep_alive |= token_present(value, b"keep-alive");
+      }
+      headers.push(span);
+    })?;
+    let Status::Complete(cursor) = parsed else {
+      return Ok(Status::Partial);
+    };
+    let version = line.version;
+    let keep_alive = !close && (version != 0 || keep_alive);
+    Ok(Status::Complete(Head {
+      len: cursor,
+      method: Method::from_bytes(&src[line.method.start..line.method.end]),
+      method_span: span(line.method, 0),
+      path: span(line.path, 0),
+      version,
+      headers,
+      keep_alive,
+    }))
+  }
+
+  #[test]
+  #[cfg_attr(
+    miri,
+    ignore = "exhaustive large-head prefix oracle is covered by native tests and fuzzing"
+  )]
+  fn incremental_heads_match_reference_at_every_prefix() {
+    let many = format!("GET / HTTP/1.1\r\n{}\r\n", "x-a: v\r\n".repeat(MAX_HEADERS + 1));
+    let large = format!("GET / HTTP/1.1\r\nx-a: {}", "a".repeat(MAX_HEAD_BYTES));
+    for wire in [
+      b"GET /p?q=1 HTTP/1.1\r\nHost: a\r\nConnection: keep-alive, close\r\n\r\n".as_slice(),
+      b"POST / HTTP/1.0\nConnection: keep-alive\nContent-Length: 4\n\nbody".as_slice(),
+      b"G\0T / HTTP/1.1\r\n\r\n".as_slice(),
+      b"GET / HTTP/1.1\r\nbad name: v\r\n\r\n".as_slice(),
+      b"GET / HTTP/1.1\r\nx-a: bad\0value\r\n\r\n".as_slice(),
+      many.as_bytes(),
+      large.as_bytes(),
+    ] {
+      let mut progress = HeadProgress::default();
+      for end in 0..=wire.len() {
+        let source = &wire[..end];
+        match (reference_head(source), progress.parse(source)) {
+          (Ok(Status::Partial), Ok(Status::Partial)) => {}
+          (Err(expected), Err(actual)) => {
+            assert_eq!(actual, expected);
+            break;
+          }
+          (Ok(Status::Complete(expected)), Ok(Status::Complete(actual))) => {
+            assert_eq!(actual.len, expected.len);
+            assert_eq!(actual.method, expected.method);
+            assert_eq!(actual.method_span, expected.method_span);
+            assert_eq!(actual.path, expected.path);
+            assert_eq!(actual.version, expected.version);
+            assert_eq!(actual.headers, expected.headers);
+            assert_eq!(actual.keep_alive, expected.keep_alive);
+            assert!(progress.head.is_none());
+            break;
+          }
+          (expected, actual) => panic!("prefix {end}: {actual:?}, expected {expected:?}"),
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn fragmented_pipeline_preserves_spans_and_current_line_early_errors() {
+    let wire = b"POST /one HTTP/1.1\r\nHost: a\r\nContent-Length: 4\r\n\r\nbodyGET /two HTTP/1.1\r\nHost: b\r\n\r\n";
+    for fragment in 1..=wire.len() {
+      let mut connection = Connection::new(budget());
+      let mut events = Vec::new();
+      for chunk in wire.chunks(fragment) {
+        events.extend(feed(&mut connection, chunk));
+      }
+      let requests: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+          if let Outcome::Request(request) = event {
+            Some(request)
+          } else {
+            None
+          }
+        })
+        .collect();
+      assert_eq!(requests.len(), 2);
+      assert_eq!(requests[0].path_bytes(), b"/one");
+      assert_eq!(requests[1].path_bytes(), b"/two");
+      assert_eq!(requests[0].header(b"host"), Some(b"a".as_slice()));
+      assert_eq!(requests[1].header(b"host"), Some(b"b".as_slice()));
+      assert_eq!(
+        events.iter().filter(|event| matches!(event, Outcome::BodyEnd)).count(),
+        1
+      );
+      let body: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+          if let Outcome::Segment(part) = event {
+            Some(part.as_ref())
+          } else {
+            None
+          }
+        })
+        .flatten()
+        .copied()
+        .collect();
+      assert_eq!(body, b"body");
+      assert!(events.iter().all(|event| !matches!(event, Outcome::Error(_))));
+    }
+    let mut connection = Connection::new(budget());
+    assert!(feed(&mut connection, b"GET / HTTP/1.1\r\nHost: a\r\nx-name:").is_empty());
+    assert_eq!(error(&feed(&mut connection, b" bad\0")[0]), ParseError::BadRequest);
+    assert!(connection.head_progress.head.is_none());
   }
 
   fn buffer(bytes: &[u8]) -> Buffer {
