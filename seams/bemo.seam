@@ -1,0 +1,511 @@
+# Bemo public C ABI inventory. Handles are integers; pointers borrow caller memory.
+# Callback function pointers are inventoried separately in callbacks.json.
+# Leaf contracts preserve reviewed existing Native Image transition policies.
+module bemo abi=3 target=aarch64-apple-darwin java_package=dev.elide.bemo.svm.generated java_class=BemoNatives
+
+struct elide_transport_buffer_view_t size=32 align=8
+  field address type=ptr<void> offset=0
+  field capacity type=u64 offset=8
+  field length type=u64 offset=16
+  field flags type=u64 offset=24
+end
+
+struct elide_transport_receive_result_t size=32 align=8
+  field operation type=u64 offset=0
+  field buffer type=u64 offset=8
+  field address type=ptr<void> offset=16
+  field result type=i64 offset=24
+end
+
+import bemo_abi_version symbol=bemo_abi_version return=u32 error=no_failure
+end
+
+import bemo_capabilities symbol=bemo_capabilities return=u64 error=no_failure
+end
+
+import elide_transport_abi_version symbol=elide_transport_abi_version return=u32 error=no_failure
+end
+
+import elide_transport_buffer_freeze symbol=elide_transport_buffer_freeze return=i32 error=no_failure
+  param buffer type=u64
+  param length type=u64
+end
+
+import elide_transport_buffer_new symbol=elide_transport_buffer_new return=u64 error=no_failure
+  param owner type=u64
+  param capacity type=u64
+end
+
+import elide_transport_buffer_release symbol=elide_transport_buffer_release return=i32 error=no_failure
+  param buffer type=u64
+end
+
+import elide_transport_buffer_slice symbol=elide_transport_buffer_slice return=u64 error=no_failure
+  param buffer type=u64
+  param offset type=u64
+  param length type=u64
+end
+
+import elide_transport_buffer_view symbol=elide_transport_buffer_view return=i32 error=no_failure
+  param buffer type=u64
+  param output type=ptr<elide_transport_buffer_view_t> nullable=false ownership=borrowed access=write
+end
+
+import elide_transport_driver_backend symbol=elide_transport_driver_backend return=i32 error=no_failure
+  param driver type=u64
+end
+
+import elide_transport_driver_fallback symbol=elide_transport_driver_fallback return=i32 error=no_failure
+  param driver type=u64
+  param output type=u64
+end
+
+import elide_transport_driver_new symbol=elide_transport_driver_new return=u64 error=no_failure
+  param workload type=u64
+  param backend type=u32
+  param limit type=u32
+end
+
+import elide_transport_driver_poll symbol=elide_transport_driver_poll return=i32 error=no_failure
+  param driver type=u64
+  param timeoutNanos type=u64
+  param batch type=u64
+  param maximum type=u32
+end
+
+import elide_transport_driver_release symbol=elide_transport_driver_release return=i32 error=no_failure
+  param driver type=u64
+end
+
+import elide_transport_driver_wake symbol=elide_transport_driver_wake return=i32 error=no_failure
+  param driver type=u64
+end
+
+import elide_transport_engine_context_new symbol=elide_transport_engine_context_new return=u64 error=no_failure
+  param workload type=u64
+  param flags type=u32
+  param certificates type=ptr<u8> nullable=true ownership=borrowed access=read
+  param certificatesLength type=u64
+  param key type=ptr<u8> nullable=true ownership=borrowed access=read
+  param keyLength type=u64
+  param alpn type=ptr<u8> nullable=true ownership=borrowed access=read
+  param alpnLength type=u64
+end
+
+import elide_transport_engine_context_release symbol=elide_transport_engine_context_release return=i32 error=no_failure
+  param context type=u64
+end
+
+import elide_transport_engine_control symbol=elide_transport_engine_control return=i64 error=no_failure
+  param engine type=u64
+  param operation type=u32
+end
+
+import elide_transport_engine_info symbol=elide_transport_engine_info return=i32 error=no_failure
+  param engine type=u64
+  param kind type=u32
+  param index type=u32
+  param output type=ptr<u8> nullable=true ownership=borrowed access=read_write
+  param capacity type=u64
+end
+
+import elide_transport_engine_new symbol=elide_transport_engine_new return=u64 error=no_failure
+  param workload type=u64
+  param context type=u64
+  param name type=ptr<u8> nullable=true ownership=borrowed access=read
+  param nameLength type=u64
+end
+
+import elide_transport_engine_release symbol=elide_transport_engine_release return=i32 error=no_failure
+  param engine type=u64
+end
+
+import elide_transport_engine_unwrap symbol=elide_transport_engine_unwrap return=i64 error=no_failure
+  param engine type=u64
+  param source type=ptr<u8> nullable=true ownership=borrowed access=read_write
+  param sourceLength type=u64
+  param destination type=ptr<u8> nullable=true ownership=borrowed access=read_write
+  param destinationLength type=u64
+  param flags type=u32
+end
+
+import elide_transport_engine_wrap symbol=elide_transport_engine_wrap return=i64 error=no_failure
+  param engine type=u64
+  param source type=ptr<u8> nullable=true ownership=borrowed access=read
+  param sourceLength type=u64
+  param destination type=ptr<u8> nullable=true ownership=borrowed access=read_write
+  param destinationLength type=u64
+end
+
+import elide_transport_http_chunk_prepare symbol=elide_transport_http_chunk_prepare return=u64 error=no_failure
+  param exchange type=u64
+  param capacity type=u64
+  param address type=ptr<u64> nullable=false ownership=borrowed access=write
+end
+
+import elide_transport_http_chunk_send symbol=elide_transport_http_chunk_send return=i32 error=no_failure
+  param driver type=u64
+  param exchange type=u64
+  param buffer type=u64
+  param length type=u64
+  param flags type=u32
+end
+
+import elide_transport_http_drain symbol=elide_transport_http_drain return=i32 error=no_failure
+  param driver type=u64
+end
+
+import elide_transport_http_free symbol=elide_transport_http_free return=i32 error=no_failure
+  param driver type=u64
+  param exchange type=u64
+end
+
+import elide_transport_http_head_release symbol=elide_transport_http_head_release return=i32 error=no_failure
+  param head type=u64
+end
+
+import elide_transport_http_header_count symbol=elide_transport_http_header_count return=i32 error=no_failure native_leaf=true@explicit_contract
+  param exchange type=u64
+end
+
+import elide_transport_http_keep_alive symbol=elide_transport_http_keep_alive return=i32 error=no_failure native_leaf=true@explicit_contract
+  param exchange type=u64
+end
+
+import elide_transport_http_method symbol=elide_transport_http_method return=i32 error=no_failure native_leaf=true@explicit_contract
+  param exchange type=u64
+end
+
+import elide_transport_http_prepare symbol=elide_transport_http_prepare return=u64 error=no_failure
+  param exchange type=u64
+  param capacity type=u64
+end
+
+import elide_transport_http_release symbol=elide_transport_http_release return=i32 error=no_failure
+  param driver type=u64
+  param exchange type=u64
+end
+
+import elide_transport_http_respond symbol=elide_transport_http_respond return=i32 error=no_failure
+  param driver type=u64
+  param exchange type=u64
+  param status type=u32
+  param headers type=ptr<u64> nullable=true ownership=borrowed access=read
+  param count type=u32
+  param body type=ptr<u8> nullable=true ownership=borrowed access=read
+  param bodyLength type=u64
+  param flags type=u32
+end
+
+import elide_transport_http_retain symbol=elide_transport_http_retain return=u64 error=no_failure
+  param exchange type=u64
+  param length type=ptr<u64> nullable=false ownership=borrowed access=write
+end
+
+import elide_transport_http_retire symbol=elide_transport_http_retire return=i32 error=no_failure
+  param driver type=u64
+end
+
+import elide_transport_http_segment_ack symbol=elide_transport_http_segment_ack return=i32 error=no_failure
+  param driver type=u64
+  param segment type=u64
+end
+
+import elide_transport_http_segment_release symbol=elide_transport_http_segment_release return=i32 error=no_failure
+  param driver type=u64
+  param segment type=u64
+end
+
+import elide_transport_http_segment_release_retired symbol=elide_transport_http_segment_release_retired return=i32 error=no_failure
+  param segment type=u64
+end
+
+import elide_transport_http_send symbol=elide_transport_http_send return=i32 error=no_failure
+  param driver type=u64
+  param exchange type=u64
+  param length type=u64
+  param flags type=u32
+end
+
+import elide_transport_http_spans symbol=elide_transport_http_spans return=i32 error=no_failure native_leaf=true@explicit_contract
+  param exchange type=u64
+  param output type=ptr<u32> nullable=true ownership=borrowed access=write
+  param capacity type=u32
+end
+
+import elide_transport_http_version symbol=elide_transport_http_version return=i32 error=no_failure native_leaf=true@explicit_contract
+  param exchange type=u64
+end
+
+import elide_transport_http_view symbol=elide_transport_http_view return=i32 error=no_failure native_leaf=true@explicit_contract
+  param exchange type=u64
+  param kind type=u32
+  param index type=u32
+  param output type=ptr<u64> nullable=false ownership=borrowed access=write
+end
+
+import elide_transport_last_error symbol=elide_transport_last_error return=i32 error=no_failure
+end
+
+import elide_transport_owner_new symbol=elide_transport_owner_new return=u64 error=no_failure
+  param limit type=u64
+end
+
+import elide_transport_owner_release symbol=elide_transport_owner_release return=i32 error=no_failure
+  param owner type=u64
+end
+
+import elide_transport_owner_used symbol=elide_transport_owner_used return=u64 error=no_failure
+  param owner type=u64
+end
+
+import elide_transport_serving_available_cores symbol=elide_transport_serving_available_cores return=i32 error=no_failure
+end
+
+import elide_transport_serving_close symbol=elide_transport_serving_close return=i32 error=no_failure
+  param application type=u64
+end
+
+import elide_transport_serving_context_enter symbol=elide_transport_serving_context_enter return=i32 error=no_failure
+  param application type=u64
+  param replica type=u32
+end
+
+import elide_transport_serving_context_leave symbol=elide_transport_serving_context_leave return=i32 error=no_failure
+end
+
+import elide_transport_serving_cpu symbol=elide_transport_serving_cpu return=i32 error=no_failure
+  param driver type=u64
+end
+
+import elide_transport_serving_driver symbol=elide_transport_serving_driver return=u64 error=no_failure
+  param workload type=u64
+  param application type=u64
+  param replica type=u32
+  param backend type=u32
+  param limit type=u32
+  param affinity type=u32
+end
+
+import elide_transport_serving_helper_prepare symbol=elide_transport_serving_helper_prepare return=u64 error=no_failure native_leaf=true@explicit_contract
+end
+
+import elide_transport_serving_helper_release symbol=elide_transport_serving_helper_release return=i32 error=no_failure native_leaf=true@explicit_contract
+  param token type=u64
+end
+
+import elide_transport_serving_helper_start symbol=elide_transport_serving_helper_start return=i32 error=no_failure
+  param token type=u64
+end
+
+import elide_transport_serving_listen symbol=elide_transport_serving_listen return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param endpoint type=u64
+  param signature type=u64
+  param backlog type=i32
+end
+
+import elide_transport_serving_listener_close symbol=elide_transport_serving_listener_close return=i32 error=no_failure
+  param driver type=u64
+  param listener type=u64
+end
+
+import elide_transport_serving_new symbol=elide_transport_serving_new return=u64 error=no_failure
+  param contexts type=u32
+end
+
+import elide_transport_serving_ready symbol=elide_transport_serving_ready return=i32 error=no_failure
+  param driver type=u64
+end
+
+import elide_transport_serving_split_new symbol=elide_transport_serving_split_new return=u64 error=no_failure
+  param contexts type=u32
+end
+
+import elide_transport_serving_worker_driver symbol=elide_transport_serving_worker_driver return=u64 error=no_failure
+  param workload type=u64
+  param application type=u64
+  param context type=u32
+  param worker type=u32
+  param backend type=u32
+  param limit type=u32
+end
+
+import elide_transport_serving_workers symbol=elide_transport_serving_workers return=i32 error=no_failure
+  param application type=u64
+  param context type=u32
+end
+
+import elide_transport_socket_accept symbol=elide_transport_socket_accept return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param listener type=u64
+end
+
+import elide_transport_socket_address symbol=elide_transport_socket_address return=i32 error=no_failure
+  param driver type=u64
+  param socket type=u64
+  param peer type=u32
+  param output type=u64
+end
+
+import elide_transport_socket_adopt symbol=elide_transport_socket_adopt return=i32 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+end
+
+import elide_transport_socket_close symbol=elide_transport_socket_close return=i32 error=no_failure
+  param driver type=u64
+  param socket type=u64
+end
+
+import elide_transport_socket_connect symbol=elide_transport_socket_connect return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param endpoint type=u64
+end
+
+import elide_transport_socket_discard symbol=elide_transport_socket_discard return=i32 error=no_failure
+  param socket type=u64
+end
+
+import elide_transport_socket_http symbol=elide_transport_socket_http return=i32 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param owner type=u64
+  param capacity type=u64
+end
+
+import elide_transport_socket_http_tls symbol=elide_transport_socket_http_tls return=i32 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param owner type=u64
+  param capacity type=u64
+  param context type=u64
+end
+
+import elide_transport_socket_listen symbol=elide_transport_socket_listen return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param endpoint type=u64
+  param backlog type=i32
+  param reuse type=u32
+end
+
+import elide_transport_socket_option symbol=elide_transport_socket_option return=i32 error=no_failure
+  param driver type=u64
+  param socket type=u64
+  param option type=u32
+  param value type=i32
+end
+
+import elide_transport_socket_receive symbol=elide_transport_socket_receive return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param buffer type=u64
+end
+
+import elide_transport_socket_receive_new symbol=elide_transport_socket_receive_new return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param owner type=u64
+  param capacity type=u64
+end
+
+import elide_transport_socket_receive_new_result symbol=elide_transport_socket_receive_new_result return=i32 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param owner type=u64
+  param capacity type=u64
+  param output type=ptr<elide_transport_receive_result_t> nullable=false ownership=borrowed access=write
+end
+
+import elide_transport_socket_send symbol=elide_transport_socket_send return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param buffer type=u64
+  param offset type=u64
+  param length type=u64
+end
+
+import elide_transport_socket_send_gathered symbol=elide_transport_socket_send_gathered return=u64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param regions type=ptr<u64> nullable=false ownership=borrowed access=read
+  param count type=u32
+end
+
+import elide_transport_socket_send_inline symbol=elide_transport_socket_send_inline return=i64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param source type=ptr<u8> nullable=true ownership=borrowed access=read
+  param length type=u64
+end
+
+import elide_transport_socket_shutdown symbol=elide_transport_socket_shutdown return=i32 error=no_failure
+  param driver type=u64
+  param socket type=u64
+  param direction type=u32
+end
+
+import elide_transport_tls_client symbol=elide_transport_tls_client return=u64 error=no_failure
+  param workload type=u64
+  param roots type=u64
+  param alpn type=u64
+end
+
+import elide_transport_tls_context_release symbol=elide_transport_tls_context_release return=i32 error=no_failure
+  param context type=u64
+end
+
+import elide_transport_tls_feed symbol=elide_transport_tls_feed return=i32 error=no_failure
+  param session type=u64
+  param input type=u64
+  param length type=u64
+end
+
+import elide_transport_tls_new symbol=elide_transport_tls_new return=u64 error=no_failure
+  param workload type=u64
+  param context type=u64
+  param owner type=u64
+  param name type=u64
+end
+
+import elide_transport_tls_protocol symbol=elide_transport_tls_protocol return=i32 error=no_failure
+  param session type=u64
+  param output type=u64
+end
+
+import elide_transport_tls_release symbol=elide_transport_tls_release return=i32 error=no_failure
+  param session type=u64
+end
+
+import elide_transport_tls_server symbol=elide_transport_tls_server return=u64 error=no_failure
+  param workload type=u64
+  param chain type=u64
+  param key type=u64
+  param alpn type=u64
+end
+
+import elide_transport_tls_step symbol=elide_transport_tls_step return=i32 error=no_failure
+  param session type=u64
+  param action type=u32
+  param plaintext type=u64
+  param offset type=u64
+  param length type=u64
+  param output type=u64
+end
+
+import elide_transport_workload_close symbol=elide_transport_workload_close return=i32 error=no_failure
+  param workload type=u64
+end

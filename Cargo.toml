@@ -56,3 +56,10 @@ codegen-units = 1
 panic = "abort"
 overflow-checks = true
 strip = "debuginfo"
+
+# Defer optimization to the consumer's LLVM linker. Keep ordinary release
+# artifacts and their Cargo cache separate from the bitcode archive variant.
+[profile.bitcode]
+inherits = "release"
+lto = false
+strip = "none"

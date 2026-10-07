@@ -40,7 +40,11 @@ only after integration checks pass. Record the actual generator revision in
 package provenance when an override is used.
 
 Initial inspected revision: `6892225acaa1b7fef0e7a3496104195115fae94d`.
-The first requested refresh returned already up to date.
+The first requested refresh returned already up to date. The next refresh
+advanced to `3eaf2950df92f3f03f501be289e669b13136a16e`, adding Java naming
+configuration. Subsequent refreshes initially found no changes; the final-phase refresh
+advanced to svmgen 0.2.0 at `1bde5a11b1f25446e6410c27e6484546b4379c7d`, adding typed Native
+Image carriers. Regenerate and verify those carriers before shipping.
 
 ## Descriptor and generated imports
 
@@ -59,13 +63,16 @@ and checked for drift. Keep the two existing `CapiTransportNative` classes as
 public compatibility adapters, delegating to generated imports. Translate
 addresses to the generated pointer carriers at this adapter boundary.
 
-The current generator emits `dev.elide.seam.generated.SeamNative` without
-Bemo's C context/library configuration. Integrate those annotations and the
-`dev.elide.bemo` package through a narrowly scoped deterministic adaptation
-step until upstream supports equivalent configuration. Validate the expected
-upstream output shape and fail on an incompatible change; do not silently
-patch unknown Java output. Include generated Java in source JARs and Javadoc
-inputs, not only compiled classes.
+The refreshed generator supports module-level Java package/class naming.
+Use `java_package=dev.elide.bemo.svm.generated` and `java_class=BemoNatives`
+directly. Add C context/library annotations through a narrowly scoped,
+validated adaptation until upstream supplies them. Include generated Java in
+source JARs and Javadoc inputs, not only compiled classes.
+
+Generate common Java using the canonical `aarch64-apple-darwin` descriptor
+so its embedded fingerprint and all common JARs remain identical across
+platforms. This fingerprint describes the canonical descriptor. Generate
+classifier JSON/fingerprints/LLVM contracts for the actual consumer target.
 
 Keep reviewed human-facing headers and the existing Rust forwarding-export
 generator. Compare descriptor signatures and generated record layouts with

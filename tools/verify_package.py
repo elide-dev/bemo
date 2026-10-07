@@ -10,6 +10,8 @@ import zipfile
 import json
 
 from native_compatibility import compatibility
+import bitcode
+import seam
 
 from build import MAVEN_GROUP, MAVEN_PATH, BUILD, MODULES, ROOT, VERSION, classifier, classpath, compile_java, java_tool, run, netty
 
@@ -140,7 +142,25 @@ def verify():
       run(os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", static_dir,
           ROOT / "tests/static.c", static_dir / "libbemo_ffi.a", *flags, "-o", binary)
       run(binary, timeout=30)
-  print("Maven package contracts passed (resource loading and static linkage)")
+    variant_jar = stage / "bemo-native-image" / VERSION / f"bemo-native-image-{VERSION}-{classifier()}-thinlto.jar"
+    for algorithm in ("md5", "sha1", "sha256", "sha512"):
+      assert hashlib.new(algorithm, variant_jar.read_bytes()).hexdigest() == Path(f"{variant_jar}.{algorithm}").read_text().strip()
+    variant_dir = Path(tmp) / "thinlto"
+    variant_dir.mkdir()
+    with zipfile.ZipFile(variant_jar) as archive:
+      resource = f"META-INF/native/{classifier()}/"
+      for name in ("libbemo_ffi_thinlto.a", "manifest.json", "bemo.h", "elide_transport.h",
+                   "seam.json", "seam.abi", "seam.ll", "callbacks.json"):
+        (variant_dir / name).write_bytes(archive.read(resource + name))
+    manifest = json.loads((variant_dir / "manifest.json").read_text())
+    binary = variant_dir / "libbemo_ffi_thinlto.a"
+    assert manifest["target"] == seam.target_triple()
+    assert manifest["sha256"] == hashlib.sha256(binary.read_bytes()).hexdigest()
+    assert manifest["members"] == bitcode.inventory(binary.read_bytes())
+    assert manifest["seamFingerprint"] == (variant_dir / "seam.abi").read_text().strip()
+    assert json.loads((variant_dir / "seam.json").read_text())["targetTriple"] == manifest["target"]
+    bitcode.verify(binary, variant_dir / "verify")
+  print("Maven package contracts passed (resource loading, static linkage, and ThinLTO)")
 
 
 if __name__ == "__main__":

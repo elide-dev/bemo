@@ -5,7 +5,7 @@ jobs:
   build:
     name: Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -21,6 +21,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - name: Install checksummed LLVM toolchain
+        run: python3 tools/setup_llvm.py
       - name: Stage Maven artifacts
         run: make package
       - name: Validate staged artifacts

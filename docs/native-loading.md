@@ -59,3 +59,10 @@ close/reopen, property overrides, missing and conflicting resources, cleanup,
 and TCP/Unix/TLS through the automatically loaded transport. It also links a
 separate C program against the **static** classifier; see
 [publishing](publishing.md) for Native Image and C linkage instructions.
+
+## LLVM consumers
+
+The additional Native Image `<platform>-thinlto` classifier supplies an LLVM
+bitcode archive, public headers, seam contracts, and toolchain provenance.
+See [generated imports and ThinLTO libraries](generated-seam.md) for generation,
+extraction, final-link requirements, and the ordinary static-library alternative.

@@ -14,6 +14,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 from reports import Reports
+import seam
+import bitcode
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
@@ -113,6 +115,7 @@ def compile_java(output, inputs, dependencies=(), lint="all"):
 
 def jvm():
   deps()
+  seam.generate(check=True)
   for module in MODULES:
     cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
     if module == "native-image":
@@ -264,6 +267,9 @@ def fmt(check=False):
 
 
 def check():
+  run(sys.executable, ROOT / "tools/test_seam.py")
+  run(sys.executable, ROOT / "tools/test_bitcode.py")
+  run(sys.executable, ROOT / "tools/test_setup_llvm.py")
   run(sys.executable, ROOT / "tools/generate_exports.py", "--check")
   fmt(True)
   run("cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings")
@@ -338,6 +344,7 @@ def jar(path, directory):
 
 
 def package():
+  bitcode_archive = bitcode.build()
   rust(True)
   jvm()
   stage = BUILD / "maven"
@@ -387,6 +394,22 @@ def package():
       shutil.copy2(ROOT / name, native / "META-INF" / name)
     prefix = stage / MAVEN_PATH / f"bemo-{module}" / VERSION / f"bemo-{module}-{VERSION}"
     jar(f"{prefix}-{classifier()}.jar", native)
+  variant = classifier() + "-thinlto"
+  native = BUILD / "native-resources/thinlto"
+  shutil.rmtree(native, ignore_errors=True)
+  resource = native / "META-INF/native" / classifier()
+  resource.mkdir(parents=True)
+  for binary in (bitcode_archive, bitcode.DIRECTORY / "manifest.json"):
+    shutil.copy2(binary, resource)
+  for name in ("bemo.h", "elide_transport.h"):
+    shutil.copy2(ROOT / "include" / name, resource)
+  for name in ("seam.json", "seam.abi", "seam.ll"):
+    shutil.copy2(seam.output() / name, resource)
+  shutil.copy2(ROOT / "seams/callbacks.json", resource)
+  for name in ("LICENSE", "NOTICE"):
+    shutil.copy2(ROOT / name, native / "META-INF" / name)
+  prefix = stage / MAVEN_PATH / "bemo-native-image" / VERSION / f"bemo-native-image-{VERSION}"
+  jar(f"{prefix}-{variant}.jar", native)
   for path in sorted(stage.rglob("*")):
     if path.is_file():
       for algorithm in ("md5", "sha1", "sha256", "sha512"):

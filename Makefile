@@ -68,3 +68,11 @@ test-tsan:
 	$(PYTHON) tools/verify.py tsan
 test-miri:
 	$(PYTHON) tools/verify.py miri
+
+.PHONY: generate-seam build-bitcode test-bitcode
+generate-seam:
+	$(PYTHON) tools/seam.py
+build-bitcode:
+	$(PYTHON) tools/bitcode.py build
+test-bitcode:
+	$(PYTHON) tools/bitcode.py test

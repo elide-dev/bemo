@@ -76,6 +76,15 @@ class PackagePublishingTest(unittest.TestCase):
           packages.merge(root, root / "merged", "0.1.0-SNAPSHOT")
         self.assertFalse((root / "merged").exists())
 
+  def test_thinlto_variants_are_required_and_deployed(self):
+    names = packages.artifacts("0.1.0-SNAPSHOT", "osx-aarch64")
+    self.assertTrue(any(name.endswith("-osx-aarch64-thinlto.jar") for name in names))
+    with patch.object(packages.subprocess, "run") as run:
+      packages.deploy(Path("repository"), "0.1.0-SNAPSHOT", Path("settings.xml"))
+    native = next(call.args[0] for call in run.call_args_list
+                  if any("-Dfile=repository/dev/elide/bemo/bemo-native-image/" in arg for arg in call.args[0]))
+    self.assertTrue(any("osx-aarch64-thinlto" in arg for arg in native))
+
   def test_deploy_attaches_sources_javadocs_and_both_native_platforms(self):
     with patch.object(packages.subprocess, "run") as run:
       packages.deploy(Path("repository"), "0.1.0-SNAPSHOT", Path("settings.xml"))

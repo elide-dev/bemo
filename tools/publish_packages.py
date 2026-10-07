@@ -31,6 +31,8 @@ def artifacts(value, platform=None):
     names.update(prefix + suffix for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"))
     if platform and module in ("ffm", "native-image"):
       names.add(f"{prefix}-{platform}.jar")
+      if module == "native-image":
+        names.add(f"{prefix}-{platform}-thinlto.jar")
   return names
 
 
@@ -74,6 +76,8 @@ def deploy(repository, value, settings, url=REGISTRY):
     classifiers = ["sources", "javadoc"]
     if module in ("ffm", "native-image"):
       classifiers += sorted(release.PLATFORMS.values())
+      if module == "native-image":
+        classifiers += sorted(platform + "-thinlto" for platform in release.PLATFORMS.values())
     command = ["mvn", "--batch-mode", "--no-transfer-progress", "--settings", str(settings), DEPLOY_GOAL,
                "-DrepositoryId=github", f"-Durl={url}", f"-DpomFile={prefix}.pom", f"-Dfile={prefix}.jar",
                "-DgeneratePom=false", "-DretryFailedDeploymentCount=3",
