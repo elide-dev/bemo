@@ -1,5 +1,5 @@
 use bemo::buffer::{Budget, Buffer, FrozenBuffer, pool_retained, pool_trim};
-use compio_buf::IoBuf;
+use compio_buf::{IoBuf, IoBufMut};
 
 fn drain() {
   while pool_retained() > 0 {
@@ -30,12 +30,23 @@ fn receive_storage_returns_to_the_pool_and_is_reused() {
 }
 
 #[test]
-fn only_receive_storage_is_admitted() {
+fn ordinary_storage_is_admitted_with_exact_geometry() {
   drain();
   let budget = Budget::new(1024 * 1024);
-  drop(Buffer::new(4096, budget.clone()).unwrap());
-  assert_eq!(pool_retained(), 0);
+  let buffer = Buffer::new(4096, budget.clone()).unwrap();
+  let pointer = address(&buffer);
+  drop(buffer);
+  assert_eq!(pool_retained(), 4096);
   assert_eq!(budget.used(), 0);
+  let larger = Buffer::new(4097, budget.clone()).unwrap();
+  assert_ne!(address(&larger), pointer);
+  assert_eq!(pool_retained(), 4096);
+  let mut exact = Buffer::new(4096, budget).unwrap();
+  assert_eq!(address(&exact), pointer);
+  assert_eq!(exact.buf_capacity(), 4096);
+  assert_eq!(exact.buf_len(), 0);
+  drop((exact, larger));
+  drain();
 }
 
 #[test]
@@ -148,4 +159,83 @@ fn cross_thread_release_pools_on_the_releasing_thread() {
   .unwrap();
   assert_eq!(observed, (4096, 0, 4096));
   assert_eq!(pool_retained(), 0);
+}
+
+#[test]
+fn ordinary_storage_changes_owner_only_after_last_lease_and_reserves_again() {
+  drain();
+  let old = Budget::new(8192);
+  let mut storage = Buffer::new(4096, old.clone()).unwrap();
+  storage.write(0, b"secret").unwrap();
+  let pointer = address(&storage);
+  let frozen = storage.freeze();
+  let lease = FrozenBuffer::slice(&frozen, 1..4).unwrap();
+  drop(frozen);
+  assert_eq!(pool_retained(), 0);
+  assert_eq!(old.used(), 4096);
+  drop(lease);
+  assert_eq!(pool_retained(), 4096);
+  assert_eq!(old.used(), 0);
+  old.close();
+  let new = Budget::new(8192);
+  let mut reused = Buffer::new(4096, new.clone()).unwrap();
+  assert_eq!(address(&reused), pointer);
+  assert_eq!(reused.as_init(), b"");
+  assert_eq!(new.used(), 4096);
+  assert_eq!(old.used(), 0);
+  assert!(reused.ensure_init().iter().all(|&byte| byte == 0));
+  drop(reused);
+  assert_eq!(new.used(), 0);
+  drain();
+}
+
+#[test]
+fn ordinary_reuse_obeys_new_owner_limits_and_closure() {
+  drain();
+  drop(Buffer::new(4096, Budget::new(8192)).unwrap());
+  let small = Budget::new(4095);
+  assert!(Buffer::new(4096, small.clone()).is_err());
+  assert_eq!(small.used(), 0);
+  let closed = Budget::new(8192);
+  closed.close();
+  assert!(Buffer::new(4096, closed.clone()).is_err());
+  assert_eq!(closed.used(), 0);
+  drain();
+}
+
+#[test]
+fn ordinary_cross_thread_release_and_thread_teardown_retire_storage() {
+  drain();
+  let budget = Budget::new(8192);
+  let storage = Buffer::new(4096, budget.clone()).unwrap();
+  let other = budget.clone();
+  std::thread::spawn(move || {
+    drop(storage);
+    assert_eq!(pool_retained(), 4096);
+    assert_eq!(other.used(), 0);
+  })
+  .join()
+  .unwrap();
+  assert_eq!(pool_retained(), 0);
+  assert_eq!(budget.used(), 0);
+}
+
+#[test]
+fn ordinary_retention_remains_bounded_and_does_not_take_receive_entries() {
+  drain();
+  let budget = Budget::new(8192);
+  let receive = Buffer::receive(1024, budget.clone()).unwrap();
+  let receive_pointer = address(&receive);
+  drop(receive);
+  let ordinary = Buffer::new(1024, budget.clone()).unwrap();
+  assert_ne!(address(&ordinary), receive_pointer);
+  assert_eq!(pool_retained(), 1024);
+  let another = Buffer::new(2048, budget.clone()).unwrap();
+  drop((ordinary, another));
+  assert_eq!(pool_retained(), 4096);
+  drop(Buffer::new(4096, budget.clone()).unwrap());
+  assert_eq!(pool_retained(), 4096);
+  budget.close();
+  drain();
+  assert_eq!(budget.used(), 0);
 }

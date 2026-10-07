@@ -46,14 +46,15 @@ impl ReturnSlot {
   fn take(self: &Arc<Self>) -> Option<Buffer> {
     let pointer = NonNull::new(self.pointer.swap(ptr::null_mut(), Ordering::AcqRel))?;
     Some(Buffer {
-      allocation: Arc::new(Allocation {
+      allocation: super::AllocationLease::new(Arc::new(Allocation {
         pointer,
         capacity: SLOT_BYTES,
         budget: self.budget.clone(),
-        recyclable: false,
+        recyclable: None,
+        charged: true,
         return_slot: Some(self.clone()),
         receive_credit: None,
-      }),
+      })),
       offset: 0,
       capacity: SLOT_BYTES,
       length: 0,
@@ -215,9 +216,9 @@ impl SharedReceivePool {
       budget: self.budget.clone(),
       wake: Some(self.wake.clone()),
     });
-    Arc::get_mut(&mut buffer.allocation)
-      .expect("new allocation is exclusive")
-      .return_slot = Some(returned.clone());
+    let allocation = Arc::get_mut(&mut buffer.allocation).expect("new allocation is exclusive");
+    allocation.recyclable = None;
+    allocation.return_slot = Some(returned.clone());
     Ok((buffer, returned))
   }
 
@@ -308,6 +309,63 @@ mod tests {
   }
   fn wake() -> Waker {
     Waker::from(Arc::new(Notify::default()))
+  }
+
+  #[test]
+  fn pooled_receive_storage_releases_delivery_credit_on_final_view_drop() {
+    let budget = Budget::new(8 * SLOT_BYTES);
+    let window = ReceiveWindow::new(SLOT_BYTES, wake()).unwrap();
+    let mut buffer = Buffer::receive(SLOT_BYTES, budget.clone()).unwrap();
+    let pointer = buffer.buf_ptr();
+    drop(window.attach(&mut buffer).unwrap());
+    let frozen = buffer.freeze();
+    let retained = frozen.clone();
+    assert!(!window.available());
+    drop(frozen);
+    assert!(!window.available(), "a live view still owns its delivery credit");
+    drop(retained);
+    assert!(window.available(), "idle storage must not pin delivery credit");
+    assert_eq!(budget.used(), 0);
+    let mut reused = Buffer::receive(SLOT_BYTES, budget.clone()).unwrap();
+    assert_eq!(reused.buf_ptr(), pointer);
+    assert!(reused.receive_credit().is_none());
+    drop(window.attach(&mut reused).unwrap());
+    assert!(!window.available());
+    drop(reused);
+    assert!(window.available());
+    assert_eq!(budget.used(), 0);
+  }
+
+  #[test]
+  fn pooled_receive_storage_preserves_external_delivery_credit() {
+    let budget = Budget::new(8 * SLOT_BYTES);
+    let first = ReceiveWindow::new(SLOT_BYTES, wake()).unwrap();
+    let second = ReceiveWindow::new(SLOT_BYTES, wake()).unwrap();
+    let mut buffer = Buffer::receive(SLOT_BYTES, budget.clone()).unwrap();
+    let pointer = buffer.buf_ptr();
+    let credit = first.attach(&mut buffer).unwrap();
+    drop(buffer);
+    assert_eq!(budget.used(), 0);
+    assert!(
+      !first.available(),
+      "external credit retains its independent reservation"
+    );
+    let mut reused = Buffer::receive(SLOT_BYTES, budget.clone()).unwrap();
+    assert_eq!(reused.buf_ptr(), pointer);
+    assert!(reused.receive_credit().is_none());
+    assert!(first.attach(&mut reused).is_none());
+    drop(second.attach(&mut reused).unwrap());
+    assert!(!second.available());
+    credit.ack();
+    credit.ack();
+    assert!(first.available());
+    assert!(
+      !second.available(),
+      "old acknowledgement cannot release the new delivery"
+    );
+    drop(reused);
+    assert!(second.available());
+    assert_eq!(budget.used(), 0);
   }
 
   #[test]

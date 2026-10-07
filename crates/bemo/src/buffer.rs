@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::io;
 use std::mem::MaybeUninit;
-use std::ops::Range;
+use std::ops::{Deref, DerefMut, Range};
 use std::ptr::NonNull;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -123,7 +123,7 @@ impl Budget {
     Arc::as_ptr(&self.0) as usize
   }
 
-  /// Capacity retained by live allocations. Pooled receive storage is not live and is excluded.
+  /// Capacity retained by live allocations. Pooled storage is not live and is excluded.
   pub fn used(&self) -> usize {
     self.0.used.load(Ordering::Acquire)
   }
@@ -177,7 +177,8 @@ struct Allocation {
   pointer: NonNull<u8>,
   capacity: usize,
   budget: Budget,
-  recyclable: bool,
+  recyclable: Option<Reuse>,
+  charged: bool,
   return_slot: Option<Arc<provided::ReturnSlot>>,
   receive_credit: Option<provided::ReceiveCredit>,
 }
@@ -194,23 +195,21 @@ impl Drop for Allocation {
       slot.release(self.pointer);
       return;
     }
-    // Reuse is only reachable once every view, lease, and kernel operation has released this Arc.
-    if self.recyclable
-      && Pool::admit(Pooled {
-        pointer: self.pointer,
-        capacity: self.capacity,
-        budget: self.budget.clone(),
-      })
-    {
-      return;
-    }
     // SAFETY: The final owner releases the mi_malloc allocation exactly once after pool return was declined.
     unsafe { mi_free(self.pointer.as_ptr().cast::<c_void>()) };
-    self.budget.0.used.fetch_sub(self.capacity, Ordering::AcqRel);
+    if self.charged {
+      self.budget.0.used.fetch_sub(self.capacity, Ordering::AcqRel);
+    }
   }
 }
 
-/// Maximum pooled receive allocations, and the retained bytes they may hold, per thread.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Reuse {
+  Exact,
+  Receive,
+}
+
+/// Maximum pooled allocations, and the retained bytes they may hold, per thread.
 const POOL_ENTRIES: usize = 16;
 const POOL_BYTES: usize = 256 * 1024;
 
@@ -218,9 +217,46 @@ const POOL_BYTES: usize = 256 * 1024;
 /// `Budget::used` keeps reporting only storage a caller can still reach. The pool is bounded
 /// separately, by entry count, retained bytes, and a fraction of the owner's limit.
 struct Pooled {
-  pointer: NonNull<u8>,
-  capacity: usize,
-  budget: Budget,
+  allocation: Arc<Allocation>,
+}
+
+/// Shares allocation metadata with live views; only its final lease can enter the idle pool.
+#[derive(Debug)]
+struct AllocationLease(Option<Arc<Allocation>>);
+
+impl AllocationLease {
+  fn new(allocation: Arc<Allocation>) -> Self {
+    Self(Some(allocation))
+  }
+}
+
+impl Clone for AllocationLease {
+  fn clone(&self) -> Self {
+    Self::new(self.0.as_ref().unwrap().clone())
+  }
+}
+
+impl Deref for AllocationLease {
+  type Target = Arc<Allocation>;
+  fn deref(&self) -> &Self::Target {
+    self.0.as_ref().unwrap()
+  }
+}
+
+impl DerefMut for AllocationLease {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    self.0.as_mut().unwrap()
+  }
+}
+
+impl Drop for AllocationLease {
+  fn drop(&mut self) {
+    let allocation = self.0.take().unwrap();
+    // No weak references exist. A missed admission during concurrent drops is safe: Arc frees it.
+    if allocation.recyclable.is_some() && allocation.return_slot.is_none() && Arc::strong_count(&allocation) == 1 {
+      Pool::admit(Pooled { allocation });
+    }
+  }
 }
 
 #[derive(Default)]
@@ -235,31 +271,50 @@ thread_local! {
 
 impl Pool {
   fn discard(entry: Pooled) {
-    // SAFETY: This pool entry exclusively owns a mi_malloc allocation with no outstanding buffer leases.
-    unsafe { mi_free(entry.pointer.as_ptr().cast::<c_void>()) };
+    drop(entry);
   }
 
-  /// Retain one released allocation, returning whether the pool took ownership of it.
-  fn admit(entry: Pooled) -> bool {
-    if entry.capacity > POOL_BYTES || entry.budget.is_closed() {
-      return false;
+  /// Retain exclusively owned metadata and storage, excluding them from live budget charges.
+  fn admit(mut entry: Pooled) {
+    let allocation = Arc::get_mut(&mut entry.allocation).unwrap();
+    // Idle storage owns no delivery credit. External clones keep their independent reservation.
+    drop(allocation.receive_credit.take());
+    if allocation.capacity > POOL_BYTES || allocation.budget.is_closed() {
+      return;
     }
-    POOL
-      .try_with(|pool| {
-        let mut pool = pool.borrow_mut();
-        let room = POOL_BYTES.min(entry.budget.0.limit / 8);
-        if pool.entries.len() >= POOL_ENTRIES || pool.retained + entry.capacity > room {
-          return false;
-        }
-        pool.retained += entry.capacity;
-        entry.budget.0.used.fetch_sub(entry.capacity, Ordering::AcqRel);
-        pool.entries.push(entry);
-        true
-      })
-      .unwrap_or(false)
+    let _ = POOL.try_with(|pool| {
+      let mut pool = pool.borrow_mut();
+      let allocation = Arc::get_mut(&mut entry.allocation).unwrap();
+      let fraction = if allocation.recyclable == Some(Reuse::Exact) {
+        2
+      } else {
+        8
+      };
+      let room = allocation.budget.0.limit / fraction;
+      let owned: usize = pool
+        .entries
+        .iter()
+        .filter(|entry| Arc::ptr_eq(&entry.allocation.budget.0, &allocation.budget.0))
+        .map(|entry| entry.allocation.capacity)
+        .sum();
+      if pool.entries.len() >= POOL_ENTRIES
+        || pool.retained + allocation.capacity > POOL_BYTES
+        || owned + allocation.capacity > room
+      {
+        return;
+      }
+      pool.retained += allocation.capacity;
+      allocation
+        .budget
+        .0
+        .used
+        .fetch_sub(allocation.capacity, Ordering::AcqRel);
+      allocation.charged = false;
+      pool.entries.push(entry);
+    });
   }
 
-  fn take(capacity: usize, budget: &Budget) -> Option<Pooled> {
+  fn take(capacity: usize, budget: &Budget, reuse: Reuse) -> Option<Arc<Allocation>> {
     POOL
       .try_with(|pool| {
         let mut pool = pool.borrow_mut();
@@ -267,21 +322,30 @@ impl Pool {
           .entries
           .iter()
           .enumerate()
-          .filter(|(_, entry)| entry.capacity >= capacity && Arc::ptr_eq(&entry.budget.0, &budget.0))
-          .min_by_key(|(_, entry)| entry.capacity)?
+          .filter(|(_, entry)| {
+            let allocation = &entry.allocation;
+            allocation.recyclable == Some(reuse)
+              && match reuse {
+                Reuse::Exact => allocation.capacity == capacity,
+                Reuse::Receive => allocation.capacity >= capacity && Arc::ptr_eq(&allocation.budget.0, &budget.0),
+              }
+          })
+          .min_by_key(|(_, entry)| entry.allocation.capacity)?
           .0;
         let entry = pool.entries.swap_remove(index);
-        pool.retained -= entry.capacity;
+        pool.retained -= entry.allocation.capacity;
         Some(entry)
       })
       .ok()
       .flatten()
-      .and_then(|entry| match budget.reserve(entry.capacity) {
-        Ok(()) => Some(entry),
-        Err(_) => {
-          Self::discard(entry);
-          None
+      .and_then(|mut entry| {
+        let allocation = Arc::get_mut(&mut entry.allocation).unwrap();
+        budget.reserve(allocation.capacity).ok()?;
+        if !Arc::ptr_eq(&allocation.budget.0, &budget.0) {
+          allocation.budget = budget.clone();
         }
+        allocation.charged = true;
+        Some(entry.allocation)
       })
   }
 }
@@ -295,7 +359,7 @@ impl Drop for Pool {
   }
 }
 
-/// Pooled receive capacity retained by this thread, outside every owner budget.
+/// Pooled allocation capacity retained by this thread, outside every owner budget.
 pub fn pool_retained() -> usize {
   POOL.try_with(|pool| pool.borrow().retained).unwrap_or(0)
 }
@@ -304,12 +368,15 @@ pub fn pool_retained() -> usize {
 pub fn pool_trim() {
   let _ = POOL.try_with(|pool| {
     let mut pool = pool.borrow_mut();
-    let closed = pool.entries.iter().position(|entry| entry.budget.is_closed());
+    let closed = pool
+      .entries
+      .iter()
+      .position(|entry| entry.allocation.budget.is_closed());
     let Some(index) = closed.or_else(|| pool.entries.len().checked_sub(1)) else {
       return;
     };
     let entry = pool.entries.swap_remove(index);
-    pool.retained -= entry.capacity;
+    pool.retained -= entry.allocation.capacity;
     Pool::discard(entry);
   });
 }
@@ -317,7 +384,7 @@ pub fn pool_trim() {
 /// Exclusive mutable storage suitable for completion-based receives.
 #[derive(Debug)]
 pub struct Buffer {
-  allocation: Arc<Allocation>,
+  allocation: AllocationLease,
   offset: usize,
   capacity: usize,
   length: usize,
@@ -370,7 +437,10 @@ impl Buffer {
   /// # Errors
   /// Rejects zero/oversized allocations, exhausted budgets, and allocator failure.
   pub fn new(capacity: usize, budget: Budget) -> io::Result<Self> {
-    Self::allocate(capacity, budget, false)
+    if capacity > POOL_BYTES || capacity > budget.0.limit / 2 {
+      return Self::allocate(capacity, budget, None);
+    }
+    Self::reuse(capacity, budget, Reuse::Exact)
   }
 
   /// Carve disjoint small responses within a callback batch; charge the entire backing slab.
@@ -411,29 +481,26 @@ impl Buffer {
   /// # Errors
   /// Rejects zero/oversized allocations, exhausted budgets, and allocator failure.
   pub fn receive(capacity: usize, budget: Budget) -> io::Result<Self> {
-    if capacity == 0 {
+    Self::reuse(capacity, budget, Reuse::Receive)
+  }
+
+  fn reuse(capacity: usize, budget: Budget, reuse: Reuse) -> io::Result<Self> {
+    if capacity == 0 || capacity > isize::MAX as usize {
       return Err(io::ErrorKind::InvalidInput.into());
     }
-    match Pool::take(capacity, &budget) {
+    match Pool::take(capacity, &budget, reuse) {
       // The pooled capacity is already charged, so ownership transfers without a new reservation.
-      Some(entry) => Ok(Self {
-        allocation: Arc::new(Allocation {
-          pointer: entry.pointer,
-          capacity: entry.capacity,
-          budget: entry.budget,
-          recyclable: true,
-          return_slot: None,
-          receive_credit: None,
-        }),
+      Some(allocation) => Ok(Self {
+        allocation: AllocationLease::new(allocation),
         offset: 0,
         capacity,
         length: 0,
       }),
-      None => Self::allocate(capacity, budget, true),
+      None => Self::allocate(capacity, budget, Some(reuse)),
     }
   }
 
-  fn allocate(capacity: usize, budget: Budget, recyclable: bool) -> io::Result<Self> {
+  fn allocate(capacity: usize, budget: Budget, recyclable: Option<Reuse>) -> io::Result<Self> {
     if capacity == 0 || capacity > isize::MAX as usize {
       return Err(io::ErrorKind::InvalidInput.into());
     }
@@ -445,14 +512,15 @@ impl Buffer {
       return Err(io::ErrorKind::OutOfMemory.into());
     };
     Ok(Self {
-      allocation: Arc::new(Allocation {
+      allocation: AllocationLease::new(Arc::new(Allocation {
         pointer,
         capacity,
         budget,
         recyclable,
+        charged: true,
         return_slot: None,
         receive_credit: None,
-      }),
+      })),
       offset: 0,
       capacity,
       length: 0,
@@ -550,7 +618,7 @@ impl IoBufMut for Buffer {
 /// Immutable view retaining native storage independently of its connection or request.
 #[derive(Clone, Debug)]
 pub struct FrozenBuffer {
-  allocation: Arc<Allocation>,
+  allocation: AllocationLease,
   offset: usize,
   capacity: usize,
   length: usize,
