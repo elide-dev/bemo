@@ -34,8 +34,9 @@ mutable references. The declaration travels into consuming workspaces; no
 root-only Cargo patch is required. Miri covers moving and releasing our encoder.
 The encoder resets reusable Rust state and detects runtime CPU features. zlib-rs is the portable integration chosen for this pass;
 zlib-ng remains a candidate, and the standalone probe below compares both.
-Full-stack Linux throughput, CPU, wire-size, and memory results determine whether
-the provider change earns its place; standalone compression speed is insufficient.
+Full-stack Linux throughput and CPU are the primary selection criteria;
+compressed size is reported as context. Standalone compression speed alone
+does not establish transport throughput.
 
 ## Alternative backends
 
@@ -77,3 +78,27 @@ Deflater implementation.
 The early local end-to-end before/after samples overlapped Native Image builds
 and are unsuitable for performance claims. CodSpeed CI must establish the
 application-level improvement of state reuse separately from backend selection.
+
+## Linux qualification of the integrated revision
+
+[The final paired CI run](https://github.com/elide-dev/bemo/actions/runs/37581322288) also measured all three providers
+on its Linux x86-64 throughput host before the network samples. This uses the
+same pinned zlib-rs revision as the integrated encoder, with 2,000 iterations
+per sample and three samples per case. These standalone timings exclude
+bindings, scheduling, and network costs.
+[Raw samples](data/linux-compression.json) record the compiler, sizes, and every
+observation; [provenance](data/compression-provenance.json) records the measured
+commit and locked provider versions.
+
+| Payload | zlib | zlib-rs | zlib-ng | Compressed bytes: zlib / rs / ng |
+| --- | ---: | ---: | ---: | --- |
+| 1 KiB JSON | 7,026 ns | 6,417 ns | 4,714 ns | 82 / 85 / 85 |
+| 1 KiB random | 24,231 ns | 27,959 ns | 28,055 ns | 1,047 / 1,047 / 1,047 |
+| 64 KiB JSON | 288,624 ns | 25,236 ns | 23,804 ns | 282 / 545 / 545 |
+| 64 KiB random | 1,250,658 ns | 1,111,043 ns | 1,520,857 ns | 65,574 / 65,574 / 65,574 |
+
+zlib-ng remains a follow-up candidate rather than an integrated provider.
+The full-stack [follow-up comparison](performance-updates.md) measures the
+shipped zlib-rs path against the preceding reusable Java compressor. Selection
+prioritizes speed over compressed size; the larger 64 KiB JSON output is
+recorded as context.

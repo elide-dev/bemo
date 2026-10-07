@@ -2,11 +2,11 @@
 
 The five optimization PRs are measured together at merged main commit
 `a0537b44c9d17ac312e18adb08500cd1069913ed`, compared with the immediate pre-stack
-commit `499a6f3dc4037fa8b7e264fe4928e7c3305b665a`. The refreshed README charts compare
-Bemo with Netty within the new run; the tables below compare the two versions.
+commit `499a6f3dc4037fa8b7e264fe4928e7c3305b665a`. The archived stack data compares
+Bemo with Netty within that run; the tables below compare the two versions.
 
 - Before: [pre-stack CI run](https://github.com/elide-dev/bemo/actions/runs/37574875335), [provenance](data/pre-stack-provenance.json), [raw samples](data/pre-stack-linux-x86_64.json).
-- After: [merged-main benchmark run](https://github.com/elide-dev/bemo/actions/runs/37574875335), [provenance](data/provenance.json), [raw samples](data/linux-x86_64.json).
+- After: [merged-main benchmark run](https://github.com/elide-dev/bemo/actions/runs/37574875335), [provenance](data/stack-provenance.json), [raw samples](data/stack-linux-x86_64.json).
 
 Both versions use Linux x86-64, Native Image `-O3`, native HTTP and Rustls/AWS-LC
 with io_uring against stock OpenJDK Netty epoll/JDK TLS. Every workload has
@@ -18,7 +18,7 @@ measurement function are unchanged; the preparation step adds the gzip helper.
 
 Both versions were rebuilt before measurement on one GitHub-hosted Linux
 runner. Commit order alternates by workload/sample; Bemo/Netty order alternates
-by sample. [Shared runner evidence](data/paired-environment.json) records CPU
+by sample. [Shared runner evidence](data/stack-paired-environment.json) records CPU
 and allowed affinity. This removes the cross-host mismatch of the first repeat,
 while shared-host scheduling still varies. Ranges span three samples and are
 not confidence intervals. These results measure the whole stack, not each PR.

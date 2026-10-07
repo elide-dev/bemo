@@ -93,8 +93,9 @@ should identify the same paired run and the actual measured commit. The
 workload-source fingerprint includes the native server, so server optimization
 changes its hash; verify that the client, requested workload, measurement
 function, runtime, and provider settings remain comparable before calculating
-a cross-version delta. [The optimization stack results](optimization-results.md)
-retain this evidence and all eight workloads.
+a cross-version delta. [The follow-up results](performance-updates.md) retain
+this evidence and all eight workloads;
+[the earlier stack results](optimization-results.md) remain archived.
 
 ## Reading the charts
 
@@ -112,7 +113,8 @@ and io_uring against stock OpenJDK Netty epoll/JDK TLS. Four persistent clients
 use the same external OpenJDK Netty NIO load generator. Each server has one I/O
 thread; server/client heaps are 256 MiB each. Each sample warms 5,000 rounds,
 then measures 25,000 rounds per client, completing 100,000 requests. Gzip uses
-application compression, with compressible fixed-pattern bodies. These compare
-the complete stacks, including their different HTTP/TLS implementations.
+per-response application compression through native zlib-rs for Bemo and the
+Netty compressor for the comparator, with compressible fixed-pattern bodies.
+These compare the complete stacks, including their different HTTP/TLS implementations.
 See [measurement methodology](../measurement.md) for timing, ownership,
 backend selection, and environment controls.

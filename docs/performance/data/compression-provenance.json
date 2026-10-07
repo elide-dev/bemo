@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-07",
+  "commit": "a87e7abcec4ee5b317a9212b7839a1d04fc0702d",
+  "run_url": "https://github.com/elide-dev/bemo/actions/runs/37581322288",
+  "artifact": "compression-evidence",
+  "summary": "linux-compression.json",
+  "sha256": "9dabb29ed1fb1aae00fdf16af022a0ad4337638a33fd04a6f12394a810bb82c9",
+  "environment": "paired-environment.json",
+  "providers": [
+    {
+      "name": "flate2",
+      "version": "1.1.10",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb",
+      "dependencies": [
+        "crc32fast",
+        "libz-ng-sys",
+        "libz-sys",
+        "miniz_oxide"
+      ]
+    },
+    {
+      "name": "libz-ng-sys",
+      "version": "1.1.29",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "879917b256f6317769b9f374b435805a8697013098aacce5a38ac106cd6a9469",
+      "dependencies": [
+        "cmake",
+        "libc"
+      ]
+    },
+    {
+      "name": "zlib-rs",
+      "version": "0.6.7",
+      "source": "git+https://github.com/jlucaso1/zlib-rs.git?rev=cedb23f2a9329d0bc81d0c8068d74d2b16a24dd6#cedb23f2a9329d0bc81d0c8068d74d2b16a24dd6"
+    }
+  ]
+}

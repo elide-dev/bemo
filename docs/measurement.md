@@ -115,13 +115,19 @@ and record its limits. Use the same limits for both servers and their common
 client, while retaining matched heap sizes and socket settings. Archive each
 backend's reports before the next run, since summary filenames are shared.
 
-Gzip is application compression, not a native Bemo codec: the native HTTP server
-reuses `java.util.zip.Deflater`, CRC32, and output storage, resetting and
-compressing each response into a fresh gzip member. The comparator uses Netty's
+Gzip is application compression performed for every response. The native HTTP
+server resets reusable Bemo zlib-rs state and compresses retained frozen input
+into a fresh, independently owned frozen output through the selected native
+binding. Provider state and bounded scratch are reused; output is charged to
+the workload and released after send retirement. The comparator uses Netty's
 `HttpContentCompressor`. Both clients use the same decompressor and verify
-compression negotiation. Identity workloads reuse a retained immutable response
-body and isolate the native HTTP/TLS data plane. Bodies repeat a fixed JSON pattern, so gzip results describe compressible
-application data, not incompressible data.
+compression negotiation. Samples record the actual gzip provider;
+`BEMO_BENCH_GZIP_PROVIDER=java.util.zip` selects the preceding reusable Java
+compressor for diagnostics. See [compression qualification](performance/compression.md)
+for the pinned provider, lifetime contract, and backend comparison.
+Identity workloads reuse a retained immutable response body and isolate the
+native HTTP/TLS data plane. Bodies repeat a fixed JSON pattern, so gzip results
+describe compressible application data, not incompressible data.
 
 The common NIO client prevents client native-driver readiness behavior from being
 attributed to either server. `BEMO_BENCH_CLIENT_TRANSPORT=kqueue|epoll|nio` selects

@@ -82,12 +82,13 @@ OpenJDK Netty with its native epoll transport. Both use the same external client
 ![Server CPU per request and combined server/client memory for all workloads](docs/performance/graphs/efficiency.svg)
 
 Snapshot: Linux x86-64, three paired samples per workload,
-[paired benchmark run on October 7, 2026 (UTC)](https://github.com/elide-dev/bemo/actions/runs/37574875335).
-Both the pre-stack and merged commits were rebuilt and measured on the same
-runner; see [the optimization stack results](docs/performance/optimization-results.md)
+[paired benchmark run on October 7, 2026 (UTC)](https://github.com/elide-dev/bemo/actions/runs/37581322288).
+Both the merged stack and performance follow-ups were rebuilt and measured on
+the same runner; see [the follow-up results](docs/performance/performance-updates.md)
 for throughput, latency, CPU, and memory changes across all eight workloads.
 These are closed-loop, full-stack comparisons on a shared hosted runner.
-Gzip includes application compression for every response. Memory is the sum of
+Gzip includes native zlib-rs application compression for every Bemo response;
+Netty uses its own compressor. Memory is the sum of
 process lifetime high-water marks, including the client. Lines connect measured endpoints;
 they do not predict intermediate payload sizes.
 
