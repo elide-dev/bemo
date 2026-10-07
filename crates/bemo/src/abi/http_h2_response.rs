@@ -354,6 +354,31 @@ mod tests {
   }
 
   #[test]
+  fn retained_storage_survives_caller_release_until_physical_ack() {
+    let (mut pair, id, _response) = fixture();
+    let mut response = streaming(&mut pair, id, 4);
+    let budget = Budget::new(16);
+    let mut storage = Buffer::new(16, budget.clone()).unwrap();
+    storage.write(0, b"body").unwrap();
+    let frozen = storage.freeze();
+    response.enqueue(frozen.slice(0..4).unwrap(), true).unwrap();
+    drop(frozen);
+    for _ in 0..8 {
+      response.progress(&mut pair.server, id).unwrap();
+      pair.tick();
+    }
+    assert_eq!(budget.used(), 16);
+    assert!(!response.wire_complete());
+    for mark in std::mem::take(&mut pair.marks) {
+      if mark.stream == id {
+        response.acknowledge(&mark);
+      }
+    }
+    assert!(response.wire_complete());
+    assert_eq!(budget.used(), 0);
+  }
+
+  #[test]
   fn streaming_credit_waits_for_physical_frame_acknowledgements() {
     let (mut pair, id, _response) = fixture();
     let mut response = streaming(&mut pair, id, 32768);

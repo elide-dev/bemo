@@ -56,6 +56,7 @@ public final class TransportAbiTest {
     concurrentViews(api);
     sockets(api);
     workloads(api);
+    NativeHttpBodyTest.verify(api);
     System.out.println("Transport ABI checks passed");
   }
 

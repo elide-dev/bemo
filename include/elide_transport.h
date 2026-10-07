@@ -205,7 +205,10 @@ uint64_t elide_transport_http_chunk_prepare(uint64_t exchange, uint64_t capacity
  * unknown handle/exchange or a length beyond the prepared capacity), -2 BUSY (response window
  * full, buffer stays with caller; retry after EVENT_PART_SENT), or a negative portable error (e.g.
  * -3) when the payload diverges from a declared content-length: the buffer is consumed and the
- * connection fails. */
+ * connection fails. With flags bit 2 (CHUNK_RETAIN), buffer is frozen and payload starts at
+ * offset zero. The caller keeps its handle on EVERY result; success retains a separate lease
+ * through send retirement. HTTP/1 chunked framing rejects this flag; length/close framing and
+ * HTTP/2 accept it. Mutable handles and lengths beyond initialized bytes are rejected. */
 int32_t elide_transport_http_chunk_send(uint64_t driver, uint64_t exchange, uint64_t buffer, uint64_t length, uint32_t flags);
 
 /* Contexts are bound to their workload; session creation and HTTP TLS activation require that same open workload. */

@@ -468,6 +468,13 @@ public interface TransportNative {
   /** Flag for {@link #httpChunkSend}: this part ends the response. */
   int CHUNK_FINAL = 2;
 
+  /**
+   * Retain an immutable body handle instead of consuming prepared storage. HTTP/2 and HTTP/1
+   * declared-length/close framing accept this; HTTP/1 chunked framing requires prepared storage.
+   * The caller keeps its handle on every result, and may release it immediately after submission.
+   */
+  int CHUNK_RETAIN = 4;
+
   /** Most response bytes one streaming exchange may hold queued or in flight. */
   int RESPONSE_WINDOW_BYTES = 256 * 1024;
 
@@ -492,6 +499,10 @@ public interface TransportNative {
    * #EVENT_PART_SENT} and retry, or the buffer leaks; any other negative value is a portable error
    * from a payload that diverges from a declared {@code content-length}, and the buffer is consumed
    * as the connection fails.
+   *
+   * <p>With {@link #CHUNK_RETAIN}, {@code buffer} is frozen and the payload begins at offset zero.
+   * The caller retains ownership on every result; success queues an independent immutable lease. A
+   * mutable handle, oversized length, or HTTP/1 chunked response returns {@code INVALID}.
    */
   int httpChunkSend(long driver, long exchange, long buffer, long length, int flags);
 

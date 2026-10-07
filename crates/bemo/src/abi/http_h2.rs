@@ -514,7 +514,14 @@ pub(super) fn respond(
   0
 }
 
-pub(super) fn chunk(state: &mut DriverState, exchange: u64, buffer: u64, length: usize, final_part: bool) -> i32 {
+pub(super) fn chunk(
+  state: &mut DriverState,
+  exchange: u64,
+  buffer: u64,
+  length: usize,
+  final_part: bool,
+  retain: bool,
+) -> i32 {
   let Some(entry) = state.http.exchanges.get(&exchange) else {
     return INVALID;
   };
@@ -538,26 +545,33 @@ pub(super) fn chunk(state: &mut DriverState, exchange: u64, buffer: u64, length:
   if !response.can_accept(length) {
     return BUSY;
   }
-  let mut buffers = lock(registry(buffer));
-  let Some(Storage::Mutable(storage)) = buffers.get_mut(&buffer) else {
-    return INVALID;
+  let part = if retain {
+    let Some(part) = super::http::retained_body(buffer, length) else {
+      return INVALID;
+    };
+    part
+  } else {
+    let mut buffers = lock(registry(buffer));
+    let Some(Storage::Mutable(storage)) = buffers.get_mut(&buffer) else {
+      return INVALID;
+    };
+    if storage
+      .buf_capacity()
+      .checked_sub(CHUNK_HEADROOM + CHUNK_TAIL)
+      .is_none_or(|max| length > max)
+    {
+      return INVALID;
+    }
+    // SAFETY: prepare initialized the full capacity, and the length bound was checked above.
+    unsafe {
+      storage.set_len(CHUNK_HEADROOM + length);
+    }
+    let Some(Storage::Mutable(storage)) = buffers.remove(&buffer) else {
+      return INVALID;
+    };
+    drop(buffers);
+    FrozenBuffer::slice(&storage.freeze(), CHUNK_HEADROOM..CHUNK_HEADROOM + length).unwrap()
   };
-  if storage
-    .buf_capacity()
-    .checked_sub(CHUNK_HEADROOM + CHUNK_TAIL)
-    .is_none_or(|max| length > max)
-  {
-    return INVALID;
-  }
-  // SAFETY: prepare initialized the full capacity, and the length bound was checked above.
-  unsafe {
-    storage.set_len(CHUNK_HEADROOM + length);
-  }
-  let Some(Storage::Mutable(storage)) = buffers.remove(&buffer) else {
-    return INVALID;
-  };
-  drop(buffers);
-  let part = FrozenBuffer::slice(&storage.freeze(), CHUNK_HEADROOM..CHUNK_HEADROOM + length).unwrap();
   let result = response.enqueue(part, final_part);
   let mut events = VecDeque::new();
   if result.is_err() {
@@ -570,7 +584,7 @@ pub(super) fn chunk(state: &mut DriverState, exchange: u64, buffer: u64, length:
   }
   pump(state, socket, &mut events);
   state.http.overflow.extend(events);
-  // Ownership transferred even for a length mismatch; expose a portable terminal error.
+  // Mutable ownership transfers even for a length mismatch; retained handles stay with the caller.
   result.map_or(malformed() as i32, |_| 0)
 }
 
