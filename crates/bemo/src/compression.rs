@@ -90,6 +90,35 @@ mod tests {
   }
 
   #[test]
+  fn fast_levels_roundtrip_large_changing_inputs() {
+    let size = if cfg!(miri) { 64 } else { 131072 };
+    let mut state = 17u64;
+    let random: Vec<u8> = (0..size)
+      .map(|_| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state as u8
+      })
+      .collect();
+    for level in [1, 3, 6] {
+      let budget = Budget::new(1024 * 1024);
+      let mut encoder = Gzip::new(level).unwrap();
+      for input in [&random[..], &[][..], b"changed"] {
+        let output = encoder.encode(input, &budget).unwrap();
+        let mut decoded = Vec::new();
+        flate2::read::GzDecoder::new(output.as_ref())
+          .read_to_end(&mut decoded)
+          .unwrap();
+        assert_eq!(decoded, input);
+        assert_eq!(budget.used(), output.as_ref().len());
+      }
+      drop(encoder);
+      assert_eq!(budget.used(), 0);
+    }
+  }
+
+  #[test]
   fn invalid_level_and_exhausted_output_are_rejected() {
     assert!(Gzip::new(10).is_err());
     let mut encoder = Gzip::new(6).unwrap();

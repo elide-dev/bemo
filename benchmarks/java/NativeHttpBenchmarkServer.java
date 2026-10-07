@@ -33,6 +33,13 @@ public final class NativeHttpBenchmarkServer {
     require(
         gzipProvider.equals("zlib-rs") || gzipProvider.equals("java.util.zip"), "gzip provider");
     boolean javaGzip = gzipProvider.equals("java.util.zip");
+    int gzipLevel =
+        gzip
+            ? (javaGzip
+                ? 6
+                : Integer.parseInt(System.getenv().getOrDefault("BEMO_BENCH_GZIP_LEVEL", "1")))
+            : 0;
+    require(gzipLevel >= 0 && gzipLevel <= 9, "gzip level");
     int size = Integer.parseInt(args[5]);
     int backend = Integer.parseInt(args[6]);
     int socketBuffer =
@@ -51,7 +58,7 @@ public final class NativeHttpBenchmarkServer {
     long context = 0;
     long listener = 0;
     AtomicBoolean running = new AtomicBoolean(true);
-    long encoder = gzip && !javaGzip ? api.gzipNew(owner, 6) : 0;
+    long encoder = gzip && !javaGzip ? api.gzipNew(owner, gzipLevel) : 0;
     require(!gzip || javaGzip || encoder != 0, "native gzip state");
     try (ReusableGzip compressor = gzip && javaGzip ? new ReusableGzip() : null) {
       if (tls) {
@@ -183,7 +190,7 @@ public final class NativeHttpBenchmarkServer {
       buffers.add(fallback);
       int fallbackLength = api.driverFallback(driver, fallback);
       System.out.printf(
-          "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":%s,\"gzip_provider\":\"%s\"}%n",
+          "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":%s,\"gzip_provider\":\"%s\",\"gzip_level\":%d}%n",
           port,
           switch (selected) {
             case 1 -> "polling";
@@ -192,7 +199,8 @@ public final class NativeHttpBenchmarkServer {
             default -> throw new IllegalStateException("Unknown backend " + selected);
           },
           fallbackLength > 0,
-          gzip ? gzipProvider : "none");
+          gzip ? gzipProvider : "none",
+          gzipLevel);
       System.out.flush();
       Thread stop =
           new Thread(
