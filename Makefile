@@ -49,6 +49,10 @@ bench-prepare:
 bench-transport:
 	$(PYTHON) tools/bench.py run
 
+.PHONY: bench-compression
+bench-compression:
+	$(PYTHON) tools/compression.py
+
 .PHONY: bench-graphs
 build/chart-venv/.deps: tools/chart-requirements.txt
 	$(PYTHON) -m venv build/chart-venv
