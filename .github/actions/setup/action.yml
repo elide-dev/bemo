@@ -10,6 +10,9 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: "3.13"
     - name: Read version pins
       id: versions
       shell: bash
@@ -39,4 +42,4 @@ runs:
       run: |
         cargo --version
         rustc --version
-        python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
+        python3 -c 'import lzma, sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
