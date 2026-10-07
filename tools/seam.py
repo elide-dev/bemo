@@ -223,7 +223,9 @@ def generate(check=False, target=None):
     verify_layouts(destination)
     run(*cli, 'generate', DESCRIPTOR, '--out', destination, '--target', triple)
   source = (output(CANONICAL_TARGET) / 'BemoNatives.java').read_text()
-  from build import VERSIONS, jar_dependency
+  from build import VERSIONS, deps, jar_dependency
+  # Standalone generation and bitcode packaging can run before jvm() installs dependencies.
+  deps()
   formatter = jar_dependency('com.google.googlejavaformat', 'google-java-format', VERSIONS['java_format'], 'all-deps')
   with tempfile.TemporaryDirectory(prefix='bemo-seam-') as tmp:
     file = Path(tmp) / 'BemoNatives.java'
