@@ -5,7 +5,7 @@
 
 //! HTTP/1.x response encoding into native send storage.
 
-use std::io;
+use std::io::{self, Write};
 use std::ops::Range;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -203,18 +203,39 @@ pub unsafe fn frame_chunk(buffer: &mut Buffer, payload_len: usize, final_part: b
   start..stop
 }
 
-/// Write the status line and headers (through the blank line) into `head`.
-#[allow(clippy::too_many_arguments)]
-fn write_head(
-  head: &mut Vec<u8>,
-  date: &mut DateCache,
-  version: u8,
-  status: u16,
-  headers: &[ResponseHeader<'_>],
-  framing: Framing,
-  head_only: bool,
-  keep_alive: bool,
-) -> io::Result<()> {
+/// Count initialized bytes before reserving exact owner capacity.
+#[derive(Default)]
+struct HeadSize(usize);
+
+impl Write for HeadSize {
+  fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    self.0 = self.0.checked_add(bytes.len()).ok_or(io::ErrorKind::InvalidInput)?;
+    Ok(bytes.len())
+  }
+
+  fn flush(&mut self) -> io::Result<()> {
+    Ok(())
+  }
+}
+
+struct HeadStorage<'a> {
+  buffer: &'a mut Buffer,
+  position: usize,
+}
+
+impl Write for HeadStorage<'_> {
+  fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    self.buffer.write(self.position, bytes)?;
+    self.position += bytes.len();
+    Ok(bytes.len())
+  }
+
+  fn flush(&mut self) -> io::Result<()> {
+    Ok(())
+  }
+}
+
+fn validate_headers(headers: &[ResponseHeader<'_>]) -> io::Result<()> {
   for header in headers {
     if header.name.is_empty()
       || !header
@@ -229,23 +250,38 @@ fn write_head(
       ));
     }
   }
-  head.extend_from_slice(if version == 0 { b"HTTP/1.0 " } else { b"HTTP/1.1 " });
+  Ok(())
+}
+
+/// Write the status line and headers (through the blank line) into `head`.
+#[allow(clippy::too_many_arguments)]
+fn write_head(
+  head: &mut impl Write,
+  date: &[u8],
+  version: u8,
+  status: u16,
+  headers: &[ResponseHeader<'_>],
+  framing: Framing,
+  head_only: bool,
+  keep_alive: bool,
+) -> io::Result<()> {
+  head.write_all(if version == 0 { b"HTTP/1.0 " } else { b"HTTP/1.1 " })?;
   let mut code = [0u8; 3];
   code[0] = b'0' + (status / 100 % 10) as u8;
   code[1] = b'0' + (status / 10 % 10) as u8;
   code[2] = b'0' + (status % 10) as u8;
-  head.extend_from_slice(&code);
-  head.push(b' ');
-  head.extend_from_slice(reason(status));
-  head.extend_from_slice(b"\r\n");
+  head.write_all(&code)?;
+  head.write_all(b" ")?;
+  head.write_all(reason(status))?;
+  head.write_all(b"\r\n")?;
   for header in headers {
     if owned(header.name) {
       continue;
     }
-    head.extend_from_slice(header.name);
-    head.extend_from_slice(b": ");
-    head.extend_from_slice(header.value);
-    head.extend_from_slice(b"\r\n");
+    head.write_all(header.name)?;
+    head.write_all(b": ")?;
+    head.write_all(header.value)?;
+    head.write_all(b"\r\n")?;
   }
   let no_length = status == 204 || status == 304 || (100..200).contains(&status);
   // 205 still needs message framing (RFC 9112 §6.3) and its body is always empty.
@@ -258,7 +294,7 @@ fn write_head(
   let keep_alive = keep_alive && framing != Framing::Close;
   match framing {
     Framing::Length(length) if !no_length => {
-      head.extend_from_slice(b"content-length: ");
+      head.write_all(b"content-length: ")?;
       let mut digits = [0u8; 20];
       let mut n = if status == 205 { 0 } else { length };
       let mut i = digits.len();
@@ -270,22 +306,22 @@ fn write_head(
           break;
         }
       }
-      head.extend_from_slice(&digits[i..]);
-      head.extend_from_slice(b"\r\n");
+      head.write_all(&digits[i..])?;
+      head.write_all(b"\r\n")?;
     }
     Framing::Chunked if !(no_length || head_only) => {
-      head.extend_from_slice(b"transfer-encoding: chunked\r\n");
+      head.write_all(b"transfer-encoding: chunked\r\n")?;
     }
     _ => {}
   }
   match (version, keep_alive) {
-    (0, true) => head.extend_from_slice(b"connection: keep-alive\r\n"),
-    (_, false) if version != 0 => head.extend_from_slice(b"connection: close\r\n"),
+    (0, true) => head.write_all(b"connection: keep-alive\r\n")?,
+    (_, false) if version != 0 => head.write_all(b"connection: close\r\n")?,
     _ => {}
   }
-  head.extend_from_slice(SERVER);
-  head.extend_from_slice(date.line());
-  head.extend_from_slice(b"\r\n");
+  head.write_all(SERVER)?;
+  head.write_all(date)?;
+  head.write_all(b"\r\n")?;
   Ok(())
 }
 
@@ -308,12 +344,26 @@ pub fn encode_head(
   head_only: bool,
   keep_alive: bool,
 ) -> io::Result<FrozenBuffer> {
-  let mut head: Vec<u8> = Vec::with_capacity(160 + headers.len() * 32);
+  validate_headers(headers)?;
+  let date = date.line();
+  let mut size = HeadSize::default();
   write_head(
-    &mut head, date, version, status, headers, framing, head_only, keep_alive,
+    &mut size, date, version, status, headers, framing, head_only, keep_alive,
   )?;
-  let mut storage = Buffer::new(head.len(), budget.clone())?;
-  storage.write(0, &head)?;
+  let mut storage = Buffer::new(size.0, budget.clone())?;
+  write_head(
+    &mut HeadStorage {
+      buffer: &mut storage,
+      position: 0,
+    },
+    date,
+    version,
+    status,
+    headers,
+    framing,
+    head_only,
+    keep_alive,
+  )?;
   Ok(storage.freeze())
 }
 
@@ -336,23 +386,32 @@ pub fn encode_response(
   head_only: bool,
   keep_alive: bool,
 ) -> io::Result<FrozenBuffer> {
-  let mut head: Vec<u8> = Vec::with_capacity(160 + headers.len() * 32);
+  validate_headers(headers)?;
+  let date = date.line();
+  let framing = Framing::Length(body.len() as u64);
+  let mut size = HeadSize::default();
   write_head(
-    &mut head,
+    &mut size, date, version, status, headers, framing, head_only, keep_alive,
+  )?;
+  let no_body = status == 204 || status == 205 || status == 304 || (100..200).contains(&status);
+  let body_len = if head_only || no_body { 0 } else { body.len() };
+  let capacity = size.0.checked_add(body_len).ok_or(io::ErrorKind::InvalidInput)?;
+  let mut storage = Buffer::new(capacity, budget.clone())?;
+  write_head(
+    &mut HeadStorage {
+      buffer: &mut storage,
+      position: 0,
+    },
     date,
     version,
     status,
     headers,
-    Framing::Length(body.len() as u64),
+    framing,
     head_only,
     keep_alive,
   )?;
-  let no_body = status == 204 || status == 205 || status == 304 || (100..200).contains(&status);
-  let body_len = if head_only || no_body { 0 } else { body.len() };
-  let mut storage = Buffer::new(head.len() + body_len, budget.clone())?;
-  storage.write(0, &head)?;
   if body_len > 0 {
-    storage.write(head.len(), body)?;
+    storage.write(size.0, body)?;
   }
   Ok(storage.freeze())
 }
@@ -737,5 +796,42 @@ mod tests {
     // SAFETY: This test initialized the payload in the owned buffer before framing it.
     let range = unsafe { frame_chunk(&mut buffer, 1, false) };
     assert_eq!(&buffer.as_init()[range], b"1\r\nz\r\n");
+  }
+  #[test]
+  fn direct_heads_reserve_exact_capacity_for_large_headers_and_bodies() {
+    let value = vec![b'x'; 8192];
+    let headers = [ResponseHeader {
+      name: b"x-long",
+      value: &value,
+    }];
+    let mut date = DateCache::default();
+    let head = encode_head(
+      &Budget::new(16384),
+      &mut date,
+      1,
+      200,
+      &headers,
+      Framing::Length(4),
+      false,
+      true,
+    )
+    .unwrap();
+    let capacity = head.as_ref().len() + 4;
+    let owner = Budget::new(capacity);
+    let response = encode_response(&owner, &mut date, 1, 200, &headers, b"body", false, true).unwrap();
+    assert_eq!(owner.used(), capacity);
+    assert_eq!(response.as_ref().len(), capacity);
+    assert!(response.as_ref().windows(value.len()).any(|window| window == value));
+    assert!(response.as_ref().ends_with(b"\r\n\r\nbody"));
+    drop(response);
+    assert_eq!(owner.used(), 0);
+    let denied = Budget::new(capacity - 1);
+    assert_eq!(
+      encode_response(&denied, &mut date, 1, 200, &headers, b"body", false, true)
+        .unwrap_err()
+        .kind(),
+      io::ErrorKind::OutOfMemory
+    );
+    assert_eq!(denied.used(), 0);
   }
 }
