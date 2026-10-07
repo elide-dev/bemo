@@ -11,7 +11,7 @@ pub use provided::ReceiveCredit;
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::io;
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::{Deref, DerefMut, Range};
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -222,38 +222,40 @@ struct Pooled {
 
 /// Shares allocation metadata with live views; only its final lease can enter the idle pool.
 #[derive(Debug)]
-struct AllocationLease(Option<Arc<Allocation>>);
+struct AllocationLease(ManuallyDrop<Arc<Allocation>>);
 
 impl AllocationLease {
   fn new(allocation: Arc<Allocation>) -> Self {
-    Self(Some(allocation))
+    Self(ManuallyDrop::new(allocation))
   }
 }
 
 impl Clone for AllocationLease {
   fn clone(&self) -> Self {
-    Self::new(self.0.as_ref().unwrap().clone())
+    Self::new(Arc::clone(&self.0))
   }
 }
 
 impl Deref for AllocationLease {
   type Target = Arc<Allocation>;
   fn deref(&self) -> &Self::Target {
-    self.0.as_ref().unwrap()
+    &self.0
   }
 }
 
 impl DerefMut for AllocationLease {
   fn deref_mut(&mut self) -> &mut Self::Target {
-    self.0.as_mut().unwrap()
+    &mut self.0
   }
 }
 
 impl Drop for AllocationLease {
+  #[inline]
   fn drop(&mut self) {
-    let allocation = self.0.take().unwrap();
+    // SAFETY: Drop transfers this Arc once; the field never drops automatically or is accessed again.
+    let allocation = unsafe { ManuallyDrop::take(&mut self.0) };
     // No weak references exist. A missed admission during concurrent drops is safe: Arc frees it.
-    if allocation.recyclable.is_some() && allocation.return_slot.is_none() && Arc::strong_count(&allocation) == 1 {
+    if Arc::strong_count(&allocation) == 1 && allocation.recyclable.is_some() && allocation.return_slot.is_none() {
       Pool::admit(Pooled { allocation });
     }
   }
