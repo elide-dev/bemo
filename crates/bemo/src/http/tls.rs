@@ -12,6 +12,7 @@ use std::io;
 use std::sync::Arc;
 
 const MAX_INPUT: usize = 1024 * 1024;
+const RECORD_PLAINTEXT: usize = 16384;
 
 pub(crate) enum Progress {
   Blocked,
@@ -133,10 +134,37 @@ impl Lane {
     }
     for _ in 0..128 {
       let ack = self.acknowledge;
+      // Only stage a record when it crosses allocation boundaries. Original parts
+      // remain owned until every ciphertext write has physically retired.
+      let mut staged = None;
+      if !ack && let Some(parts) = &self.application {
+        let first = &parts[self.part].as_ref()[self.offset..];
+        if first.len() < RECORD_PLAINTEXT && parts[self.part + 1..].iter().any(|part| !part.as_ref().is_empty()) {
+          let length = parts[self.part + 1..].iter().fold(first.len(), |length, part| {
+            length.saturating_add(part.as_ref().len()).min(RECORD_PLAINTEXT)
+          });
+          let mut record = Buffer::new(length, self.budget.clone())?;
+          record.write(0, first)?;
+          let mut written = first.len();
+          for part in &parts[self.part + 1..] {
+            let count = part.as_ref().len().min(length - written);
+            record.write(written, &part.as_ref()[..count])?;
+            written += count;
+            if written == length {
+              break;
+            }
+          }
+          staged = Some(record);
+        }
+      }
       let action = if ack {
         Action::Transmitted
       } else if let Some(parts) = &self.application {
-        Action::Write(&parts[self.part].as_ref()[self.offset..])
+        Action::Write(
+          staged
+            .as_ref()
+            .map_or(&parts[self.part].as_ref()[self.offset..], IoBuf::as_init),
+        )
       } else if self.closing && !self.session.is_handshaking() {
         Action::Close
       } else {
@@ -159,7 +187,21 @@ impl Lane {
       if step.state == State::NeedTransmit && ack {
         self.acknowledge = false;
       }
-      self.offset += step.accepted;
+      if let Some(parts) = &self.application {
+        let mut accepted = step.accepted;
+        while accepted > 0 {
+          let available = parts[self.part].as_ref().len() - self.offset;
+          let count = available.min(accepted);
+          self.offset += count;
+          accepted -= count;
+          if self.offset == parts[self.part].as_ref().len() && self.part + 1 < parts.len() {
+            self.part += 1;
+            self.offset = 0;
+          } else if accepted > 0 {
+            return Err(io::ErrorKind::InvalidData.into());
+          }
+        }
+      }
       if let Some(output) = step.output {
         self.waiting = true;
         self.handshake_output = step.state == State::Encoded;
@@ -283,5 +325,70 @@ mod tests {
     assert!(received.iter().all(|b| *b == b'x'));
     drop(lane);
     assert!(request.unwrap().as_ref().ends_with(b"data"));
+  }
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn split_parts_fill_records_and_keep_original_leases_until_retirement() {
+    for body_length in [1024, 16384, 65536] {
+      let (mut lane, mut client) = pair();
+      for _ in 0..100 {
+        let mut wire = Vec::new();
+        client.write_tls(&mut wire).unwrap();
+        if !wire.is_empty() {
+          lane.feed(bytes(&wire)).unwrap();
+        }
+        match lane.progress().unwrap() {
+          Progress::Output(output) => {
+            let mut wire = Cursor::new(output.as_ref());
+            while wire.position() < output.as_ref().len() as u64 {
+              client.read_tls(&mut wire).unwrap();
+              client.process_new_packets().unwrap();
+            }
+            lane.transmitted();
+          }
+          Progress::Blocked if !client.is_handshaking() && !lane.is_handshaking() => break,
+          Progress::Blocked => {}
+          _ => panic!("unexpected handshake progress"),
+        }
+      }
+      assert!(!lane.is_handshaking());
+      let owner = Budget::new(128 + body_length);
+      let mut header = Buffer::new(128, owner.clone()).unwrap();
+      header.write(0, &[b'h'; 128]).unwrap();
+      let mut body = Buffer::new(body_length, owner.clone()).unwrap();
+      body.write(0, &vec![b'b'; body_length]).unwrap();
+      lane.enqueue(vec![header.freeze(), bytes(&[]).freeze(), body.freeze()]);
+      let mut outputs = 0;
+      let mut received = Vec::new();
+      loop {
+        match lane.progress().unwrap() {
+          Progress::Output(output) => {
+            outputs += 1;
+            assert_eq!(owner.used(), 128 + body_length);
+            assert!(matches!(lane.progress().unwrap(), Progress::Blocked));
+            let mut wire = Cursor::new(output.as_ref());
+            while wire.position() < output.as_ref().len() as u64 {
+              client.read_tls(&mut wire).unwrap();
+              client.process_new_packets().unwrap();
+            }
+            let mut plaintext = vec![0; RECORD_PLAINTEXT];
+            let count = client.reader().read(&mut plaintext).unwrap();
+            received.extend_from_slice(&plaintext[..count]);
+            lane.transmitted();
+          }
+          Progress::Complete(parts) => {
+            assert_eq!(parts.len(), 3);
+            assert_eq!(owner.used(), 128 + body_length);
+            drop(parts);
+            assert_eq!(owner.used(), 0);
+            break;
+          }
+          _ => panic!("unexpected application progress"),
+        }
+      }
+      assert_eq!(outputs, (128 + body_length).div_ceil(RECORD_PLAINTEXT));
+      assert_eq!(&received[..128], &[b'h'; 128]);
+      assert_eq!(&received[128..], vec![b'b'; body_length]);
+    }
   }
 }
