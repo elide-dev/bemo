@@ -53,6 +53,38 @@ For a dedicated runner, execute the full paired matrix there and retain its
 summary and environment evidence. Do not combine samples from different hosts
 or present hosted-runner variation as a statistically established win.
 
+## Compare two commits on one runner
+
+For an optimization before/after comparison, use the dedicated dispatch workflow:
+
+```sh
+gh workflow run on.bench-paired.yml --ref main \
+  -f before=<pre-optimization-commit> -f after=<merged-commit>
+```
+
+It builds both versions before any timing, uses separate worktrees and prepared
+artifacts, then alternates commit order across workload/sample pairs and
+Bemo/Netty launch order across samples. The complete matrix takes roughly half
+an hour or more; the workflow allows 90 minutes. It uploads
+`paired-transport-evidence`, containing both complete summaries, individual raw
+samples, logs, resolved commits, CPU details, and allowed affinity. Its token
+has read-only repository permissions and it runs no publishing jobs.
+
+The underlying Linux command is:
+
+```sh
+python3 tools/bench_pair.py --before <commit> --after <commit>
+```
+
+Use the `after/summary-all.json` for the refreshed charts and retain the before
+summary and the shared `environment.json` beside it. Each chart provenance
+should identify the same paired run and the actual measured commit. The
+workload-source fingerprint includes the native server, so server optimization
+changes its hash; verify that the client, requested workload, measurement
+function, runtime, and provider settings remain comparable before calculating
+a cross-version delta. [The optimization stack results](optimization-results.md)
+retain this evidence and all eight workloads.
+
 ## Reading the charts
 
 - Throughput dots are sample medians; whiskers span the minimum and maximum of
