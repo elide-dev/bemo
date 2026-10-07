@@ -13,7 +13,7 @@ It also verifies reuse after large output growth and rejects use after close.
 
 ## Alternative backends
 
-Run `make bench-compression`, or `python3 tools/compression.py --iterations 2000`
+Run `make bench-compression`, or `python3 tools/compression_probe.py --iterations 2000`
 for a shorter probe. Cargo builds each backend separately from a locked,
 non-published workspace under `benchmarks/compression`. No compression dependency
 is added to Bemo's published artifacts. Compilation precedes measurement; avoid

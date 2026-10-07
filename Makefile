@@ -51,7 +51,7 @@ bench-transport:
 
 .PHONY: bench-compression
 bench-compression:
-	$(PYTHON) tools/compression.py
+	$(PYTHON) tools/compression_probe.py
 
 .PHONY: bench-graphs
 build/chart-venv/.deps: tools/chart-requirements.txt
