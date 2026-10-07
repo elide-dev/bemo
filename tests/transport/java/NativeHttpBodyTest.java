@@ -118,7 +118,12 @@ public final class NativeHttpBodyTest {
     api.socketClose(driver, server);
     api.socketClose(driver, listener);
     api.httpRetire(driver);
-    check(api.driverRelease(driver) == 0, "driver retirement");
+    int retired;
+    while ((retired = api.driverRelease(driver)) == -2) {
+      check(System.nanoTime() < deadline, "driver retirement deadline");
+      check(api.driverPoll(driver, 1_000_000L, batch, 32) >= 0, "retirement poll");
+    }
+    check(retired == 0, "driver retirement");
     api.bufferRelease(batch);
     check(api.ownerUsed(owner) == 0 && api.ownerUsed(bodyOwner) == 0, "all storage reclaimed");
     api.ownerRelease(bodyOwner);

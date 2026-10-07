@@ -3508,6 +3508,10 @@ fn retained_stream_parts_keep_handles_on_busy_invalid_and_length_failure() {
       assert_eq!(elide_transport_buffer_release(body), 0);
     }
     assert_eq!(elide_transport_http_free(h.driver, exchange), 0);
+    if chunked {
+      h.peer.shutdown(std::net::Shutdown::Both).unwrap();
+    }
+    h.take(EVENT_CLOSED, 1);
     h.finish();
   }
 }
