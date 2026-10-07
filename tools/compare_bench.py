@@ -15,7 +15,7 @@ def compare(current, baseline):
     if before is None:
       continue
     # Changing the workload invalidates its baseline, even when the display name is unchanged.
-    keys = ("requests", "warmup_rounds", "payload_bytes", "clients", "tls", "gzip", "host", "java_version", "workload_sha256", "requested_backend", "driver", "auto_fallback", "http_provider", "runtime", "binding", "process_scope", "load_generator_transport", "load_generator_tls_provider", "gzip_provider", "socket_buffer_bytes")
+    keys = ("requests", "warmup_rounds", "payload_bytes", "clients", "tls", "gzip", "host", "java_version", "workload_sha256", "requested_backend", "driver", "auto_fallback", "http_provider", "runtime", "binding", "process_scope", "load_generator_transport", "load_generator_tls_provider", "gzip_provider", "gzip_level", "socket_buffer_bytes", "server_cpus", "client_cpus", "load_generator_tls_protocol", "load_generator_tls_cipher")
     if any(row["samples"][0].get(k) != before["samples"][0].get(k) for k in keys):
       messages.append(f"{row['case']}: workload/environment changed; baseline comparison skipped")
       continue

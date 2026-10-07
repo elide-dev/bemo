@@ -131,6 +131,8 @@ public final class TransportBenchmark {
     boolean tls = Boolean.parseBoolean(args[3]);
     boolean gzip = Boolean.parseBoolean(args[4]);
     int size = Integer.parseInt(args[5]);
+    int gzipLevel = Integer.parseInt(System.getenv().getOrDefault("BEMO_BENCH_GZIP_LEVEL", "1"));
+    if (gzipLevel < 0 || gzipLevel > 9) throw new IllegalArgumentException("gzip level");
     int rounds = Integer.parseInt(args[6]);
     int warmup = Integer.parseInt(args[7]);
     String transport = args[8];
@@ -161,6 +163,7 @@ public final class TransportBenchmark {
                     new ByteArrayInputStream(cert), new ByteArrayInputStream(key))
                 .sslProvider(SslProvider.JDK)
                 .protocols("TLSv1.3")
+                .ciphers(List.of("TLS_AES_128_GCM_SHA256"))
                 .build()
             : null;
     SslContext clientSsl =
@@ -169,6 +172,7 @@ public final class TransportBenchmark {
                 .trustManager(new ByteArrayInputStream(cert))
                 .sslProvider(SslProvider.JDK)
                 .protocols("TLSv1.3")
+                .ciphers(List.of("TLS_AES_128_GCM_SHA256"))
                 .build()
             : null;
     IoHandlerFactory factory;
@@ -223,7 +227,7 @@ public final class TransportBenchmark {
                         channel
                             .pipeline()
                             .addLast(new HttpServerCodec(), new HttpObjectAggregator(1024 * 1024));
-                        if (gzip) channel.pipeline().addLast(new HttpContentCompressor());
+                        if (gzip) channel.pipeline().addLast(new HttpContentCompressor(gzipLevel));
                         channel
                             .pipeline()
                             .addLast(
@@ -252,8 +256,8 @@ public final class TransportBenchmark {
                 .channel();
       if (serverOnly) {
         System.out.printf(
-            "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":false}%n",
-            ((InetSocketAddress) server.localAddress()).getPort(), transport);
+            "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":false,\"gzip_level\":%d}%n",
+            ((InetSocketAddress) server.localAddress()).getPort(), transport, gzip ? gzipLevel : 0);
         System.out.flush();
         var control = new java.io.BufferedReader(new java.io.InputStreamReader(System.in));
         String command;
@@ -335,7 +339,15 @@ public final class TransportBenchmark {
                 .channel();
         clients.add(client);
         if (nativeTls) ((NativeSocketChannel) client).handshakeFuture().sync();
-        if (clientSsl != null) client.pipeline().get(SslHandler.class).handshakeFuture().sync();
+        if (clientSsl != null) {
+          SslHandler handler = client.pipeline().get(SslHandler.class);
+          handler.handshakeFuture().sync();
+          var session = handler.engine().getSession();
+          if (!session.getProtocol().equals("TLSv1.3")
+              || !session.getCipherSuite().equals("TLS_AES_128_GCM_SHA256")) {
+            throw new AssertionError("Benchmark TLS policy mismatch");
+          }
+        }
       }
       exercise(clients, replies, warmup, gzip, null);
       if (externalPort != 0) {

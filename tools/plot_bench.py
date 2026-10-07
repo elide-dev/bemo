@@ -62,6 +62,8 @@ def load(provenance):
       if (sample["tls"], sample["gzip"], sample["payload_bytes"]) != (
           tls, "-gzip-" in row["case"], int(row["case"].split("-")[-1])):
         raise ValueError("Sample payload does not match workload label")
+      if tls and meta.get("matched_tls") and (sample.get("load_generator_tls_protocol"), sample.get("load_generator_tls_cipher")) != ("TLSv1.3", "TLS_AES_128_GCM_SHA256"):
+        raise ValueError("Unmatched TLS protocol or cipher")
       if sample["load_generator_tls_provider"] != ("jdk" if tls else "none"):
         raise ValueError("Unexpected load-generator TLS provider")
       if sample["tls_provider"] != (("native" if transport == "bemo" else "jdk") if tls else "none"):
@@ -91,6 +93,8 @@ def load(provenance):
   for case in cases:
     if len(groups[case, "bemo"]) != len(groups[case, "netty"]):
       raise ValueError("Unpaired sample counts")
+  if meta.get("matched_compression") and gzip_levels["bemo"] != gzip_levels["netty"]:
+    raise ValueError("Unmatched gzip levels across compared stacks")
   meta["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
   meta["cases"] = cases
   meta["payload_sizes"] = [1024, 65536, 131072] if cases == EXTENDED_CASES else [1024, 65536]
@@ -142,8 +146,8 @@ def render(meta, groups, output, png=False):
       ax.spines["bottom"].set_color(GRID)
       ax.tick_params(length=0, pad=8)
       ax.set_axisbelow(True)
-    fig.text(.04, .075, f"{meta['date']} · {meta['runner']} · commit {meta['commit'][:7]} · "
-             f"{meta['samples']} paired samples", fontsize=9, color=MUTED)
+    fig.text(.04, .075, f"{meta['date']} · {meta['runner']} · {'parent' if meta.get('working_tree') else 'commit'} {meta['commit'][:7]} · "
+             f"{meta['samples']} paired samples" + (" · working tree" if meta.get("working_tree") else ""), fontsize=9, color=MUTED)
     fig.text(.04, .043, f"Bemo: Native Image −O3 / native HTTP / Rustls + AWS-LC / {meta['backend']}   "
              f"Netty: OpenJDK / native {meta['comparator']} / JDK TLS", fontsize=9, color=MUTED)
     fig.text(.04, .013, f"Per-response application gzip: Bemo {meta['gzip_provider']} level {meta['gzip_level']} / Netty compressor level {meta['netty_gzip_level']}", fontsize=8, color=MUTED)
@@ -153,6 +157,8 @@ def render(meta, groups, output, png=False):
     fig.savefig(output / name, format="svg", facecolor=BG,
                 metadata={"Date": None, "Creator": "tools/plot_bench.py", "Title": description,
                           "Description": f"Source SHA-256: {meta['sha256']}. {meta['run_url']}"})
+    svg = output / name
+    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
     if png:
       fig.savefig(output / Path(name).with_suffix(".png"), dpi=140, facecolor=BG)
     plt.close(fig)

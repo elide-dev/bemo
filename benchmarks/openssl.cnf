@@ -1,0 +1,13 @@
+# Common benchmark client policy; configure OPENSSL_CONF before process startup.
+openssl_conf = openssl_init
+
+[openssl_init]
+ssl_conf = ssl_configuration
+
+[ssl_configuration]
+system_default = tls_defaults
+
+[tls_defaults]
+MinProtocol = TLSv1.3
+MaxProtocol = TLSv1.3
+Ciphersuites = TLS_AES_128_GCM_SHA256

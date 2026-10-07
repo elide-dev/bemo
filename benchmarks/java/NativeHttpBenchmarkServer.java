@@ -34,11 +34,7 @@ public final class NativeHttpBenchmarkServer {
         gzipProvider.equals("zlib-rs") || gzipProvider.equals("java.util.zip"), "gzip provider");
     boolean javaGzip = gzipProvider.equals("java.util.zip");
     int gzipLevel =
-        gzip
-            ? (javaGzip
-                ? 6
-                : Integer.parseInt(System.getenv().getOrDefault("BEMO_BENCH_GZIP_LEVEL", "1")))
-            : 0;
+        gzip ? Integer.parseInt(System.getenv().getOrDefault("BEMO_BENCH_GZIP_LEVEL", "1")) : 0;
     require(gzipLevel >= 0 && gzipLevel <= 9, "gzip level");
     int size = Integer.parseInt(args[5]);
     int backend = Integer.parseInt(args[6]);
@@ -60,7 +56,7 @@ public final class NativeHttpBenchmarkServer {
     AtomicBoolean running = new AtomicBoolean(true);
     long encoder = gzip && !javaGzip ? api.gzipNew(owner, gzipLevel) : 0;
     require(!gzip || javaGzip || encoder != 0, "native gzip state");
-    try (ReusableGzip compressor = gzip && javaGzip ? new ReusableGzip() : null) {
+    try (ReusableGzip compressor = gzip && javaGzip ? new ReusableGzip(gzipLevel) : null) {
       if (tls) {
         long cert = upload(api, owner, Files.readAllBytes(Path.of(args[1])));
         long key = upload(api, owner, Files.readAllBytes(Path.of(args[2])));

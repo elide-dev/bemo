@@ -74,6 +74,20 @@ class ComparisonTests(unittest.TestCase):
     with self.assertRaisesRegex(RuntimeError, "incompatible"):
       bench.comparisons(rows)
 
+  def test_level_and_affinity_changes_invalidate_comparisons(self):
+    sample = {"clients": 4, "requests": 100, "warmup_rounds": 20, "tls_provider": "none",
+              "requests_per_second": 100, "gzip_level": 1, "server_cpus": "0-1", "client_cpus": "2-3"}
+    rows = [{"case": "gzip", "transport": transport, "tls_provider": "none",
+             "median_requests_per_second": 100, "median_latency_p99_ns": 10,
+             "max_peak_rss_bytes": None, "samples": [copy.deepcopy(sample)]}
+            for transport in ("bemo", "epoll")]
+    for field, value in (("gzip_level", 6), ("server_cpus", "4-5"), ("client_cpus", "6-7")):
+      changed = copy.deepcopy(rows)
+      changed[1]["samples"][0][field] = value
+      with self.assertRaisesRegex(RuntimeError, "incompatible"):
+        bench.comparisons(changed)
+      self.assertIn("skipped", compare([changed[1]], [rows[1]])[0])
+
   def test_baseline_rejects_changed_http_runtime(self):
     baseline = [{"case": "plain", "transport": "bemo", "tls_provider": "none",
                  "median_requests_per_second": 1000, "max_peak_rss_bytes": None,

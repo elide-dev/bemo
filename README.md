@@ -18,8 +18,8 @@ _Bemo_ is a drop-in [native transport](https://netty.io/wiki/native-transports.h
 | ------ | ------- |
 | ✅ Drop-in | Replacement for Netty native transports (`io_uring`, `epoll`, `kqueue`) |
 | ✅ Drop-in | Replacement for Netty "Tomcat Native" (`tcnative`) TLS |
-| ✅ JVM parity | Meets or beats Netty's stock native transports on JVM |
-| ✅ SVM parity | Beats Netty's native transports via `native-image` |
+| ✅ JVM | FFM binding with shared transport, TLS, and compression contracts |
+| ✅ Native Image | Statically linked C binding with shared contracts |
 
 _Bemo_ is used as the main transport for [Elide](https://github.com/elide-dev/elide).
 
@@ -71,30 +71,52 @@ a package-private ALPN adapter and currently requires the classpath rather than 
 
 ## Performance
 
-Bemo puts HTTP parsing, response encoding, socket I/O, and Rustls/aws-lc-rs TLS
-in Rust. These comparisons run Bemo as an optimized Native Image against stock
-OpenJDK Netty with its native epoll transport. Both use the same external client.
+The [matched-level Unclemax measurements](docs/performance/unclemax-matched.md)
+use **gzip level 1 on both sides** and **TLS 1.3 / AES-128-GCM**, three samples
+per case, and verified response contents. All twelve basic HTTP/TLS workloads
+and all five framework endpoints are retained, including regressions. These are closed-loop loopback measurements
+on a shared Linux Threadripper PRO 9965WX host, not a universal speedup claim.
 
-![Throughput across all twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput.svg)
+The basic matrix compares Bemo Native Image `-O3` with native HTTP, io_uring and
+Rustls/aws-lc-rs against OpenJDK Netty epoll with Netty HTTP and JDK TLS.
+It measures the complete stacks, including the different server runtimes.
 
-![Identity throughput and p99 latency at measured 1 KiB, 64 KiB, and 128 KiB payload sizes](docs/performance/graphs/payload-curves.svg)
+![Throughput across twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput.svg)
 
-![Server CPU per request and combined server/client memory for all workloads](docs/performance/graphs/efficiency.svg)
+![Identity throughput and p99 latency at 1 KiB, 64 KiB, and 128 KiB](docs/performance/graphs/payload-curves.svg)
 
-Snapshot: Linux x86-64, three paired samples per workload,
-[paired benchmark run on October 7, 2026 (UTC)](https://github.com/elide-dev/bemo/actions/runs/37588109048).
-Both versions were rebuilt and measured on the same runner; see
-[the scaling results](docs/performance/scaling-results.md) for throughput, latency,
-CPU, memory, and 64–128 KiB scaling across all twelve workloads.
-These are closed-loop, full-stack comparisons on a shared hosted runner.
-Gzip includes native zlib-rs level-1 application compression for every Bemo response;
-Netty uses its own compressor at its default level 6. Memory is the sum of
-process lifetime high-water marks, including the client. Lines connect measured endpoints;
-they do not predict intermediate payload sizes.
+![Server CPU and combined server/client memory across all workloads](docs/performance/graphs/efficiency.svg)
 
-The charts and their raw samples are checked in. Run `make bench-graphs` to
-reproduce them; see [updating the charts](docs/performance/README.md) for
-re-benching, data provenance, and refresh commands.
+The Spring Boot and Micronaut comparisons hold the runtime fixed within each
+row. Native Images use `-O3` with the portable `x86-64-v3` default target.
+They keep framework HTTP codecs; Bemo supplies native transport, gzip and
+TLS, while stock mode uses Netty NIO, JDK gzip and JDK TLS. The table shows
+Bemo throughput changes versus stock mode; the report retains absolute rates
+and all sample ranges. Each endpoint uses 64 connections, with 20 seconds of
+warmup and 20 seconds measured per fresh-server sample. TLS clients are pinned
+to the same protocol and cipher; native images retain the portable default target.
+
+| Framework | Runtime | HTTP 13 B | HTTP 128 KiB | Gzip 128 KiB | TLS 128 KiB | TLS+gzip 128 KiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Spring Boot | JVM | +0.6% | -14.6% | +143.7% | +13.2% | +130.5% |
+| Spring Boot | Native Image | +8.5% | -0.8% | +482.7% | +2135.5% | +457.3% |
+| Micronaut | JVM | -3.8% | -21.9% | +186.4% | +2.7% | +174.0% |
+| Micronaut | Native Image | +5.5% | -7.7% | +669.5% | +2452.2% | +633.7% |
+
+Equal compression levels do not imply equal compressed sizes. For the 128 KiB
+basic JSON body, zlib-rs level 1 produces **1,653 bytes**, Netty level 1 produces
+**1,002 bytes**, and Netty level 6 produces **479 bytes**. The historical level-1
+versus level-6 comparison is superseded; its small 1 KiB exception does not
+justify retaining that mismatch across the matrix.
+
+Ranges show observed sample minima and maxima, not confidence intervals.
+Basic-chart memory sums server/client lifetime RSS high-water marks; framework
+memory is server-only. The harnesses use different bodies, clients and concurrency,
+so their absolute rates cannot be compared directly. The measured working tree,
+parent commit, per-file hashes, toolchains, CPU affinity and raw samples are
+checked in with [the evidence](docs/performance/unclemax-matched.md).
+Run `make bench-graphs` to reproduce the charts; see
+[chart refresh instructions](docs/performance/README.md).
 
 ## Layout
 
@@ -151,5 +173,9 @@ Test XML, coverage, and continuous CPU/RPS/RSS benchmarks are described in
 [the measurement guide](docs/measurement.md).
 ASAN, TSAN, Miri, and bounded native fuzzing are described in
 [native safety verification](docs/native-safety.md).
+
+Minimal Spring Boot and Micronaut applications support JVM and Native Image builds
+with Elide, Maven, and Gradle, including native gzip, TLS, and TLS+gzip workloads.
+See [the framework examples guide](docs/framework-examples.md).
 
 [0]: https://en.wikipedia.org/wiki/Share_taxi#Indonesia

@@ -13,38 +13,45 @@ public final class ReusableGzipTest {
     new Random(17).nextBytes(random);
     byte[] repeated = new byte[65536];
     Arrays.fill(repeated, (byte) 'x');
-    ReusableGzip compressor = new ReusableGzip();
-    try (compressor) {
-      for (int round = 0; round < 20; round++) {
-        for (byte[] input :
-            new byte[][] {random, new byte[0], repeated, new byte[1024], {(byte) round}}) {
-          int length = compressor.compress(input);
-          ByteBuffer destination = ByteBuffer.allocate(length + 7);
-          destination.position(7);
-          if (compressor.put(destination) != length || destination.position() != length + 7) {
-            throw new AssertionError("Output length/position");
-          }
-          byte[] encoded = Arrays.copyOfRange(destination.array(), 7, destination.position());
-          try (GZIPInputStream decoder = new GZIPInputStream(new ByteArrayInputStream(encoded))) {
-            if (!Arrays.equals(input, decoder.readAllBytes()))
-              throw new AssertionError("Gzip payload");
-          }
-          ByteArrayOutputStream expected = new ByteArrayOutputStream();
-          try (GZIPOutputStream reference = new GZIPOutputStream(expected)) {
-            reference.write(input);
-          }
-          if (!Arrays.equals(encoded, expected.toByteArray())) {
-            throw new AssertionError("Default gzip wire representation changed");
+    for (int level : new int[] {1, 6}) {
+      ReusableGzip compressor = new ReusableGzip(level);
+      try (compressor) {
+        for (int round = 0; round < 20; round++) {
+          for (byte[] input :
+              new byte[][] {random, new byte[0], repeated, new byte[1024], {(byte) round}}) {
+            int length = compressor.compress(input);
+            ByteBuffer destination = ByteBuffer.allocate(length + 7);
+            destination.position(7);
+            if (compressor.put(destination) != length || destination.position() != length + 7) {
+              throw new AssertionError("Output length/position");
+            }
+            byte[] encoded = Arrays.copyOfRange(destination.array(), 7, destination.position());
+            try (GZIPInputStream decoder = new GZIPInputStream(new ByteArrayInputStream(encoded))) {
+              if (!Arrays.equals(input, decoder.readAllBytes()))
+                throw new AssertionError("Gzip payload");
+            }
+            ByteArrayOutputStream expected = new ByteArrayOutputStream();
+            try (GZIPOutputStream reference =
+                new GZIPOutputStream(expected) {
+                  {
+                    def.setLevel(level);
+                  }
+                }) {
+              reference.write(input);
+            }
+            if (!Arrays.equals(encoded, expected.toByteArray())) {
+              throw new AssertionError("Selected gzip level wire representation changed");
+            }
           }
         }
       }
-    }
-    compressor.close();
-    try {
-      compressor.compress(random);
-      throw new AssertionError("Compression after close succeeded");
-    } catch (IllegalStateException expected) {
-      // Released native Deflater state cannot be used again.
+      compressor.close();
+      try {
+        compressor.compress(random);
+        throw new AssertionError("Compression after close succeeded");
+      } catch (IllegalStateException expected) {
+        // Released native Deflater state cannot be used again.
+      }
     }
     System.out.println("ReusableGzipTest passed");
   }

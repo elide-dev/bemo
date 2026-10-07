@@ -1,0 +1,122 @@
+{
+  "negotiation": {
+    "scope": "Unmeasured default Python/OpenSSL TLS negotiation probes; benchmark wrk uses its own OpenSSL client configuration",
+    "samples": [
+      {
+        "framework": "spring-boot",
+        "runtime": "jvm",
+        "transport": "bemo",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      },
+      {
+        "framework": "spring-boot",
+        "runtime": "jvm",
+        "transport": "netty",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      },
+      {
+        "framework": "spring-boot",
+        "runtime": "native",
+        "transport": "bemo",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      },
+      {
+        "framework": "spring-boot",
+        "runtime": "native",
+        "transport": "netty",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      },
+      {
+        "framework": "micronaut",
+        "runtime": "jvm",
+        "transport": "bemo",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      },
+      {
+        "framework": "micronaut",
+        "runtime": "jvm",
+        "transport": "netty",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      },
+      {
+        "framework": "micronaut",
+        "runtime": "native",
+        "transport": "bemo",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      },
+      {
+        "framework": "micronaut",
+        "runtime": "native",
+        "transport": "netty",
+        "protocol": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLSv1.3",
+          128
+        ],
+        "certificate_verified": true
+      }
+    ]
+  },
+  "wrk": {
+    "scope": "Unmeasured actual wrk positive/negative cipher-policy controls",
+    "samples": [
+      {
+        "server_only_cipher": "TLS_AES_256_GCM_SHA384",
+        "client_policy_cipher": "TLS_AES_128_GCM_SHA256",
+        "successful_requests": 0,
+        "tls_application_data_received": false,
+        "expected_accept": false
+      },
+      {
+        "server_only_cipher": "TLS_AES_128_GCM_SHA256",
+        "client_policy_cipher": "TLS_AES_128_GCM_SHA256",
+        "successful_requests": 0,
+        "tls_application_data_received": true,
+        "expected_accept": true
+      }
+    ]
+  }
+}

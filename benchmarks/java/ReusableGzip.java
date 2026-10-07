@@ -6,11 +6,15 @@ import java.util.zip.Deflater;
 /** Event-thread-confined gzip state; compresses a new independent member on every call. */
 final class ReusableGzip implements AutoCloseable {
   private static final byte[] HEADER = {31, (byte) 139, 8, 0, 0, 0, 0, 0, 0, (byte) 255};
-  private final Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
+  private final Deflater deflater;
   private final CRC32 checksum = new CRC32();
   private byte[] output = new byte[1024];
   private int length;
   private boolean closed;
+
+  ReusableGzip(int level) {
+    deflater = new Deflater(level, true);
+  }
 
   int compress(byte[] input) {
     if (closed) throw new IllegalStateException("Compressor is closed");

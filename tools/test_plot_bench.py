@@ -88,6 +88,29 @@ class PerformanceChartTest(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, 'Incomplete'):
       self.load(incomplete)
 
+  def test_matched_compression_rejects_different_levels(self):
+    self.meta["matched_compression"] = True
+    rows = copy.deepcopy(self.rows)
+    for row in rows:
+      for sample in row["samples"]:
+        if sample["gzip"]:
+          sample["gzip_level"] = 1 if row["transport"] == "bemo" else 6
+    with self.assertRaisesRegex(ValueError, "Unmatched gzip levels"):
+      self.load(rows)
+
+  def test_matched_tls_requires_protocol_and_cipher(self):
+    self.meta["matched_tls"] = True
+    rows = copy.deepcopy(self.rows)
+    for row in rows:
+      for sample in row["samples"]:
+        if sample["tls"]:
+          sample.update(load_generator_tls_protocol="TLSv1.3", load_generator_tls_cipher="TLS_AES_128_GCM_SHA256")
+    self.load(rows)
+    row = next(r for r in rows if r["case"].startswith("tls-"))
+    row["samples"][0]["load_generator_tls_cipher"] = "TLS_AES_256_GCM_SHA384"
+    with self.assertRaisesRegex(ValueError, "Unmatched TLS"):
+      self.load(rows)
+
   def test_invalid_metrics_are_rejected(self):
     for value in (None, 0, -1, float("nan"), float("inf")):
       with self.subTest(value=value):

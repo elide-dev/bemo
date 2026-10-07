@@ -1,0 +1,1763 @@
+{
+  "host": "Linux-x86_64",
+  "iterations": 10000,
+  "rustc": "rustc 1.101.0-nightly (c1070d693 2026-09-28)",
+  "scope": "standalone reusable gzip; excludes JVM/FFM/Native Image integration",
+  "commit": "a8bf91d49ea7719ab8a4460aa22f8d97bf93ae51",
+  "levels": [
+    1,
+    3,
+    6
+  ],
+  "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           52 bits physical, 57 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  48\nOn-line CPU(s) list:                     0-47\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen Threadripper PRO 9965WX 24-Cores\nCPU family:                              26\nModel:                                   8\nThread(s) per core:                      2\nCore(s) per socket:                      24\nSocket(s):                               1\nStepping:                                1\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      38%\nCPU max MHz:                             5489.7642\nCPU min MHz:                             1223.6230\nBogoMIPS:                                8387.34\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d debug_swap amd_lbr_pmc_freeze\nVirtualization:                          AMD-V\nL1d cache:                               1.1 MiB (24 instances)\nL1i cache:                               768 KiB (24 instances)\nL2 cache:                                24 MiB (24 instances)\nL3 cache:                                128 MiB (4 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-47\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Reduced Speculation\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n",
+  "samples": [
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 917.0301
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 925.4898
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 938.309
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 2599.8025
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 2716.8576
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 2759.7712
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 2805.8645
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 2807.503
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 2818.767
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 4013.8855
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 4016.3382
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 4012.3892
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 12577.7874
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 12572.7587
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 12573.5909
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 12919.6367
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 12942.3519
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 12948.7575
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 7815.0899
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 7826.9127
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 7815.5396
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 11499.89
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 11465.6626
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 11444.5988
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 11966.4963
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 11957.1001
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 11933.779
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 209292.2175
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 204983.9483
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 210898.2247
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 593185.7326
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 585543.6325
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 590107.0288
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 612857.8303
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 617589.3084
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 617563.6942
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 15751.5636
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 15648.2792
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 15662.8581
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 20674.0005
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 20671.9673
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 20661.4415
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 21648.6449
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 21656.667
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 21661.921
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 664331.8533
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 664158.7254
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 663747.8791
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1381149.7165
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1379408.0481
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1376822.4851
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1509124.1628
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1511829.4392
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1509986.5244
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 1599.3399
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 1598.2173
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 1596.7771
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 83,
+      "ns_per_member": 1577.1375
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 83,
+      "ns_per_member": 1570.7229
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 83,
+      "ns_per_member": 1577.0374
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 82,
+      "ns_per_member": 2398.8276
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 82,
+      "ns_per_member": 2392.2988
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 82,
+      "ns_per_member": 2392.2728
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 1047,
+      "ns_per_member": 8751.5943
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 1047,
+      "ns_per_member": 8766.088
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 1047,
+      "ns_per_member": 8762.055
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 8737.1525
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 8766.4927
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 8771.5313
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9183.2456
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9236.5438
+    },
+    {
+      "backend": "zlib",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9222.1461
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 551,
+      "ns_per_member": 27828.3098
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 551,
+      "ns_per_member": 27833.0969
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 551,
+      "ns_per_member": 27824.0623
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 551,
+      "ns_per_member": 27834.0043
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 551,
+      "ns_per_member": 27801.4783
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 551,
+      "ns_per_member": 27808.8513
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 282,
+      "ns_per_member": 84298.8121
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 282,
+      "ns_per_member": 84352.5287
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 282,
+      "ns_per_member": 84287.3915
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 65574,
+      "ns_per_member": 654056.0766
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 65574,
+      "ns_per_member": 649145.8226
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 65574,
+      "ns_per_member": 647809.1928
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 648076.5206
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 647087.1444
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 670815.2734
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 734822.147
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 734046.8983
+    },
+    {
+      "backend": "zlib",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 734048.39
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 996,
+      "ns_per_member": 69899.0013
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 996,
+      "ns_per_member": 69921.7423
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 996,
+      "ns_per_member": 69881.051
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 996,
+      "ns_per_member": 69908.8477
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 996,
+      "ns_per_member": 69863.8468
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 996,
+      "ns_per_member": 69873.2709
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 472,
+      "ns_per_member": 184570.4818
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 472,
+      "ns_per_member": 184624.4881
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 472,
+      "ns_per_member": 184633.2715
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1545310.2015
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1547096.4683
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1547940.7978
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1548332.6469
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1548130.0627
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1546206.688
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1623415.2939
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1660148.0021
+    },
+    {
+      "backend": "zlib",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1658208.6384
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 723.5841
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 728.0277
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 843.2581
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 1872.7111
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 1888.7192
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 1873.322
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 1886.3106
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 1893.1669
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 1880.8433
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 3511.1339
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 3529.822
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 3516.1315
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9109.5086
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9108.3599
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9170.6005
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9152.0986
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9129.0479
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 9167.9034
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 8840.9437
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 8835.1931
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 8835.9352
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 10951.9451
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 10940.8154
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 10993.9523
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 10688.8355
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 10742.5622
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 10711.2291
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 214922.2382
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 213339.5875
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 213150.9429
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 495532.3364
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 491021.3535
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 488807.3368
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 489337.8106
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 484623.5233
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 485643.3776
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 18615.9466
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 18597.9977
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 18569.0501
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 21450.8845
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 21463.817
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 21462.5971
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 20992.1947
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 20977.059
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 20968.0595
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 670499.0667
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 678394.6913
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 694932.8189
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1213661.3634
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1220236.6265
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1223549.8722
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1244220.7772
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1244900.5513
+    },
+    {
+      "backend": "zlib-ng",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 1247186.8525
+    }
+  ],
+  "checksums": [
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 60.3027
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 52.6823
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 52.4009
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 56.9657
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 56.7094
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 56.7264
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 52.3928
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 52.6363
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 52.4389
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 56.7654
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 56.5932
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 56.9897
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 3279.8138
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 3265.5383
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 3265.7496
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 3270.676
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 3271.0797
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 3270.6921
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 3265.977
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 3266.3586
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 3265.995
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 3271.0035
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 3269.8587
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 3270.1622
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 6525.7304
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 6529.8836
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 6528.7119
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 6540.6708
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 6539.0874
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 6537.7023
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 6546.788
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 6530.2451
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 6528.3002
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 6541.3689
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 6541.3408
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 6538.8941
+    }
+  ]
+}

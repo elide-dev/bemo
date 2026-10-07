@@ -3,7 +3,7 @@
 The README's SVGs come from `tools/plot_bench.py`, with Matplotlib and its
 dependencies pinned in `tools/chart-requirements.txt`. The default input is
 `data/provenance.json`, which names the raw benchmark summary beside it.
-Every SVG embeds the source SHA-256 and CI run URL. Generation has no timestamps
+Every SVG embeds the source SHA-256 and evidence reference. Generation has no timestamps
 or random chart IDs; identical input and rendering dependencies reproduce the
 same SVG bytes. Fonts are embedded as paths for consistent browser rendering.
 Chart generation requires Python 3.12+; the core build still supports Python 3.11+.
@@ -39,13 +39,16 @@ cp build/readme-bench/latest/summary-all.json docs/performance/data/linux-x86_64
 
 Update `data/provenance.json` with the actual date, full measured commit, run URL,
 artifact name, runner description, and summary filename. For local measurements,
-use an evidence URL that readers can access and identify the host accurately.
+use a checked-in evidence reference and identify the host accurately. Record a
+working-tree snapshot and per-file hashes when the measured source is uncommitted;
+the parent commit alone does not identify it. Set `matched_compression: true` and `matched_tls: true` for
+current evidence so charts reject compression-level, TLS protocol, and cipher mismatches.
 Then run `make bench-graphs` and review the data and images together. Keep raw
 samples: medians, sample ranges, CPU costs, and memory maxima are computed from
 them, rather than copied from summary aggregates or written into plotting code.
 
 The renderer refuses incomplete matrices, fewer than three samples, mismatched
-commits/environments, backend fallbacks, mixed drivers, unexpected runtime/codec
+commits/environments, unmatched compression levels in current evidence, backend fallbacks, mixed drivers, unexpected runtime/codec
 stacks, and invalid metrics. It currently requires Linux RSS measurements and
 all workloads in either the archived eight-case or extended twelve-case matrix
 with the same sampling/connection settings. The one-sample
@@ -114,7 +117,7 @@ use the same external OpenJDK Netty NIO load generator. Each server has one I/O
 thread; server/client heaps are 256 MiB each. Each sample warms 5,000 rounds,
 then measures 25,000 rounds per client, completing 100,000 requests. Gzip uses
 per-response application compression through native zlib-rs level 1 for Bemo
-and the Netty compressor at its default level 6 for the comparator, with compressible fixed-pattern bodies.
+and the Netty compressor explicitly set to level 1 for the comparator, with compressible fixed-pattern bodies.
 These compare the complete stacks, including their different HTTP/TLS implementations.
 See [measurement methodology](../measurement.md) for timing, ownership,
 backend selection, and environment controls.
@@ -124,3 +127,11 @@ The older server and client are rebuilt unchanged; their variable-size workload
 already supports that payload. Sampling logic and the requested size stay
 identical across versions. The renderer supports archived eight-case data and
 requires every case/transport when the extended twelve-case matrix is present.
+
+Current TLS clients are pinned to TLS 1.3 / `TLS_AES_128_GCM_SHA256`. The basic
+JDK client checks every negotiated session. The framework runner re-executes
+with the checked-in OpenSSL policy before initialization, checks HTTPS readiness,
+and enforces the same policy at wrk context creation using a benchmark-only
+preload shim. `make bench-prepare` builds that Linux shim and requires OpenSSL
+development headers and libraries. The shim is applied only to wrk, never to
+application servers. Positive/negative cipher controls verify the actual client.

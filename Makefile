@@ -80,3 +80,17 @@ build-bitcode:
 	$(PYTHON) tools/bitcode.py build
 test-bitcode:
 	$(PYTHON) tools/bitcode.py test
+
+.PHONY: examples-prepare examples-build test-examples
+examples-prepare: build
+	$(PYTHON) tools/examples.py prepare
+examples-build: examples-prepare
+	$(PYTHON) tools/examples.py build
+test-examples: examples-prepare
+	$(PYTHON) tools/examples.py test
+
+.PHONY: examples-native test-examples-native
+examples-native: examples-prepare
+	$(PYTHON) tools/examples.py native
+test-examples-native: examples-prepare
+	$(PYTHON) tools/examples.py test --native

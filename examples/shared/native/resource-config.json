@@ -1,0 +1,19 @@
+{
+  "resources": {
+    "includes": [
+      {"pattern": "benchmark-tls/.*"},
+      {
+        "pattern": "application\\.properties"
+      },
+      {
+        "pattern": "logback\\.xml"
+      },
+      {
+        "pattern": "META-INF/services/.*"
+      },
+      {
+        "pattern": "META-INF/micronaut/.*"
+      }
+    ]
+  }
+}

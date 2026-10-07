@@ -1,4 +1,7 @@
-# Selective TLS and fast gzip: scaling through 128 KiB
+# Historical selective TLS and gzip results through 128 KiB
+
+These historical gzip results use different compression levels. Current matched-level
+measurements are reported in [the Unclemax rerun](unclemax-matched.md).
 
 Before: `a4d3cc5bf0ce505335c8d7270e698a27e64318fc`; after: `5f99dca7f062c94ed8cc7ba68594929dc5bf87cd`.
 This compares the preceding native zlib-rs level-6 stack with selective TLS
@@ -13,7 +16,7 @@ The matrix contains 144 samples and 14.4 million completed measured requests.
 Ranges are three observed samples, not confidence intervals.
 
 - [Before provenance](data/pre-scaling-provenance.json) and [raw samples](data/pre-scaling-linux-x86_64.json).
-- [After provenance](data/provenance.json) and [raw samples](data/linux-x86_64.json).
+- [After provenance](data/scaling-provenance.json) and [raw samples](data/scaling-linux-x86_64.json).
 - [Shared CPU, affinity, commits, and requested workloads](data/paired-environment.json).
 
 Native Image `-O3`, native HTTP, Rustls/AWS-LC and io_uring are compared with

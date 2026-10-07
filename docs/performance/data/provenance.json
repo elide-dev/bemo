@@ -1,9 +1,12 @@
 {
   "date": "2026-10-07",
-  "commit": "5f99dca7f062c94ed8cc7ba68594929dc5bf87cd",
-  "run_url": "https://github.com/elide-dev/bemo/actions/runs/37588109048",
-  "artifact": "paired-transport-evidence",
-  "artifact_summary": "after/summary-all.json",
-  "runner": "GitHub-hosted ubuntu-24.04 x86-64",
-  "summary": "linux-x86_64.json"
+  "commit": "a8bf91d49ea7719ab8a4460aa22f8d97bf93ae51",
+  "working_tree": true,
+  "source_manifest": "unclemax-level1-source.json",
+  "run_url": "docs/performance/unclemax-matched.md",
+  "runner": "Unclemax \u00b7 Linux x86-64 \u00b7 Threadripper PRO 9965WX",
+  "summary": "linux-x86_64.json",
+  "matched_compression": true,
+  "matched_tls": true,
+  "sha256": "29652ad54cada1c53f8fc6ef1915895f47b1083d239228341d4ba0de394f099e"
 }

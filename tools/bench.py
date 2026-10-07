@@ -28,7 +28,7 @@ def comparisons(summary):
     for other in summary:
       if other["transport"] not in ("epoll", "kqueue", "nio") or other["case"] != bemo["case"]:
         continue
-      keys = ("clients", "requests", "warmup_rounds", "java_version", "host", "workload_sha256", "load_generator_transport", "load_generator_tls_provider", "process_scope", "socket_buffer_bytes")
+      keys = ("clients", "requests", "warmup_rounds", "java_version", "host", "workload_sha256", "load_generator_transport", "load_generator_tls_provider", "process_scope", "socket_buffer_bytes", "gzip_level", "server_cpus", "client_cpus", "load_generator_tls_protocol", "load_generator_tls_cipher")
       if any(bemo["samples"][0].get(key) != other["samples"][0].get(key) for key in keys):
         raise RuntimeError("Refusing incompatible transport comparison")
       bemo_tls = bemo["samples"][0]["tls_provider"]
@@ -81,6 +81,11 @@ def snapshot():
 def prepare(runtime="native-image"):
   build.rust(release=True)
   build.jvm()
+  if platform.system() == "Linux":
+    (build.BUILD / "bench").mkdir(parents=True, exist_ok=True)
+    build.run("cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror",
+              build.ROOT / "benchmarks/tls-policy.c", "-o", build.BUILD / "bench/openssl-policy.so",
+              "-ldl", "-lssl", "-lcrypto")
   build.compile_java(build.BUILD / "bench/classes", sorted((build.ROOT / "benchmarks/java").glob("*.java")),
                      [build.classes(name) for name in ("api", "ffm", "netty", "native-image")] + build.sdk() + build.benchmark_netty())
   if runtime == "native-image":
@@ -140,6 +145,10 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
   else:
     server_command = [*java_args, "TransportBenchmark", *inputs, str(rounds), str(warmup),
                       transport, str(clients), tls_provider, str(backend), "server"]
+  server_cpus = os.environ.get("BEMO_BENCH_SERVER_CPUS")
+  client_cpus = os.environ.get("BEMO_BENCH_CLIENT_CPUS")
+  if server_cpus:
+    server_command = ["taskset", "-c", server_cpus, *server_command]
   OUTPUT.mkdir(parents=True, exist_ok=True)
   stamp = time.time_ns()
   actual_runtime = runtime if native_http else "jvm"
@@ -154,6 +163,8 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
       log.flush()
       command = [*java_args, "TransportBenchmark", *inputs, str(rounds), str(warmup),
                  client_transport, str(clients), "jdk", "0", str(ready["port"]), str(server.pid)]
+      if client_cpus:
+        command = ["taskset", "-c", client_cpus, *command]
       client_log = OUTPUT / f"{name}-{stamp}.log"
       with client_log.open("w") as output:
         client = subprocess.Popen(command, cwd=build.ROOT, stdin=subprocess.PIPE,
@@ -213,9 +224,12 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
   metrics.update(transport=transport, driver=ready["driver"], auto_fallback=ready["auto_fallback"],
                  tls_provider=tls_provider if tls else "none", http_provider="native" if native_http else "netty",
                  runtime=actual_runtime, binding="capi" if native_http and runtime == "native-image" else "ffm" if transport == "bemo" else "netty",
+                 load_generator_tls_protocol="TLSv1.3" if tls else "none",
+                 load_generator_tls_cipher="TLS_AES_128_GCM_SHA256" if tls else "none",
                  load_generator_transport=client_transport, load_generator_tls_provider="jdk" if tls else "none",
                  process_scope="server+client", gzip_provider=ready.get("gzip_provider", "java.util.zip") if native_http and gzip else "netty" if gzip else "none",
-                 gzip_level=ready.get("gzip_level", 6) if gzip else 0,
+                 gzip_level=ready["gzip_level"] if gzip else 0,
+                 server_cpus=os.environ.get("BEMO_BENCH_SERVER_CPUS"), client_cpus=os.environ.get("BEMO_BENCH_CLIENT_CPUS"),
                  workload_sha256=digest([*sorted((build.ROOT / "benchmarks/java").glob("*.java")), Path(__file__).resolve()]),
                  case=case, socket_buffer_bytes=socket_buffer, requested_backend=backend if transport == "bemo" else 0,
                  commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=build.ROOT, text=True).strip(),

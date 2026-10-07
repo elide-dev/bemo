@@ -1,0 +1,4 @@
+[
+  {"name": "dev.elide.bemo.transport.NativeServerSocketChannel", "allPublicConstructors": true},
+  {"name": "dev.elide.bemo.transport.NativeSocketChannel", "allPublicConstructors": true}
+]

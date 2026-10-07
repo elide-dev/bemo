@@ -2,9 +2,9 @@
 
 The native HTTP benchmark compresses each gzip response through reusable
 zlib-rs state in Bemo, with speed-oriented level 1 as its default.
-`BEMO_BENCH_GZIP_LEVEL=6` selects the preceding native level for a control. The same Rust encoder is called from the stock JVM FFM
+`BEMO_BENCH_GZIP_LEVEL=6` selects level 6 for both compared stacks. The same Rust encoder is called from the stock JVM FFM
 binding and Native Image C binding; Java's Deflater is no longer the default
-native HTTP gzip provider. Netty retains its own application compressor.
+native HTTP gzip provider. Netty retains its own application compressor, explicitly set to the same level 1 default.
 `BEMO_BENCH_GZIP_PROVIDER=java.util.zip` selects the preceding reusable Java
 implementation for an explicit diagnostic comparison. The server reports its
 actual provider and the benchmark archives that label with every sample.

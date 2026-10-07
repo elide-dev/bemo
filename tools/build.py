@@ -279,7 +279,7 @@ def fmt(check=False):
   run("cargo", "fmt", "--manifest-path", "benchmarks/compression/Cargo.toml", *(["--check"] if check else []))
   formatter = jar_dependency("com.google.googlejavaformat", "google-java-format",
                              VERSIONS["java_format"], "all-deps")
-  java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java")) + sorted((ROOT / "benchmarks").rglob("*.java"))
+  java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java")) + sorted((ROOT / "benchmarks").rglob("*.java")) + sorted((ROOT / "examples").glob("*/src/**/*.java"))
   flags = ["--dry-run", "--set-exit-if-changed"] if check else ["--replace"]
   run(ELIDE, "java", "--", "-jar", formatter, *flags, *java_files)
 

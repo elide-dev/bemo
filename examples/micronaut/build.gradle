@@ -1,0 +1,82 @@
+plugins {
+  id 'application'
+}
+
+group = 'dev.elide.bemo.examples'
+version = '0.1.0'
+
+def pins = new groovy.json.JsonSlurper().parse(file('../../tools/versions.json'))
+def bemoVersion = file('../../.version').text.trim()
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def arch = System.getProperty('os.arch') in ['aarch64', 'arm64'] ? 'aarch64' : 'x86_64'
+def platformName = osName.contains('mac') ? 'osx' : osName.contains('windows') ? 'windows' : 'linux'
+def classifier = "${platformName}-${arch}" + (platformName == 'linux' ? '-gnu' : '')
+def sharedTools = file('../../tools/examples.py')
+def nativeOutput = file('../../build/examples/native/gradle/micronaut' + (platformName == 'windows' ? '.exe' : ''))
+
+repositories {
+  maven { url = uri('../../build/examples/maven') }
+  mavenCentral()
+}
+
+configurations.configureEach { resolutionStrategy.cacheChangingModulesFor 0, 'seconds' }
+
+sourceSets.main.java.srcDir '../shared/src/main/java'
+sourceSets.main.resources.srcDir '../shared/src/main/resources'
+tasks.withType(JavaCompile).configureEach {
+  options.release = pins.jvm_release
+  options.encoding = 'UTF-8'
+  options.compilerArgs.add('-parameters')
+}
+
+dependencies {
+  implementation enforcedPlatform("io.netty:netty-bom:${pins.netty}")
+  implementation("dev.elide.bemo:bemo-netty:${bemoVersion}") { changing = true }
+  implementation("dev.elide.bemo:bemo-ffm:${bemoVersion}") { changing = true }
+  implementation("dev.elide.bemo:bemo-native-image:${bemoVersion}") { changing = true }
+  implementation "org.graalvm.sdk:nativeimage:${pins.graalvm_sdk}"
+  implementation "org.graalvm.sdk:word:${pins.graalvm_sdk}"
+  runtimeOnly("dev.elide.bemo:bemo-ffm:${bemoVersion}:${classifier}") { changing = true }
+  implementation 'io.micronaut:micronaut-http-server-netty:4.10.30'
+  implementation 'io.micronaut:micronaut-jackson-databind:4.10.30'
+  implementation 'io.micronaut:micronaut-graal:4.10.30'
+  annotationProcessor 'io.micronaut:micronaut-inject-java:4.10.30'
+  annotationProcessor 'io.micronaut:micronaut-graal:4.10.30'
+  runtimeOnly 'ch.qos.logback:logback-classic:1.5.32'
+}
+
+application {
+  mainClass = 'dev.elide.bemo.examples.micronaut.Application'
+  applicationDefaultJvmArgs = [
+    '--enable-native-access=ALL-UNNAMED',
+    "-Dbemo.enabled=${providers.gradleProperty('bemo.enabled').getOrElse('true')}",
+    "-Dbemo.tls.enabled=${providers.gradleProperty('bemo.tls.enabled').getOrElse('true')}",
+    "-Dbemo.tls.port=${providers.gradleProperty('bemo.tls.port').getOrElse('8443')}",
+    "-Dbemo.gzip.level=${providers.gradleProperty('bemo.gzip.level').getOrElse('1')}",
+    '-Dreactor.netty.ioWorkerCount=2'
+  ]
+}
+
+tasks.register('writeRuntimeClasspath') {
+  dependsOn classes
+  def destination = layout.buildDirectory.file('runtime.classpath')
+  inputs.files(sourceSets.main.runtimeClasspath)
+  outputs.file(destination)
+  doLast { destination.get().asFile.text = sourceSets.main.runtimeClasspath.asPath }
+}
+
+// Share Spring AOT processing and C linkage flags with the Maven and Elide builds.
+tasks.register('nativeCompile', Exec) {
+  dependsOn writeRuntimeClasspath
+  commandLine 'python3', sharedTools, 'native', '--project', 'micronaut',
+      '--builder', 'gradle', '--skip-build'
+}
+
+tasks.register('nativeRun', Exec) {
+  dependsOn nativeCompile
+  commandLine nativeOutput, "-Dbemo.enabled=${providers.gradleProperty('bemo.enabled').getOrElse('true')}",
+      "-Dbemo.tls.enabled=${providers.gradleProperty('bemo.tls.enabled').getOrElse('true')}",
+      "-Dbemo.tls.port=${providers.gradleProperty('bemo.tls.port').getOrElse('8443')}",
+      "-Dbemo.gzip.level=${providers.gradleProperty('bemo.gzip.level').getOrElse('1')}",
+      '-Dreactor.netty.ioWorkerCount=2'
+}

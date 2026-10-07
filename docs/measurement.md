@@ -123,7 +123,10 @@ binding. Provider state and bounded scratch are reused; output is charged to
 the workload and released after send retirement. The comparator uses Netty's
 `HttpContentCompressor`. Both clients use the same decompressor and verify
 compression negotiation. Samples record the actual gzip provider and level;
-`BEMO_BENCH_GZIP_LEVEL` selects an explicit native level (0–9).
+`BEMO_BENCH_GZIP_LEVEL` selects the same explicit level (0–9) for native gzip,
+Netty compression, and the optional Java diagnostic provider; the default is 1.
+`BEMO_BENCH_SERVER_CPUS` and `BEMO_BENCH_CLIENT_CPUS` optionally pin the
+separate processes on Linux. Samples retain these settings.
 `BEMO_BENCH_GZIP_PROVIDER=java.util.zip` selects the preceding reusable Java
 compressor for diagnostics. See [compression qualification](performance/compression.md)
 for the pinned provider, lifetime contract, and backend comparison.
