@@ -134,12 +134,12 @@ impl Lane {
     }
     for _ in 0..128 {
       let ack = self.acknowledge;
-      // Only stage a record when it crosses allocation boundaries. Original parts
+      // Only stage across allocation boundaries when it reduces record count. Original parts
       // remain owned until every ciphertext write has physically retired.
       let mut staged = None;
       if !ack && let Some(parts) = &self.application {
         let first = &parts[self.part].as_ref()[self.offset..];
-        if first.len() < RECORD_PLAINTEXT && parts[self.part + 1..].iter().any(|part| !part.as_ref().is_empty()) {
+        if first.len() < RECORD_PLAINTEXT && saves_record(first.len(), &parts[self.part + 1..]) {
           let length = parts[self.part + 1..].iter().fold(first.len(), |length, part| {
             length.saturating_add(part.as_ref().len()).min(RECORD_PLAINTEXT)
           });
@@ -227,6 +227,19 @@ impl Lane {
     }
     Err(io::ErrorKind::InvalidData.into())
   }
+}
+
+fn saves_record(first: usize, remaining: &[FrozenBuffer]) -> bool {
+  let (bytes, records) = remaining
+    .iter()
+    .fold((first, first.div_ceil(RECORD_PLAINTEXT)), |(bytes, records), part| {
+      let length = part.as_ref().len();
+      (
+        bytes.saturating_add(length),
+        records.saturating_add(length.div_ceil(RECORD_PLAINTEXT)),
+      )
+    });
+  records > bytes.div_ceil(RECORD_PLAINTEXT)
 }
 
 #[cfg(test)]
@@ -329,7 +342,7 @@ mod tests {
   #[test]
   #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
   fn split_parts_fill_records_and_keep_original_leases_until_retirement() {
-    for body_length in [1024, 16384, 65536] {
+    for body_length in [1024, 16384, 16385, 65536, 131072] {
       let (mut lane, mut client) = pair();
       for _ in 0..100 {
         let mut wire = Vec::new();
@@ -373,6 +386,16 @@ mod tests {
             }
             let mut plaintext = vec![0; RECORD_PLAINTEXT];
             let count = client.reader().read(&mut plaintext).unwrap();
+            if outputs == 1 {
+              assert_eq!(
+                count,
+                if body_length % RECORD_PLAINTEXT == 0 {
+                  128
+                } else {
+                  (128 + body_length).min(RECORD_PLAINTEXT)
+                }
+              );
+            }
             received.extend_from_slice(&plaintext[..count]);
             lane.transmitted();
           }
