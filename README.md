@@ -96,6 +96,8 @@ and all sample ranges. Each endpoint uses 64 connections, with 20 seconds of
 warmup and 20 seconds measured per fresh-server sample. TLS clients are pinned
 to the same protocol and cipher; native images retain the portable default target.
 
+![Spring Boot and Micronaut throughput across all five endpoints, in JVM and Native Image modes](docs/performance/graphs/framework-throughput-afcab56b5053.svg)
+
 | Framework | Runtime | HTTP 13 B | HTTP 128 KiB | Gzip 128 KiB | TLS 128 KiB | TLS+gzip 128 KiB |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | Spring Boot | JVM | +0.6% | -14.6% | +143.7% | +13.2% | +130.5% |

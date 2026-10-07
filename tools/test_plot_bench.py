@@ -120,5 +120,47 @@ class PerformanceChartTest(unittest.TestCase):
           self.load(rows)
 
 
+class FrameworkChartTest(unittest.TestCase):
+  def setUp(self):
+    self.evidence = json.loads(charts.FRAMEWORK_DATA.read_text())
+
+  def load(self):
+    with tempfile.TemporaryDirectory() as directory:
+      source = Path(directory) / "framework.json"
+      source.write_text(json.dumps(self.evidence))
+      return charts.load_frameworks(source)
+
+  def test_all_frameworks_runtimes_and_endpoints_use_raw_samples(self):
+    for run in self.evidence["workloads"].values():
+      run["summary"] = []
+    sha, groups = self.load()
+    self.assertEqual(len(sha), 64)
+    self.assertEqual(len(groups), 40)
+    self.assertEqual(sum(len(samples) for samples in groups.values()), 120)
+
+  def test_missing_and_duplicate_repetitions_are_rejected(self):
+    samples = self.evidence["workloads"]["tls"]["samples"]
+    removed = samples.pop()
+    with self.assertRaisesRegex(ValueError, "Incomplete framework"):
+      self.load()
+    samples.append(removed)
+    removed["repetition"] = 0
+    with self.assertRaisesRegex(ValueError, "Incomplete framework"):
+      self.load()
+
+  def test_mismatched_policy_and_response_errors_are_rejected(self):
+    sample = self.evidence["workloads"]["tls-compression"]["samples"][0]
+    for field, value, message in (("gzip_level", 6, "compression level"),
+                                  ("tls_cipher", "TLS_AES_256_GCM_SHA384", "TLS protocol or cipher"),
+                                  ("invalid_responses", 1, "response errors"),
+                                  ("driver_fallback_log", ["fallback"], "backend fallback")):
+      with self.subTest(field=field):
+        original = sample[field]
+        sample[field] = value
+        with self.assertRaisesRegex(ValueError, message):
+          self.load()
+        sample[field] = original
+
+
 if __name__ == "__main__":
   unittest.main()

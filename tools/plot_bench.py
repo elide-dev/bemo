@@ -233,15 +233,117 @@ def render(meta, groups, output, png=False):
   save(fig, "efficiency.svg", "Server CPU and whole-process memory for all measured workloads")
 
 
+FRAMEWORK_DATA = ROOT / "docs/performance/data/framework-unclemax-level1.json"
+FRAMEWORK_WORKLOADS = ("plaintext", "payload", "compression", "tls", "tls-compression")
+FRAMEWORK_LABELS = ("HTTP · 13 B", "HTTP · 128 KiB", "Gzip · 128 KiB", "TLS · 128 KiB", "TLS+gzip · 128 KiB")
+
+
+def load_frameworks(source):
+  evidence = json.loads(source.read_text())
+  groups = {}
+  artifacts = None
+  for workload in FRAMEWORK_WORKLOADS:
+    run = evidence["workloads"][workload]
+    fingerprints = run["environment"]["artifact_sha256"]
+    if artifacts is not None and fingerprints != artifacts:
+      raise ValueError("Mixed framework application artifacts")
+    artifacts = fingerprints
+    for sample in run["samples"]:
+      if sample["workload"] != workload:
+        raise ValueError("Mixed framework workloads")
+      if sample["driver_fallback_log"] or any(sample[key] for key in (
+          "invalid_responses", "connect_errors", "read_errors", "write_errors", "status_errors", "timeouts")):
+        raise ValueError("Framework response errors or backend fallback")
+      if sample["gzip_level"] != (1 if sample["compression"] else None):
+        raise ValueError("Unmatched framework compression level")
+      if sample["tls"] and (sample["tls_protocol"], sample["tls_cipher"]) != ("TLSv1.3", "TLS_AES_128_GCM_SHA256"):
+        raise ValueError("Unmatched framework TLS protocol or cipher")
+      if not math.isfinite(sample["requests_per_second"]) or sample["requests_per_second"] <= 0:
+        raise ValueError("Invalid framework throughput")
+      key = sample["framework"], sample["runtime"], workload, sample["transport"]
+      groups.setdefault(key, []).append(sample)
+  expected = {(framework, runtime, workload, stack)
+              for framework in ("spring-boot", "micronaut") for runtime in ("jvm", "native")
+              for workload in FRAMEWORK_WORKLOADS for stack in ("bemo", "netty")}
+  if set(groups) != expected or any(len(samples) != 3 or
+      {s["repetition"] for s in samples} != {0, 1, 2} for samples in groups.values()):
+    raise ValueError("Incomplete framework matrix: require three samples per stack")
+  return hashlib.sha256(source.read_bytes()).hexdigest(), groups
+
+
+def render_frameworks(source, output, png=False):
+  import matplotlib
+  matplotlib.use("Agg")
+  import matplotlib.pyplot as plt
+  from matplotlib.ticker import FuncFormatter, FixedLocator, NullLocator
+  sha, groups = load_frameworks(source)
+  matplotlib.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11,
+                             "text.color": INK, "axes.labelcolor": MUTED, "xtick.color": MUTED,
+                             "ytick.color": INK, "svg.fonttype": "path", "svg.hashsalt": "bemo-framework-v1"})
+  fig, axes = plt.subplots(2, 2, figsize=(16, 11.5), facecolor=BG)
+  fig.subplots_adjust(left=.17, right=.87, top=.80, bottom=.19, wspace=1.10, hspace=.50)
+  fig.text(.04, .955, "BEMO / FRAMEWORK PERFORMANCE", fontsize=10, weight="bold", color=COLORS["bemo"])
+  fig.text(.04, .902, "Spring Boot & Micronaut: every endpoint", fontsize=25, weight="bold")
+  fig.text(.04, .857, "Requests/sec · logarithmic scale · dots: medians; whiskers: three-sample min–max", fontsize=12, color=MUTED)
+  pairs = (("spring-boot", "jvm"), ("spring-boot", "native"), ("micronaut", "jvm"), ("micronaut", "native"))
+  for ax, (framework, runtime) in zip(axes.flat, pairs):
+    ax.set_facecolor(BG)
+    ax.set_title(f"{'Spring Boot' if framework == 'spring-boot' else 'Micronaut'} · {'JVM' if runtime == 'jvm' else 'Native Image −O3'}", loc="left", fontsize=14, weight="bold", pad=18)
+    for stack, offset in (("bemo", -.13), ("netty", .13)):
+      for index, workload in enumerate(FRAMEWORK_WORKLOADS):
+        data = [s["requests_per_second"] for s in groups[framework, runtime, workload, stack]]
+        median = statistics.median(data)
+        ax.errorbar(median, index + offset, xerr=[[median - min(data)], [max(data) - median]],
+                    fmt="o", color=COLORS[stack], markersize=6, capsize=3, linewidth=1.8)
+    ax.set_xscale("log")
+    ax.set_xlim(1000, 320000)
+    ax.xaxis.set_major_locator(FixedLocator((1000, 10000, 100000)))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda value, pos: f"{value / 1000:g}k"))
+    ax.set_yticks(range(5), FRAMEWORK_LABELS)
+    ax.set_ylim(4.55, -.55)
+    ax.set_xlabel("Completed requests / second", labelpad=9)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.spines["bottom"].set_color(GRID)
+    ax.tick_params(length=0, pad=8)
+    ax.set_axisbelow(True)
+    ax.grid(axis="x", color=GRID)
+    ax.text(1.05, 1.06, "vs stock", transform=ax.transAxes, fontsize=10, color=MUTED)
+    for index, workload in enumerate(FRAMEWORK_WORKLOADS):
+      medians = [statistics.median(s["requests_per_second"] for s in groups[framework, runtime, workload, stack]) for stack in ("bemo", "netty")]
+      delta = medians[0] / medians[1] - 1
+      ax.text(1.05, index, f"{delta:+.1%}", transform=ax.get_yaxis_transform(), va="center", fontsize=12,
+              weight="bold", color=COLORS["bemo"] if delta >= 0 else COLORS["netty"])
+  handles = [plt.Line2D([], [], marker="o", linestyle="", color=COLORS[stack], markersize=7) for stack in ("bemo", "netty")]
+  fig.legend(handles, ("Bemo: io_uring / zlib-rs / Rustls", "Stock: Netty NIO / JDK gzip / JDK TLS"),
+             loc="lower left", bbox_to_anchor=(.04, .115), frameon=False, ncol=2, fontsize=11)
+  fig.text(.04, .096, "Unclemax · Linux Threadripper PRO 9965WX · runtime fixed within each panel · shared framework HTTP codecs", fontsize=10, color=MUTED)
+  fig.text(.04, .072, "Gzip level 1 on both sides · TLS 1.3 / AES-128-GCM · 64 connections · 20 s warmup + 20 s measured", fontsize=10, color=MUTED)
+  fig.text(.04, .048, "Native Image: portable x86-64-v3, no trained PGO · closed-loop loopback results · ranges are not confidence intervals", fontsize=10, color=MUTED)
+  fig.text(.04, .024, "Different compression ratios: 128 KiB ASCII → Bemo 1,580 B / stock 909 B · source " + sha[:12], fontsize=10, color=MUTED)
+  output.mkdir(parents=True, exist_ok=True)
+  name = output / f"framework-throughput-{sha[:12]}.svg"
+  fig.savefig(name, format="svg", facecolor=BG,
+              metadata={"Date": None, "Creator": "tools/plot_bench.py", "Title": "Spring Boot and Micronaut JVM and Native Image throughput",
+                        "Description": f"Source SHA-256: {sha}. docs/performance/unclemax-matched.md"})
+  name.write_text("\n".join(line.rstrip() for line in name.read_text().splitlines()) + "\n")
+  if png:
+    fig.savefig(name.with_suffix(".png"), dpi=140, facecolor=BG)
+  plt.close(fig)
+  print(f"Rendered framework matrix: {name.name}")
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--provenance", type=Path, default=DEFAULT)
   parser.add_argument("--output", type=Path, default=ROOT / "docs/performance/graphs")
+  parser.add_argument("--framework-data", type=Path, default=FRAMEWORK_DATA)
   parser.add_argument("--png", action="store_true", help="Also render PNG previews")
   args = parser.parse_args()
   meta, groups = load(args.provenance)
   render(meta, groups, args.output, args.png)
-  print(f"Rendered three charts from {meta['sha256']}")
+  render_frameworks(args.framework_data, args.output, args.png)
+  print(f"Rendered basic charts from {meta['sha256']}")
 
 
 if __name__ == "__main__":

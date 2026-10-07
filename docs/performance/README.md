@@ -13,9 +13,12 @@ make bench-graphs
 ```
 
 This creates an isolated environment under `build/chart-venv` and renders the
-three checked-in SVGs. Each filename includes the first 12 characters of the
+four checked-in SVGs: three basic transport charts and the Spring Boot/Micronaut
+framework matrix. The framework chart derives medians and sample ranges from
+`data/framework-unclemax-level1.json`, with all five endpoints in JVM and Native
+Image modes. Each filename includes the first 12 characters of the
 source data SHA-256, so GitHub image redirects cannot reuse an older chart URL.
-When the evidence changes, update all three README image paths to the generated
+When the evidence changes, update the affected README image paths to the generated
 filenames and remove the superseded SVGs. Query strings on relative image links
 do not survive GitHub’s redirect to raw content.
 It does not run benchmarks or upload metrics. PNG export
