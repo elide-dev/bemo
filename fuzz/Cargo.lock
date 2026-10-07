@@ -54,6 +54,7 @@ dependencies = [
  "bytes",
  "compio-buf",
  "compio-driver",
+ "crc32fast",
  "h2",
  "http",
  "libc",
@@ -62,6 +63,7 @@ dependencies = [
  "rustls",
  "socket2",
  "tokio",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -178,6 +180,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
 dependencies = [
  "crossbeam-utils",
+]
+
+[[package]]
+name = "crc32fast"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -990,3 +1001,8 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.7"
+source = "git+https://github.com/jlucaso1/zlib-rs.git?rev=cedb23f2a9329d0bc81d0c8068d74d2b16a24dd6#cedb23f2a9329d0bc81d0c8068d74d2b16a24dd6"

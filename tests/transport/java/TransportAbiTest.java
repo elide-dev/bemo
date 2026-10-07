@@ -57,6 +57,7 @@ public final class TransportAbiTest {
     sockets(api);
     workloads(api);
     NativeHttpBodyTest.verify(api);
+    NativeGzipTest.verify(api);
     System.out.println("Transport ABI checks passed");
   }
 

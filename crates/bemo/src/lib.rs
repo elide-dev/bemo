@@ -6,6 +6,7 @@ compile_error!("The transport ABI requires a 64-bit target");
 
 pub mod abi;
 pub mod buffer;
+pub mod compression;
 pub mod driver;
 pub mod http;
 pub mod tls;

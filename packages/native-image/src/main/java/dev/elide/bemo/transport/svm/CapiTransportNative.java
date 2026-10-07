@@ -260,6 +260,21 @@ public final class CapiTransportNative implements TransportNative {
     return workloadClose0(workload);
   }
 
+  @Override
+  public long gzipNew(long workload, int level) {
+    return BemoNatives.elide_transport_gzip_new(workload, level);
+  }
+
+  @Override
+  public long gzipCompress(long workload, long encoder, long input) {
+    return BemoNatives.elide_transport_gzip_compress(workload, encoder, input);
+  }
+
+  @Override
+  public int gzipRelease(long encoder) {
+    return BemoNatives.elide_transport_gzip_release(encoder);
+  }
+
   private static long bufferNew0(long owner, long capacity) {
     return BemoNatives.elide_transport_buffer_new(owner, capacity);
   }

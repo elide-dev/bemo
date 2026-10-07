@@ -29,6 +29,10 @@ public final class NativeHttpBenchmarkServer {
   public static void run(TransportNative api, String[] args) throws Exception {
     boolean tls = Boolean.parseBoolean(args[3]);
     boolean gzip = Boolean.parseBoolean(args[4]);
+    String gzipProvider = System.getenv().getOrDefault("BEMO_BENCH_GZIP_PROVIDER", "zlib-rs");
+    require(
+        gzipProvider.equals("zlib-rs") || gzipProvider.equals("java.util.zip"), "gzip provider");
+    boolean javaGzip = gzipProvider.equals("java.util.zip");
     int size = Integer.parseInt(args[5]);
     int backend = Integer.parseInt(args[6]);
     int socketBuffer =
@@ -47,7 +51,9 @@ public final class NativeHttpBenchmarkServer {
     long context = 0;
     long listener = 0;
     AtomicBoolean running = new AtomicBoolean(true);
-    try (ReusableGzip compressor = new ReusableGzip()) {
+    long encoder = gzip && !javaGzip ? api.gzipNew(owner, 6) : 0;
+    require(!gzip || javaGzip || encoder != 0, "native gzip state");
+    try (ReusableGzip compressor = gzip && javaGzip ? new ReusableGzip() : null) {
       if (tls) {
         long cert = upload(api, owner, Files.readAllBytes(Path.of(args[1])));
         long key = upload(api, owner, Files.readAllBytes(Path.of(args[2])));
@@ -76,7 +82,7 @@ public final class NativeHttpBenchmarkServer {
       require(api.socketAddress(driver, listener, 0, address) == 0, "bound address");
       int port =
           Short.toUnsignedInt(api.bufferView(address).order(ByteOrder.nativeOrder()).getShort(16));
-      long body = gzip ? 0 : upload(api, owner, payload);
+      long body = upload(api, owner, payload);
       if (body != 0) buffers.add(body);
       long headerBytes =
           upload(
@@ -123,14 +129,19 @@ public final class NativeHttpBenchmarkServer {
               require(api.socketAccept(owner, driver, listenSocket) != 0, "rearm accept");
             } else if (kind == TransportNative.EVENT_REQUEST) {
               int length = payload.length;
-              if (gzip) {
-                // Application compression, performed per response on both stacks.
-                length = compressor.compress(payload);
+              // Compress fresh input for every response; the native encoder never caches a member.
+              long responseBody;
+              if (gzip && !javaGzip) {
+                responseBody = api.gzipCompress(owner, encoder, body);
+                require(responseBody != 0, "native application gzip");
+                length = api.bufferCapacity(responseBody);
+              } else {
+                if (gzip) length = compressor.compress(payload);
+                responseBody = gzip ? api.bufferNew(owner, Math.max(1, length)) : body;
               }
-              long responseBody = gzip ? api.bufferNew(owner, Math.max(1, length)) : body;
               require(responseBody != 0, "response body allocation");
               try {
-                if (gzip) {
+                if (gzip && javaGzip) {
                   compressor.put(api.bufferView(responseBody));
                   require(api.bufferFreeze(responseBody, length) == 0, "compressed body freeze");
                 }
@@ -172,7 +183,7 @@ public final class NativeHttpBenchmarkServer {
       buffers.add(fallback);
       int fallbackLength = api.driverFallback(driver, fallback);
       System.out.printf(
-          "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":%s}%n",
+          "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":%s,\"gzip_provider\":\"%s\"}%n",
           port,
           switch (selected) {
             case 1 -> "polling";
@@ -180,7 +191,8 @@ public final class NativeHttpBenchmarkServer {
             case 3 -> "iocp";
             default -> throw new IllegalStateException("Unknown backend " + selected);
           },
-          fallbackLength > 0);
+          fallbackLength > 0,
+          gzip ? gzipProvider : "none");
       System.out.flush();
       Thread stop =
           new Thread(
@@ -234,6 +246,7 @@ public final class NativeHttpBenchmarkServer {
       api.httpRetire(driver);
       require(api.driverRelease(driver) == 0, "driver retirement");
       if (context != 0) api.tlsContextRelease(context);
+      if (encoder != 0) require(api.gzipRelease(encoder) == 0, "gzip state retirement");
       for (long buffer : buffers) api.bufferRelease(buffer);
       require(api.ownerUsed(owner) == 0, "native storage reclaimed");
       require(api.ownerRelease(owner) == 0, "owner retirement");

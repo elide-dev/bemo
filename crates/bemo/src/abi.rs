@@ -23,6 +23,9 @@ use compio_buf::{IoBuf, IoBufMut, SetLen};
 mod handle_hash;
 use handle_hash::HandleMap;
 
+mod gzip;
+pub use gzip::*;
+
 mod tls;
 pub use tls::*;
 

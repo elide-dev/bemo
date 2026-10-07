@@ -9,6 +9,10 @@ license = "Apache-2.0"
 repository = "https://github.com/elide-dev/bemo"
 
 [workspace.dependencies]
+# Upstream PR #555 fixes stable state teardown UB; direct pin travels to Cargo consumers.
+zlib-rs = { version = "=0.6.7", git = "https://github.com/jlucaso1/zlib-rs.git", rev = "cedb23f2a9329d0bc81d0c8068d74d2b16a24dd6", default-features = false, features = ["std"] }
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+crc32fast = "=1.5.0"
 bemo = { path = "crates/bemo", version = "0.2.0", default-features = false }
 
 compio-buf = { version = "=0.8.3", git = "https://github.com/elide-tools/compio.git", rev = "029af1602c7701dd4fc607c9c857a26144153b14" }

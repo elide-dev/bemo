@@ -4,7 +4,10 @@ use std::hint::black_box;
 use std::io::Read;
 use std::time::Instant;
 
+#[cfg(not(feature = "zlib-rs"))]
 use flate2::{Compress, Compression, FlushCompress, Status};
+#[cfg(feature = "zlib-rs")]
+use zlib_rs::{Deflate as Compress, DeflateFlush as FlushCompress, Status};
 
 #[cfg(not(any(feature = "zlib", feature = "zlib-rs", feature = "zlib-ng")))]
 compile_error!("Select exactly one compression backend");
@@ -59,7 +62,10 @@ fn main() {
           }
         })
         .collect();
+      #[cfg(not(feature = "zlib-rs"))]
       let mut compressor = Compress::new(Compression::new(6), false);
+      #[cfg(feature = "zlib-rs")]
+      let mut compressor = Compress::new(6, false, 15);
       let mut output = vec![0; size + size / 8 + 1024];
       let length = encode(&mut compressor, &input, &mut output);
       let mut decoded = Vec::new();

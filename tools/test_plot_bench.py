@@ -49,6 +49,16 @@ class PerformanceChartTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, message):
           self.load(rows)
 
+  def test_gzip_provider_is_explicit_and_consistent(self):
+    rows = copy.deepcopy(self.rows)
+    gzip = next(row for row in rows if row['transport'] == 'bemo' and '-gzip-' in row['case'])
+    gzip['samples'][0]['gzip_provider'] = 'unknown'
+    with self.assertRaisesRegex(ValueError, 'Unexpected gzip'):
+      self.load(rows)
+    gzip['samples'][0]['gzip_provider'] = ('zlib-rs' if gzip['samples'][1]['gzip_provider'] == 'java.util.zip' else 'java.util.zip')
+    with self.assertRaisesRegex(ValueError, 'Mixed gzip'):
+      self.load(rows)
+
   def test_invalid_metrics_are_rejected(self):
     for value in (None, 0, -1, float("nan"), float("inf")):
       with self.subTest(value=value):

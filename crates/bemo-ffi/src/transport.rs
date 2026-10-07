@@ -126,6 +126,24 @@ pub extern "C" fn elide_transport_engine_release(engine: u64) -> i32 {
   bemo::abi::engine::elide_transport_engine_release(engine)
 }
 
+/// Forward to [`bemo::abi::elide_transport_gzip_new`].
+#[unsafe(no_mangle)]
+pub extern "C" fn elide_transport_gzip_new(workload: u64, level: u32) -> u64 {
+  bemo::abi::elide_transport_gzip_new(workload, level)
+}
+
+/// Forward to [`bemo::abi::elide_transport_gzip_compress`].
+#[unsafe(no_mangle)]
+pub extern "C" fn elide_transport_gzip_compress(workload: u64, encoder: u64, input: u64) -> u64 {
+  bemo::abi::elide_transport_gzip_compress(workload, encoder, input)
+}
+
+/// Forward to [`bemo::abi::elide_transport_gzip_release`].
+#[unsafe(no_mangle)]
+pub extern "C" fn elide_transport_gzip_release(encoder: u64) -> i32 {
+  bemo::abi::elide_transport_gzip_release(encoder)
+}
+
 /// Forward to [`bemo::abi::elide_transport_socket_http`].
 #[unsafe(no_mangle)]
 pub extern "C" fn elide_transport_socket_http(

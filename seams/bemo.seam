@@ -537,3 +537,18 @@ import elide_transport_driver_poll_batch_callback symbol=elide_transport_driver_
   param callback type=fn<elide_transport_event_batch_callback_t>
   param context type=ptr<void>
 end
+
+import elide_transport_gzip_new symbol=elide_transport_gzip_new return=u64 error=no_failure
+  param workload type=u64
+  param level type=u32
+end
+
+import elide_transport_gzip_compress symbol=elide_transport_gzip_compress return=u64 error=no_failure
+  param workload type=u64
+  param encoder type=u64
+  param input type=u64
+end
+
+import elide_transport_gzip_release symbol=elide_transport_gzip_release return=i32 error=no_failure
+  param encoder type=u64
+end

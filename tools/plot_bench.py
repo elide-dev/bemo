@@ -25,6 +25,7 @@ def load(provenance):
   groups = {}
   cohort = None
   drivers = {}
+  gzip_providers = {}
   sample_count = None
   for row in rows:
     transport = row["transport"]
@@ -61,6 +62,12 @@ def load(provenance):
         raise ValueError("Unexpected load-generator TLS provider")
       if sample["tls_provider"] != (("native" if transport == "bemo" else "jdk") if tls else "none"):
         raise ValueError("Unexpected TLS provider")
+      provider = sample.get("gzip_provider")
+      allowed = {"java.util.zip", "zlib-rs"} if transport == "bemo" else {"netty"}
+      if provider not in (allowed if sample["gzip"] else {"none"}):
+        raise ValueError("Unexpected gzip provider")
+      if sample["gzip"] and gzip_providers.setdefault(key[1], provider) != provider:
+        raise ValueError("Mixed gzip providers")
       if sample["auto_fallback"] or sample["driver"] not in ("io-uring", "epoll", "kqueue"):
         raise ValueError("Unexpected backend or AUTO fallback")
       stack = key[1]
@@ -77,6 +84,7 @@ def load(provenance):
       raise ValueError("Unpaired sample counts")
   meta["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
   meta["samples"] = len(groups[CASES[0], "bemo"])
+  meta["gzip_provider"] = gzip_providers["bemo"]
   meta["backend"] = groups[CASES[0], "bemo"][0]["driver"]
   meta["comparator"] = groups[CASES[0], "netty"][0]["driver"]
   return meta, groups
@@ -123,6 +131,7 @@ def render(meta, groups, output, png=False):
              f"{meta['samples']} paired samples", fontsize=9, color=MUTED)
     fig.text(.04, .043, f"Bemo: Native Image −O3 / native HTTP / Rustls + AWS-LC / {meta['backend']}   "
              f"Netty: OpenJDK / native {meta['comparator']} / JDK TLS", fontsize=9, color=MUTED)
+    fig.text(.04, .013, f"Per-response application gzip: Bemo {meta['gzip_provider']} / Netty compressor", fontsize=8, color=MUTED)
     return fig, axes[0]
 
   def save(fig, name, description):

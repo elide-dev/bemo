@@ -73,6 +73,27 @@ public interface TransportNative {
   int bufferRelease(long buffer);
 
   /**
+   * Create owner-thread reusable zlib-rs gzip state at level 0..9; zero rejects admission. Output
+   * charges workload; backend state and scratch are internal overhead.
+   */
+  default long gzipNew(long workload, int level) {
+    throw new UnsupportedOperationException("Native gzip is unavailable");
+  }
+
+  /**
+   * Compress frozen input (up to 16 MiB) into independently owned frozen output. Returns zero on
+   * rejection. Release output with bufferRelease; no writable view exists.
+   */
+  default long gzipCompress(long workload, long encoder, long input) {
+    throw new UnsupportedOperationException("Native gzip is unavailable");
+  }
+
+  /** Release gzip state on its creating thread; existing output buffers remain valid. */
+  default int gzipRelease(long encoder) {
+    throw new UnsupportedOperationException("Native gzip is unavailable");
+  }
+
+  /**
    * Create an owner-thread driver. Backends are 0 AUTO, 1 polling, 2 io_uring, and 3 IOCP; zero
    * indicates failure.
    */

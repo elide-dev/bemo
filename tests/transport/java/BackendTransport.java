@@ -3,6 +3,20 @@ import java.nio.ByteBuffer;
 
 /** Enforces the requested backend on every driver in either binding's contract suite. */
 class BackendTransport implements TransportNative {
+  @Override
+  public long gzipNew(long workload, int level) {
+    return delegate.gzipNew(workload, level);
+  }
+
+  @Override
+  public long gzipCompress(long workload, long encoder, long input) {
+    return delegate.gzipCompress(workload, encoder, input);
+  }
+
+  @Override
+  public int gzipRelease(long encoder) {
+    return delegate.gzipRelease(encoder);
+  }
 
   @Override
   public long servingNew(int contexts) {

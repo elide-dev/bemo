@@ -24,7 +24,7 @@ class SeamTest(unittest.TestCase):
 
   def test_all_callback_imports_are_described(self):
     functions = seam.descriptor_functions(seam.DESCRIPTOR.read_text())
-    self.assertEqual(len(functions), 90)
+    self.assertEqual(len(functions), 93)
     for suffix in ('callback', 'batch_callback'):
       self.assertIn('elide_transport_driver_poll_' + suffix, functions)
 

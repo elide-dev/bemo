@@ -214,7 +214,7 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
                  tls_provider=tls_provider if tls else "none", http_provider="native" if native_http else "netty",
                  runtime=actual_runtime, binding="capi" if native_http and runtime == "native-image" else "ffm" if transport == "bemo" else "netty",
                  load_generator_transport=client_transport, load_generator_tls_provider="jdk" if tls else "none",
-                 process_scope="server+client", gzip_provider="java.util.zip" if native_http and gzip else "netty" if gzip else "none",
+                 process_scope="server+client", gzip_provider=ready.get("gzip_provider", "java.util.zip") if native_http and gzip else "netty" if gzip else "none",
                  workload_sha256=digest([*sorted((build.ROOT / "benchmarks/java").glob("*.java")), Path(__file__).resolve()]),
                  case=case, socket_buffer_bytes=socket_buffer, requested_backend=backend if transport == "bemo" else 0,
                  commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=build.ROOT, text=True).strip(),

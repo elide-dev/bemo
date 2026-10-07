@@ -1,22 +1,48 @@
-# Dynamic gzip reuse and backend comparison
+# Native application gzip and backend comparison
 
-The native HTTP benchmark compresses every gzip response. Its event-thread-owned
-`ReusableGzip` keeps a Deflater, CRC32, and bounded-by-workload output array across
-requests. Each call resets the stream and emits a complete independent gzip
-member at the JDK's default compression level. Teardown releases the native
-Deflater. Identity responses still use their existing path.
+The native HTTP benchmark now compresses each gzip response through reusable
+zlib-rs state in Bemo. The same Rust encoder is called from the stock JVM FFM
+binding and Native Image C binding; Java's Deflater is no longer the default
+native HTTP gzip provider. Netty retains its own application compressor.
+`BEMO_BENCH_GZIP_PROVIDER=java.util.zip` selects the preceding reusable Java
+implementation for an explicit diagnostic comparison. The server reports its
+actual provider and the benchmark archives that label with every sample.
 
-`make test` runs the gzip contract on the stock JVM; `make test-native-image`
-runs it as a native executable. The contract decodes changing, empty, repetitive,
-and incompressible inputs and compares the full output with GZIPOutputStream.
-It also verifies reuse after large output growth and rejects use after close.
+The additive `gzip_new(workload, level)`, `gzip_compress(workload, encoder, input)`,
+and `gzip_release(encoder)` calls are owner-thread confined. Compression accepts
+frozen input up to 16 MiB, resets at each response, and returns a new frozen
+buffer handle charged to the workload. Output survives input/encoder release
+and workload closure; callers release it with `buffer_release`. Closed or wrong
+workloads, mutable input, stale handles, wrong threads, and exhausted output
+budgets reject. Backend state and bounded scratch are internal overhead,
+separate from the live output budget, as with TLS provider state.
+
+`make test` and `make test-native-image` share a contract that roundtrips changing,
+empty, repetitive, and incompressible members through the independent JDK gzip
+decoder. It checks thread affinity, reset, budget exhaustion, immutable output,
+and output lifetime after teardown. Rust ownership tests additionally run under
+Miri. The prior Java provider's wire-equivalence tests remain for diagnostics.
+
+The integration directly pins zlib-rs 0.6.7 at
+`cedb23f2a9329d0bc81d0c8068d74d2b16a24dd6`, the fix in
+[upstream PR #555](https://github.com/trifectatechfoundation/zlib-rs/pull/555).
+The unpatched 0.6.8 safe wrapper triggers a Miri deallocation violation when
+compressor state is passed by value to drop, matching
+[issue #491](https://github.com/trifectatechfoundation/zlib-rs/issues/491).
+The pinned fix holds provider state through raw pointers rather than persistent
+mutable references. The declaration travels into consuming workspaces; no
+root-only Cargo patch is required. Miri covers moving and releasing our encoder.
+The encoder resets reusable Rust state and detects runtime CPU features. zlib-rs is the portable integration chosen for this pass;
+zlib-ng remains a candidate, and the standalone probe below compares both.
+Full-stack Linux throughput, CPU, wire-size, and memory results determine whether
+the provider change earns its place; standalone compression speed is insufficient.
 
 ## Alternative backends
 
 Run `make bench-compression`, or `python3 tools/compression_probe.py --iterations 2000`
 for a shorter probe. Cargo builds each backend separately from a locked,
-non-published workspace under `benchmarks/compression`. No compression dependency
-is added to Bemo's published artifacts. Compilation precedes measurement; avoid
+non-published workspace under `benchmarks/compression`. This standalone workspace compares providers separately from Bemo's integrated
+zlib-rs encoder. Compilation precedes measurement; avoid
 running builds or other benchmarks concurrently.
 
 The probe compares level-6 raw DEFLATE with identical gzip framing and CRC32,
@@ -36,18 +62,17 @@ FFM, Native Image, application scheduling, and network costs.
 | 64 KiB JSON | 88,244 ns | 16,937 ns | 15,602 ns | 282 / 545 / 545 |
 | 64 KiB random | 535,417 ns | 450,092 ns | 419,111 ns | 65,574 / 65,574 / 65,574 |
 
-The probe pins flate2 1.1.10; its lockfile pins zlib-rs 0.6.8 and the native
-zlib-ng dependency. The zlib backend uses the host's zlib. zlib-ng is the first
-candidate for a subsequent provider integration on this host, with zlib-rs close
-on large repetitive input. Both alternatives produce a larger result for that
-input: CPU comparisons alone do not establish a full-stack win. Repeat on the
-dedicated Linux benchmark runner before selecting a shipped backend.
+The original probe used flate2 1.1.10 and zlib-rs 0.6.8. The current probe uses
+the same directly pinned zlib-rs teardown fix as Bemo; zlib and zlib-ng still
+use flate2 1.1.10. Its lockfile pins the native zlib-ng dependency. The zlib backend uses the host's zlib. zlib-ng leads this local probe, with
+zlib-rs close on large repetitive input. Both alternatives produce a larger result for that
+input: CPU comparisons alone do not establish a full-stack win. The full-stack Linux benchmark must qualify the integrated provider.
 
 [zlib-rs](https://github.com/trifectatechfoundation/zlib-rs) offers Rust and
 zlib-compatible C APIs; [zlib-ng](https://github.com/zlib-ng/zlib-ng) offers a
 native API and zlib compatibility mode. Switching this isolated Rust probe does
-not switch Java's Deflater or GraalVM's linked zip implementation. Provider
-integration must be explicit and separately qualified through both bindings.
+not switch Java's Deflater or GraalVM's linked zip implementation. The integrated zlib-rs path uses explicit native calls; it does not alter Java's
+Deflater implementation.
 
 The early local end-to-end before/after samples overlapped Native Image builds
 and are unsuitable for performance claims. CodSpeed CI must establish the

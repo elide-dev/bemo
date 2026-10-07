@@ -17,7 +17,7 @@ public final class BemoNatives {
   private BemoNatives() {}
 
   public static final String ABI_FINGERPRINT =
-      "2e374adeeda6216a0aa72a06cf14737998a42a9074274c91d63be1962469ccbd";
+      "f278becae8c21729439997d49a82529e10c03a04382f2bea3c2942af4c44d030";
 
   public static final class elide_transport_buffer_view_t {
     private elide_transport_buffer_view_t() {}
@@ -202,6 +202,15 @@ public final class BemoNatives {
       long sourceLength,
       CCharPointer destination,
       long destinationLength);
+
+  @CFunction(value = "elide_transport_gzip_compress")
+  public static native long elide_transport_gzip_compress(long workload, long encoder, long input);
+
+  @CFunction(value = "elide_transport_gzip_new")
+  public static native long elide_transport_gzip_new(long workload, int level);
+
+  @CFunction(value = "elide_transport_gzip_release")
+  public static native int elide_transport_gzip_release(long encoder);
 
   @CFunction(value = "elide_transport_http_chunk_prepare")
   public static native long elide_transport_http_chunk_prepare(

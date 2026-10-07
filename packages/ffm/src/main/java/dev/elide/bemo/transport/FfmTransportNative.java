@@ -35,6 +35,9 @@ public final class FfmTransportNative implements TransportNative {
   private final MethodHandle ownerUsed;
   private final MethodHandle ownerRelease;
   private final MethodHandle workloadClose;
+  private final MethodHandle gzipNew;
+  private final MethodHandle gzipCompress;
+  private final MethodHandle gzipRelease;
   private final MethodHandle bufferNew;
   private final MethodHandle bufferView;
   private final MethodHandle bufferFreeze;
@@ -330,6 +333,22 @@ public final class FfmTransportNative implements TransportNative {
     ownerUsed = bind(symbols, "owner_used", ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG);
     ownerRelease = bind(symbols, "owner_release", ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG);
     workloadClose = bind(symbols, "workload_close", ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG);
+    gzipNew =
+        bind(
+            symbols,
+            "gzip_new",
+            ValueLayout.JAVA_LONG,
+            ValueLayout.JAVA_LONG,
+            ValueLayout.JAVA_INT);
+    gzipCompress =
+        bind(
+            symbols,
+            "gzip_compress",
+            ValueLayout.JAVA_LONG,
+            ValueLayout.JAVA_LONG,
+            ValueLayout.JAVA_LONG,
+            ValueLayout.JAVA_LONG);
+    gzipRelease = bind(symbols, "gzip_release", ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG);
     bufferNew =
         bind(
             symbols,
@@ -788,6 +807,33 @@ public final class FfmTransportNative implements TransportNative {
   public int workloadClose(long workload) {
     try {
       return (int) workloadClose.invokeExact(workload);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public long gzipNew(long workload, int level) {
+    try {
+      return (long) gzipNew.invokeExact(workload, level);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public long gzipCompress(long workload, long encoder, long input) {
+    try {
+      return (long) gzipCompress.invokeExact(workload, encoder, input);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public int gzipRelease(long encoder) {
+    try {
+      return (int) gzipRelease.invokeExact(encoder);
     } catch (Throwable error) {
       throw failure(error);
     }

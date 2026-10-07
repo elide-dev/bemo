@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,6 +71,10 @@ fn main() {
     packages = [p for p in metadata["packages"] if p["name"] == name]
     assert len(packages) == 1, f"Split dependency graph for {name}"
     assert packages[0]["source"].startswith("git+https://github.com/elide-tools/"), packages[0]
+  compression = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["dependencies"]["zlib-rs"]
+  providers = [p for p in metadata["packages"] if p["name"] == "zlib-rs"]
+  assert len(providers) == 1, "Split compression provider graph"
+  assert providers[0]["source"] == f"git+{compression['git']}?rev={compression['rev']}#{compression['rev']}", providers[0]
   subprocess.run(["cargo", "run", "--locked"], cwd=consumer, check=True,
                  env={**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/consumer-check")})
   print("External Cargo Git dependency contract passed")

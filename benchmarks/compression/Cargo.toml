@@ -8,10 +8,11 @@ publish = false
 
 [features]
 zlib = ["flate2/zlib"]
-zlib-rs = ["flate2/zlib-rs", "flate2/runtime_detection"]
+zlib-rs = ["dep:zlib-rs", "flate2/rust_backend"]
 zlib-ng = ["flate2/zlib-ng"]
 
 [dependencies]
+zlib-rs = { version = "=0.6.7", git = "https://github.com/jlucaso1/zlib-rs.git", rev = "cedb23f2a9329d0bc81d0c8068d74d2b16a24dd6", optional = true, default-features = false, features = ["std"] }
 flate2 = { version = "=1.1.10", default-features = false }
 crc32fast = "=1.5.0"
 

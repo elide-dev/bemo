@@ -46,6 +46,13 @@ int32_t elide_transport_buffer_view(uint64_t buffer, elide_transport_buffer_view
 int32_t elide_transport_buffer_freeze(uint64_t buffer, uint64_t length);
 uint64_t elide_transport_buffer_slice(uint64_t buffer, uint64_t offset, uint64_t length);
 int32_t elide_transport_buffer_release(uint64_t buffer);
+/* Owner-thread reusable application gzip (zlib-rs), level 0..9, input <=16 MiB.
+ * Backend state and bounded scratch are internal overhead; independent frozen output
+ * charges workload and survives compressor/input release. Release it with buffer_release.
+ * Compression rejects closed workloads and mutable input. Wrong-thread calls reject. */
+uint64_t elide_transport_gzip_new(uint64_t workload, uint32_t level);
+uint64_t elide_transport_gzip_compress(uint64_t workload, uint64_t encoder, uint64_t input);
+int32_t elide_transport_gzip_release(uint64_t encoder);
 /* Backend: 0 auto, 1 polling, 2 io_uring, 3 IOCP. All driver calls except wake are owner-thread only. */
 uint64_t elide_transport_driver_new(uint64_t workload, uint32_t backend, uint32_t limit);
 int32_t elide_transport_driver_backend(uint64_t driver);

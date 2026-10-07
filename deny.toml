@@ -32,6 +32,7 @@ unknown-git = "deny"
 required-git-spec = "rev"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
+  "https://github.com/jlucaso1/zlib-rs",
   "https://github.com/elide-tools/compio",
   "https://github.com/elide-tools/polling",
   "https://github.com/elide-tools/ntex-httparse",
