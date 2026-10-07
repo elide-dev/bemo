@@ -85,7 +85,7 @@ def prepare(runtime="native-image"):
                      [build.classes(name) for name in ("api", "ffm", "netty", "native-image")] + build.sdk() + build.benchmark_netty())
   if runtime == "native-image":
     output = build.BUILD / "bench/native-classes"
-    names = ("NativeHttpBenchmarkServer.java", "CapiNativeHttpBenchmarkServer.java")
+    names = ("NativeHttpBenchmarkServer.java", "CapiNativeHttpBenchmarkServer.java", "ReusableGzip.java")
     cp = [build.classes("api"), build.classes("native-image"), *build.sdk()]
     build.compile_java(output, [build.ROOT / "benchmarks/java" / name for name in names], cp)
     linker = ["-H:NativeLinkerOption=ntdll.lib"] if os.name == "nt" else []

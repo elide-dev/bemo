@@ -1,6 +1,5 @@
 import dev.elide.bemo.transport.TransportNative;
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -12,7 +11,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.zip.GZIPOutputStream;
 
 /** Native V2 HTTP parser/encoder and optional Rustls/aws-lc-rs server. */
 public final class NativeHttpBenchmarkServer {
@@ -49,7 +47,7 @@ public final class NativeHttpBenchmarkServer {
     long context = 0;
     long listener = 0;
     AtomicBoolean running = new AtomicBoolean(true);
-    try {
+    try (ReusableGzip compressor = new ReusableGzip()) {
       if (tls) {
         long cert = upload(api, owner, Files.readAllBytes(Path.of(args[1])));
         long key = upload(api, owner, Files.readAllBytes(Path.of(args[2])));
@@ -130,17 +128,8 @@ public final class NativeHttpBenchmarkServer {
               int length = payload.length;
               if (gzip) {
                 // Application compression, performed per response on both stacks.
-                try {
-                  ByteArrayOutputStream encoded = new ByteArrayOutputStream();
-                  try (GZIPOutputStream compressor = new GZIPOutputStream(encoded)) {
-                    compressor.write(payload);
-                  }
-                  byte[] compressed = encoded.toByteArray();
-                  bodyView.clear().put(compressed);
-                  length = compressed.length;
-                } catch (java.io.IOException failure) {
-                  throw new IllegalStateException(failure);
-                }
+                length = compressor.compress(payload);
+                compressor.put(bodyView.clear());
               }
               require(
                   api.httpRespond(

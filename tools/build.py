@@ -155,6 +155,7 @@ def test_jvm(coverage=False):
     run(os.environ.get("CC", "cc"), kind, "-fPIC", ROOT / "tests/incompatible.c", "-o", incompatible)
     extra.append(incompatible)
   reports = Reports(BUILD / "reports/tests/jvm")
+  test_bench_gzip(reports)
   agent = []
   if coverage:
     destination = BUILD / "reports/coverage/jvm"
@@ -197,8 +198,24 @@ def test_native_image():
       *linker, "dev.elide.bemo.CapiContract", binary, timeout=900)
   reports = Reports(BUILD / "reports/tests/native-image")
   reports.run("CapiContract", [binary], timeout=60, cwd=ROOT)
+  test_bench_gzip(reports, native_image=True)
   test_transport(native_image=True, reports=reports)
   reports.finish()
+
+
+def test_bench_gzip(reports, native_image=False):
+  output = BUILD / "tests/bench"
+  compile_java(output, [ROOT / "benchmarks/java/ReusableGzip.java",
+                        ROOT / "tests/bench/java/ReusableGzipTest.java"])
+  if native_image:
+    binary = BUILD / "tests" / ("gzip-contract.exe" if os.name == "nt" else "gzip-contract")
+    run(java_tool("native-image"), "--no-fallback", "-O0", "-cp", output,
+        "ReusableGzipTest", binary, timeout=900)
+    command = [binary]
+  else:
+    command = [os.environ.get("BEMO_TEST_JAVA", java_tool("java")),
+               "-ea", "-cp", output, "ReusableGzipTest"]
+  reports.run("ReusableGzipTest", command, timeout=30, cwd=ROOT)
 
 
 def test_transport(native_image=False, reports=None, agent=()):
@@ -259,6 +276,7 @@ def fmt(check=False):
   deps()
   run("cargo", "fmt", "--package", "bemo", "--package", "bemo-ffi", *(["--check"] if check else []))
   run("cargo", "fmt", "--manifest-path", "fuzz/Cargo.toml", *(["--check"] if check else []))
+  run("cargo", "fmt", "--manifest-path", "benchmarks/compression/Cargo.toml", *(["--check"] if check else []))
   formatter = jar_dependency("com.google.googlejavaformat", "google-java-format",
                              VERSIONS["java_format"], "all-deps")
   java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java")) + sorted((ROOT / "benchmarks").rglob("*.java"))
