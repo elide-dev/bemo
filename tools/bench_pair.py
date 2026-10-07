@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import statistics
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -99,7 +100,10 @@ def main():
         (output / name / 'summary-all-comparison.json').write_text(
             json.dumps(bench.comparisons(summary), indent=2) + '\n')
     finally:
-      for worktree in worktrees.values():
+      for name, worktree in worktrees.items():
+        reports = worktree / 'build/reports/benchmarks'
+        if reports.is_dir():
+          shutil.copytree(reports, output / name / 'logs', dirs_exist_ok=True)
         subprocess.run(['git', 'worktree', 'remove', '--force', str(worktree)], cwd=ROOT, check=True)
   print(output.relative_to(ROOT) if output.is_relative_to(ROOT) else output, flush=True)
 
