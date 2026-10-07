@@ -277,6 +277,8 @@ impl Pool {
   /// Retain exclusively owned metadata and storage, excluding them from live budget charges.
   fn admit(mut entry: Pooled) {
     let allocation = Arc::get_mut(&mut entry.allocation).unwrap();
+    // Idle storage owns no delivery credit. External clones keep their independent reservation.
+    drop(allocation.receive_credit.take());
     if allocation.capacity > POOL_BYTES || allocation.budget.is_closed() {
       return;
     }
