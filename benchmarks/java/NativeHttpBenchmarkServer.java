@@ -76,11 +76,8 @@ public final class NativeHttpBenchmarkServer {
       require(api.socketAddress(driver, listener, 0, address) == 0, "bound address");
       int port =
           Short.toUnsignedInt(api.bufferView(address).order(ByteOrder.nativeOrder()).getShort(16));
-      long body = api.bufferNew(owner, size + 1024);
-      buffers.add(body);
-      ByteBuffer bodyView = api.bufferView(body);
-      bodyView.put(payload);
-      long bodyAddress = api.bufferAddress(body);
+      long body = gzip ? 0 : upload(api, owner, payload);
+      if (body != 0) buffers.add(body);
       long headerBytes =
           upload(
               api,
@@ -129,14 +126,39 @@ public final class NativeHttpBenchmarkServer {
               if (gzip) {
                 // Application compression, performed per response on both stacks.
                 length = compressor.compress(payload);
-                compressor.put(bodyView.clear());
               }
-              require(
-                  api.httpRespond(
-                          driver, value, 200, headersAddress, gzip ? 2 : 1, bodyAddress, length, 0)
-                      == 0,
-                  "native response encoding");
-              require(api.httpFree(driver, value) == 0, "exchange ownership");
+              long responseBody = gzip ? api.bufferNew(owner, Math.max(1, length)) : body;
+              require(responseBody != 0, "response body allocation");
+              try {
+                if (gzip) {
+                  compressor.put(api.bufferView(responseBody));
+                  require(api.bufferFreeze(responseBody, length) == 0, "compressed body freeze");
+                }
+                require(
+                    api.httpRespond(
+                            driver,
+                            value,
+                            200,
+                            headersAddress,
+                            gzip ? 2 : 1,
+                            0,
+                            length,
+                            TransportNative.RESPOND_STREAM)
+                        == 0,
+                    "native response head");
+                require(
+                    api.httpChunkSend(
+                            driver,
+                            value,
+                            responseBody,
+                            length,
+                            TransportNative.CHUNK_FINAL | TransportNative.CHUNK_RETAIN)
+                        == 0,
+                    "retained response body");
+                require(api.httpFree(driver, value) == 0, "exchange ownership");
+              } finally {
+                if (gzip) require(api.bufferRelease(responseBody) == 0, "compressed body handle");
+              }
             } else if (kind == TransportNative.EVENT_CLOSED) {
               connections.remove(socket);
             } else if (result < 0) {

@@ -887,6 +887,7 @@ public final class CapiTransportNative implements TransportNative {
 
   @Override
   public int httpChunkSend(long driver, long exchange, long buffer, long length, int flags) {
+    // CHUNK_RETAIN ownership is enforced by the shared ABI; forward flags unchanged.
     return httpChunkSend0(driver, exchange, buffer, length, flags);
   }
 

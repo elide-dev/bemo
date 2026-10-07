@@ -87,6 +87,9 @@ pub const HAS_HEADER_METADATA: u8 = 2;
 pub const RESPOND_STREAM: u32 = 2;
 /// Flag for [`elide_transport_http_chunk_send`]: this part ends the response.
 pub const CHUNK_FINAL: u32 = 2;
+/// Retain a frozen body handle instead of consuming prepared mutable storage. HTTP/1 chunked
+/// framing still requires prepared storage; HTTP/2 and HTTP/1 length/close framing accept this.
+pub const CHUNK_RETAIN: u32 = 4;
 /// Most response bytes one streaming exchange may hold queued or in flight.
 pub const RESPONSE_WINDOW_BYTES: usize = 256 * 1024;
 /// Parts per vectored send, well under `IOV_MAX`.
@@ -1679,11 +1682,15 @@ pub unsafe fn elide_transport_http_chunk_prepare(exchange: u64, capacity: u64, a
 /// [`EVENT_PART_SENT`]. `INVALID` leaves it with the caller for a bad handle, a length beyond the
 /// prepared capacity, or an exchange that is not streaming. A payload that diverges from a
 /// declared `content-length` fails the connection and returns a negative portable error.
+/// With [`CHUNK_RETAIN`], `buffer` is a frozen handle and payload starts at offset zero. The
+/// caller keeps the handle on every result; the driver retains its own immutable lease on
+/// success. HTTP/1 chunked framing rejects this flag; use prepared mutable parts instead.
 pub fn elide_transport_http_chunk_send(driver: u64, exchange: u64, buffer: u64, length: u64, flags: u32) -> i32 {
   let Ok(length) = usize::try_from(length) else {
     return INVALID;
   };
   let final_part = flags & CHUNK_FINAL != 0;
+  let retain = flags & CHUNK_RETAIN != 0;
   DRIVERS.with(|drivers| {
     let mut drivers = drivers.borrow_mut();
     let Some(state) = drivers.0.get_mut(&driver) else {
@@ -1695,7 +1702,7 @@ pub fn elide_transport_http_chunk_send(driver: u64, exchange: u64, buffer: u64, 
       .get(&exchange)
       .is_some_and(|entry| entry.stream != 0)
     {
-      return h2_socket::chunk(state, exchange, buffer, length, final_part);
+      return h2_socket::chunk(state, exchange, buffer, length, final_part, retain);
     }
     let Some(entry) = state.http.exchanges.get(&exchange) else {
       return INVALID;
@@ -1710,60 +1717,74 @@ pub fn elide_transport_http_chunk_send(driver: u64, exchange: u64, buffer: u64, 
     if !parts.streaming || parts.complete {
       return INVALID;
     }
-    let mut buffers = lock(registry(buffer));
-    let Some(Storage::Mutable(storage)) = buffers.get_mut(&buffer) else {
-      return INVALID;
-    };
-    // Any mutable handle can arrive here, not only a prepared part; never underflow.
-    if storage
-      .buf_capacity()
-      .checked_sub(CHUNK_HEADROOM + CHUNK_TAIL)
-      .is_none_or(|max| length > max)
-    {
-      return INVALID;
-    }
-    // Capacity was initialized by prepare. A part that puts nothing on the wire (bodiless
-    // response, empty non-final chunk) is queued empty so it still reports in order.
-    let range = match parts.framing {
-      _ if parts.bodiless || (length == 0 && !final_part) => {
-        // SAFETY: prepare initialized this headroom; capacity was checked before selecting framing.
-        unsafe { storage.set_len(CHUNK_HEADROOM) };
-        CHUNK_HEADROOM..CHUNK_HEADROOM
+    let part = if retain {
+      if parts.framing == Framing::Chunked {
+        return INVALID;
       }
-      // SAFETY: prepare initialized the full capacity and the payload length was bounded above.
-      Framing::Chunked => unsafe { frame_chunk(storage, length, final_part) },
-      _ => {
-        // SAFETY: prepare initialized the capacity and length is bounded by that capacity.
-        unsafe { storage.set_len(CHUNK_HEADROOM + length) };
-        CHUNK_HEADROOM..CHUNK_HEADROOM + length
+      let Some(part) = retained_body(buffer, length) else {
+        return INVALID;
+      };
+      let part = if parts.bodiless {
+        FrozenBuffer::slice(&part, 0..0).unwrap()
+      } else {
+        part
+      };
+      if parts.queued_bytes + part.as_ref().len() > RESPONSE_WINDOW_BYTES {
+        return BUSY;
       }
+      part
+    } else {
+      let mut buffers = lock(registry(buffer));
+      let Some(Storage::Mutable(storage)) = buffers.get_mut(&buffer) else {
+        return INVALID;
+      };
+      // Any mutable handle can arrive here, not only a prepared part; never underflow.
+      if storage
+        .buf_capacity()
+        .checked_sub(CHUNK_HEADROOM + CHUNK_TAIL)
+        .is_none_or(|max| length > max)
+      {
+        return INVALID;
+      }
+      // Capacity was initialized by prepare. A part that puts nothing on the wire (bodiless
+      // response, empty non-final chunk) is queued empty so it still reports in order.
+      let range = match parts.framing {
+        _ if parts.bodiless || (length == 0 && !final_part) => {
+          // SAFETY: prepare initialized this headroom; capacity was checked before selecting framing.
+          unsafe { storage.set_len(CHUNK_HEADROOM) };
+          CHUNK_HEADROOM..CHUNK_HEADROOM
+        }
+        // SAFETY: prepare initialized the full capacity and the payload length was bounded above.
+        Framing::Chunked => unsafe { frame_chunk(storage, length, final_part) },
+        _ => {
+          // SAFETY: prepare initialized the capacity and length is bounded by that capacity.
+          unsafe { storage.set_len(CHUNK_HEADROOM + length) };
+          CHUNK_HEADROOM..CHUNK_HEADROOM + length
+        }
+      };
+      if parts.queued_bytes + range.len() > RESPONSE_WINDOW_BYTES {
+        return BUSY;
+      }
+      let Some(Storage::Mutable(storage)) = buffers.remove(&buffer) else {
+        return INVALID;
+      };
+      drop(buffers);
+      FrozenBuffer::slice(&storage.freeze(), range).unwrap()
     };
-    if parts.queued_bytes + range.len() > RESPONSE_WINDOW_BYTES {
-      return BUSY;
-    }
-    let Some(Storage::Mutable(storage)) = buffers.remove(&buffer) else {
-      return INVALID;
-    };
-    drop(buffers);
     let mut events = VecDeque::new();
     let accepted = parts.body_bytes.saturating_add(length as u64);
     if let (false, Framing::Length(declared)) = (parts.bodiless, parts.framing)
       && (accepted > declared || (final_part && accepted != declared))
     {
-      drop(storage);
+      drop(part);
       close_socket(state, socket, &mut events);
       state.http.overflow.extend(events);
       return malformed() as i32;
     }
     parts.body_bytes = accepted;
-    let queued = if let Ok(part) = FrozenBuffer::slice(&storage.freeze(), range) {
-      let len = part.as_ref().len();
-      parts.queued_bytes += len;
-      parts.push_back(part);
-      len
-    } else {
-      0
-    };
+    let queued = part.as_ref().len();
+    parts.queued_bytes += queued;
+    parts.push_back(part);
     if final_part {
       parts.complete = true;
     }
@@ -1772,6 +1793,15 @@ pub fn elide_transport_http_chunk_send(driver: u64, exchange: u64, buffer: u64, 
     state.http.overflow.extend(events);
     0
   })
+}
+
+/// Clone only initialized immutable bytes; the registry borrow ends before queueing or pumping.
+fn retained_body(buffer: u64, length: usize) -> Option<FrozenBuffer> {
+  let buffers = lock(registry(buffer));
+  let Storage::Frozen(storage) = buffers.get(&buffer)? else {
+    return None;
+  };
+  storage.slice(0..length).ok()
 }
 
 /// Release a retained head delivered in a request event's `result`.
@@ -2076,6 +2106,27 @@ pub(super) fn is_http(state: &DriverState, socket: u64) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn retained_body_rejects_mutable_and_preserves_initialized_bounds_and_leases() {
+    let owner = elide_transport_owner_new(128);
+    let buffer = elide_transport_buffer_new(owner, 64);
+    assert!(retained_body(buffer, 0).is_none());
+    // SAFETY: buffer_new initializes the full allocation, and this handle is exclusively owned.
+    assert_eq!(unsafe { elide_transport_buffer_freeze(buffer, 8) }, 0);
+    assert!(retained_body(buffer, 9).is_none());
+    let first = retained_body(buffer, 8).unwrap();
+    let second = retained_body(buffer, 4).unwrap();
+    assert_eq!(elide_transport_buffer_release(buffer), 0);
+    assert!(retained_body(buffer, 8).is_none());
+    assert_eq!(elide_transport_owner_used(owner), 64);
+    drop(first);
+    assert_eq!(elide_transport_owner_used(owner), 64);
+    assert_eq!(second.as_ref(), &[0; 4]);
+    drop(second);
+    assert_eq!(elide_transport_owner_used(owner), 0);
+    assert_eq!(elide_transport_owner_release(owner), 0);
+  }
 
   #[test]
   fn single_response_does_not_allocate_a_part_queue() {

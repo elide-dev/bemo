@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::hint::black_box;
 
 use bemo::buffer::{Budget, Buffer};
-use bemo::http::{DateCache, HttpConnection, Outcome, ResponseHeader, encode_response};
+use bemo::http::{DateCache, Framing, HttpConnection, Outcome, ResponseHeader, encode_head, encode_response};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 fn http(c: &mut Criterion) {
@@ -60,6 +60,27 @@ fn http(c: &mut Criterion) {
         black_box(response);
       });
     });
+    let mut storage = Buffer::new(size.max(1), budget.clone()).unwrap();
+    storage.write(0, &body).unwrap();
+    let frozen = storage.freeze();
+    group.bench_function(BenchmarkId::new("retained-response", size), |b| {
+      b.iter(|| {
+        let head = encode_head(
+          &budget,
+          &mut date,
+          1,
+          200,
+          &headers,
+          Framing::Length(size as u64),
+          false,
+          true,
+        )
+        .unwrap();
+        let part = frozen.slice(0..size).unwrap();
+        black_box((head, part));
+      });
+    });
+    drop(frozen);
     assert_eq!(budget.used(), 0);
   }
   group.finish();

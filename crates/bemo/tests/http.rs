@@ -3461,3 +3461,57 @@ fn native_h2_streams_request_bodies_and_rejects_unsupported_expectations_nativel
   assert_eq!(elide_transport_owner_used(h.owner), 0);
   assert_eq!(elide_transport_owner_release(h.owner), 0);
 }
+
+#[test]
+#[cfg_attr(miri, ignore = "native sockets are unavailable under miri")]
+fn retained_stream_parts_keep_handles_on_busy_invalid_and_length_failure() {
+  for chunked in [false, true] {
+    let mut h = harness();
+    h.peer.write_all(b"GET / HTTP/1.1\r\nHost: a\r\n\r\n").unwrap();
+    let exchange = h.take(EVENT_REQUEST, 1)[0].value;
+    respond_stream(
+      h.driver,
+      exchange,
+      200,
+      &[],
+      if chunked { u64::MAX } else { 300 * 1024 },
+    );
+    let body = elide_transport_buffer_new(h.owner, 200 * 1024);
+    assert_ne!(body, 0);
+    assert_eq!(
+      elide_transport_http_chunk_send(h.driver, exchange, body, 1, CHUNK_RETAIN),
+      INVALID
+    );
+    // SAFETY: buffer_new initializes all bytes, and no mutable lease remains.
+    assert_eq!(unsafe { elide_transport_buffer_freeze(body, 200 * 1024) }, 0);
+    if chunked {
+      assert_eq!(
+        elide_transport_http_chunk_send(h.driver, exchange, body, 1, CHUNK_RETAIN),
+        INVALID
+      );
+      assert_eq!(elide_transport_buffer_release(body), 0);
+      send_chunk(h.driver, exchange, b"", true);
+      h.read_while_polling(|wire| wire.ends_with(b"0\r\n\r\n"));
+    } else {
+      assert_eq!(
+        elide_transport_http_chunk_send(h.driver, exchange, body, 200 * 1024, CHUNK_RETAIN),
+        0
+      );
+      assert_eq!(
+        elide_transport_http_chunk_send(h.driver, exchange, body, 100 * 1024, CHUNK_RETAIN | CHUNK_FINAL),
+        BUSY
+      );
+      h.read_while_polling(|wire| wire.len() > 200 * 1024);
+      h.take(EVENT_PART_SENT, 2);
+      // A short final part violates the declared length, but leaves the frozen handle owned.
+      assert!(elide_transport_http_chunk_send(h.driver, exchange, body, 1, CHUNK_RETAIN | CHUNK_FINAL) < 0);
+      assert_eq!(elide_transport_buffer_release(body), 0);
+    }
+    assert_eq!(elide_transport_http_free(h.driver, exchange), 0);
+    if chunked {
+      h.peer.shutdown(std::net::Shutdown::Both).unwrap();
+    }
+    h.take(EVENT_CLOSED, 1);
+    h.finish();
+  }
+}
