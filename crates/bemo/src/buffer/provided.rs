@@ -46,14 +46,15 @@ impl ReturnSlot {
   fn take(self: &Arc<Self>) -> Option<Buffer> {
     let pointer = NonNull::new(self.pointer.swap(ptr::null_mut(), Ordering::AcqRel))?;
     Some(Buffer {
-      allocation: Arc::new(Allocation {
+      allocation: super::AllocationLease::new(Arc::new(Allocation {
         pointer,
         capacity: SLOT_BYTES,
         budget: self.budget.clone(),
-        recyclable: false,
+        recyclable: None,
+        charged: true,
         return_slot: Some(self.clone()),
         receive_credit: None,
-      }),
+      })),
       offset: 0,
       capacity: SLOT_BYTES,
       length: 0,
@@ -215,9 +216,9 @@ impl SharedReceivePool {
       budget: self.budget.clone(),
       wake: Some(self.wake.clone()),
     });
-    Arc::get_mut(&mut buffer.allocation)
-      .expect("new allocation is exclusive")
-      .return_slot = Some(returned.clone());
+    let allocation = Arc::get_mut(&mut buffer.allocation).expect("new allocation is exclusive");
+    allocation.recyclable = None;
+    allocation.return_slot = Some(returned.clone());
     Ok((buffer, returned))
   }
 
