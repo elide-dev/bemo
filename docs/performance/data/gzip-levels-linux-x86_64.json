@@ -1,0 +1,791 @@
+{
+  "host": "Linux-x86_64",
+  "iterations": 2000,
+  "rustc": "rustc 1.101.0-nightly (c1070d693 2026-09-28)",
+  "scope": "standalone reusable gzip; excludes JVM/FFM/Native Image integration",
+  "commit": "ac4388a9e10316cd1f999d66dd5ea2ea193e71bf",
+  "levels": [
+    1,
+    3,
+    6
+  ],
+  "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  4\nOn-line CPU(s) list:                     0-3\nVendor ID:                               AuthenticAMD\nModel name:                              AMD EPYC 7763 64-Core Processor\nCPU family:                              25\nModel:                                   1\nThread(s) per core:                      2\nCore(s) per socket:                      2\nSocket(s):                               1\nStepping:                                1\nBogoMIPS:                                4890.85\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl tsc_reliable nonstop_tsc cpuid extd_apicid aperfmperf tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy svm cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves user_shstk clzero xsaveerptr rdpru arat npt nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload umip vaes vpclmulqdq rdpid fsrm\nVirtualization:                          AMD-V\nHypervisor vendor:                       Microsoft\nVirtualization type:                     full\nL1d cache:                               64 KiB (2 instances)\nL1i cache:                               64 KiB (2 instances)\nL2 cache:                                1 MiB (2 instances)\nL3 cache:                                32 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-3\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Vulnerable: Safe RET, no microcode\nVulnerability Spec store bypass:         Vulnerable\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Vulnerable: No microcode\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n",
+  "samples": [
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 2611.904
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 2606.9
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 83,
+      "ns_per_member": 2630.409
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 6563.6415
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 6366.7825
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 84,
+      "ns_per_member": 6303.7035
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 6312.766
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 6293.6905
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 85,
+      "ns_per_member": 6304.821
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 9011.523
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 8918.3685
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 1098,
+      "ns_per_member": 8912.6625
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 27271.1375
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 27162.8595
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 1047,
+      "ns_per_member": 27161.8075
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 28106.61
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 28165.966
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 1047,
+      "ns_per_member": 28071.6795
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 16495.17
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 16631.872
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 859,
+      "ns_per_member": 16564.36
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 24097.625
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 24161.976
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 545,
+      "ns_per_member": 24090.8625
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 25183.422
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 25149.3575
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 545,
+      "ns_per_member": 25270.7105
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 514944.2295
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 517148.494
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 69126,
+      "ns_per_member": 516103.3785
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 1053958.0015
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 1053029.986
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 65574,
+      "ns_per_member": 1052816.716
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 1129566.7515
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 1133188.123
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 65574,
+      "ns_per_member": 1128158.363
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 32991.042
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 33010.754
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 1653,
+      "ns_per_member": 33089.016
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 44141.9445
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 44245.2485
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 990,
+      "ns_per_member": 44357.354
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 46039.188
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 46113.6975
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 990,
+      "ns_per_member": 45910.001
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 1200157.8185
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 1194948.5325
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 1,
+      "compressed_bytes": 138261,
+      "ns_per_member": 1187003.2125
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 2281493.6835
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 2277257.0595
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 3,
+      "compressed_bytes": 131130,
+      "ns_per_member": 2283133.452
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 2459293.8545
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 2469402.995
+    },
+    {
+      "backend": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "level": 6,
+      "compressed_bytes": 131130,
+      "ns_per_member": 2457475.6365
+    }
+  ],
+  "checksums": [
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 87.384
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 87.7095
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 87.374
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 108.458
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 90.169
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 90.149
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 87.379
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 96.8815
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 87.384
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 95.299
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 90.164
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 1024,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 90.1545
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 5422.7565
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 5463.0215
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 5428.1265
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 5130.8795
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 5117.6895
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 5122.343
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 5438.907
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 5461.7695
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 5435.716
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 5122.268
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 5122.5485
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 65536,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 5219.5705
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 10869.535
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 10861.9905
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 10891.7715
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 0,
+      "ns_per_checksum": 10218.429
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 1,
+      "ns_per_checksum": 10230.4765
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": false,
+      "sample": 2,
+      "ns_per_checksum": 10236.7435
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 10898.7595
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 10889.162
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "crc32fast",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 10917.32
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 0,
+      "ns_per_checksum": 10273.138
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 1,
+      "ns_per_checksum": 10233.054
+    },
+    {
+      "kind": "checksum",
+      "algorithm": "zlib-rs",
+      "size": 131072,
+      "random": true,
+      "sample": 2,
+      "ns_per_checksum": 10228.49
+    }
+  ]
+}

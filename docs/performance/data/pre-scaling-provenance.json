@@ -1,9 +1,9 @@
 {
   "date": "2026-10-07",
-  "commit": "5f99dca7f062c94ed8cc7ba68594929dc5bf87cd",
+  "commit": "a4d3cc5bf0ce505335c8d7270e698a27e64318fc",
   "run_url": "https://github.com/elide-dev/bemo/actions/runs/37588109048",
   "artifact": "paired-transport-evidence",
-  "artifact_summary": "after/summary-all.json",
+  "artifact_summary": "before/summary-all.json",
   "runner": "GitHub-hosted ubuntu-24.04 x86-64",
-  "summary": "linux-x86_64.json"
+  "summary": "pre-scaling-linux-x86_64.json"
 }

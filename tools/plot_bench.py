@@ -195,6 +195,10 @@ def render(meta, groups, output, png=False):
                     color=COLORS[stack], linestyle=style, marker="o", capsize=3, linewidth=2, label=name)
     ax.set_xscale("log", base=2)
     ax.set_xticks([size / 1024 for size in sizes], [f"{size // 1024} KiB" for size in sizes])
+    if len(sizes) > 2:
+      # Keep neighboring 64/128 KiB labels apart on the logarithmic axis.
+      ax.get_xticklabels()[-2].set_horizontalalignment("right")
+      ax.get_xticklabels()[-1].set_horizontalalignment("left")
     ax.set_ylim(bottom=0)
     ax.set_title(title, loc="left", fontsize=14, weight="bold", pad=16)
     ax.set_ylabel(unit)

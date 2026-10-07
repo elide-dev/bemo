@@ -70,7 +70,7 @@ Main push runs retain baselines; superseded PR runs may be cancelled.
 | Measurement | Continuous execution | What it covers |
 | --- | --- | --- |
 | CodSpeed CPU simulation | Every run, hosted Linux | Rust buffers, handles, complete/fragmented HTTP/1 request parsing, response encoding |
-| Native/JVM loopback RPS and RSS | Every run, hosted Linux | Native Netty channels, HTTP/1 codec, plaintext/TLS, identity/gzip, 1 KiB/64 KiB bodies |
+| Native/JVM loopback RPS and RSS | Every run, hosted Linux | Native Netty channels, HTTP/1 codec, plaintext/TLS, identity/gzip, 1 KiB/64 KiB/128 KiB bodies |
 | CodSpeed wall time | Trusted runs on `linux-amd64-bench` | TLS 1.2/1.3 handshakes and records; all eight end-to-end workloads |
 
 The Rust benches use Criterion through CodSpeed's compatibility crate, so local
@@ -116,12 +116,14 @@ client, while retaining matched heap sizes and socket settings. Archive each
 backend's reports before the next run, since summary filenames are shared.
 
 Gzip is application compression performed for every response. The native HTTP
-server resets reusable Bemo zlib-rs state and compresses retained frozen input
+server resets reusable Bemo zlib-rs state at the speed-oriented level 1 default
+and compresses retained frozen input
 into a fresh, independently owned frozen output through the selected native
 binding. Provider state and bounded scratch are reused; output is charged to
 the workload and released after send retirement. The comparator uses Netty's
 `HttpContentCompressor`. Both clients use the same decompressor and verify
-compression negotiation. Samples record the actual gzip provider;
+compression negotiation. Samples record the actual gzip provider and level;
+`BEMO_BENCH_GZIP_LEVEL` selects an explicit native level (0–9).
 `BEMO_BENCH_GZIP_PROVIDER=java.util.zip` selects the preceding reusable Java
 compressor for diagnostics. See [compression qualification](performance/compression.md)
 for the pinned provider, lifetime contract, and backend comparison.

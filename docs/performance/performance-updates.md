@@ -2,11 +2,12 @@
 
 TLS record coalescing, direct header encoding, and native gzip are measured at
 `a87e7abcec4ee5b317a9212b7839a1d04fc0702d`, compared with the merged five-PR stack
-commit `d46a3658547654490cf5fcb1c063242728df7f99`. The refreshed README charts compare
-Bemo with Netty within the new run; the tables below compare the two versions.
+commit `d46a3658547654490cf5fcb1c063242728df7f99`. The tables below compare the two versions.
+The current README also includes the subsequent level/TLS changes and 128 KiB
+workloads; see [scaling results](scaling-results.md).
 
 - Before: [before follow-ups](https://github.com/elide-dev/bemo/actions/runs/37581322288), [provenance](data/pre-follow-up-provenance.json), [raw samples](data/pre-follow-up-linux-x86_64.json).
-- After: [after follow-ups](https://github.com/elide-dev/bemo/actions/runs/37581322288), [provenance](data/provenance.json), [raw samples](data/linux-x86_64.json).
+- After: [after follow-ups](https://github.com/elide-dev/bemo/actions/runs/37581322288), [provenance](data/first-follow-up-provenance.json), [raw samples](data/first-follow-up-linux-x86_64.json).
 
 Both versions use Linux x86-64, Native Image `-O3`, native HTTP and Rustls/AWS-LC
 with io_uring against stock OpenJDK Netty epoll/JDK TLS. Every workload has
@@ -20,7 +21,7 @@ reported by the native server.
 
 Both versions were rebuilt before measurement on one GitHub-hosted Linux
 runner. Commit order alternates by workload/sample; Bemo/Netty order alternates
-by sample. [Shared runner evidence](data/paired-environment.json) records CPU
+by sample. [Shared runner evidence](data/first-follow-up-environment.json) records CPU
 and allowed affinity. Shared-host scheduling still varies. Ranges span three
 samples and are not confidence intervals. These results measure the combined follow-ups.
 

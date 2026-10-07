@@ -1,7 +1,8 @@
 # Native application gzip and backend comparison
 
-The native HTTP benchmark now compresses each gzip response through reusable
-zlib-rs state in Bemo. The same Rust encoder is called from the stock JVM FFM
+The native HTTP benchmark compresses each gzip response through reusable
+zlib-rs state in Bemo, with speed-oriented level 1 as its default.
+`BEMO_BENCH_GZIP_LEVEL=6` selects the preceding native level for a control. The same Rust encoder is called from the stock JVM FFM
 binding and Native Image C binding; Java's Deflater is no longer the default
 native HTTP gzip provider. Netty retains its own application compressor.
 `BEMO_BENCH_GZIP_PROVIDER=java.util.zip` selects the preceding reusable Java
@@ -32,8 +33,9 @@ compressor state is passed by value to drop, matching
 The pinned fix holds provider state through raw pointers rather than persistent
 mutable references. The declaration travels into consuming workspaces; no
 root-only Cargo patch is required. Miri covers moving and releasing our encoder.
-The encoder resets reusable Rust state and detects runtime CPU features. zlib-rs is the portable integration chosen for this pass;
-zlib-ng remains a candidate, and the standalone probe below compares both.
+The encoder resets reusable Rust state and detects runtime CPU features.
+zlib-rs remains the production provider. Historical backend comparisons below
+are retained as measurement evidence.
 Full-stack Linux throughput and CPU are the primary selection criteria;
 compressed size is reported as context. Standalone compression speed alone
 does not establish transport throughput.
@@ -41,12 +43,15 @@ does not establish transport throughput.
 ## Alternative backends
 
 Run `make bench-compression`, or `python3 tools/compression_probe.py --iterations 2000`
-for a shorter probe. Cargo builds each backend separately from a locked,
+for a shorter level sweep. The default is zlib-rs at levels 1/3/6 and sizes
+1/64/128 KiB. To reproduce the historical backend comparison, use explicit
+`--backends zlib zlib-rs zlib-ng --levels 6`; those alternatives are standalone
+probe features, and the application continues to use zlib-rs. Cargo builds each backend separately from a locked,
 non-published workspace under `benchmarks/compression`. This standalone workspace compares providers separately from Bemo's integrated
 zlib-rs encoder. Compilation precedes measurement; avoid
 running builds or other benchmarks concurrently.
 
-The probe compares level-6 raw DEFLATE with identical gzip framing and CRC32,
+The probe compares raw DEFLATE with identical gzip framing and CRC32,
 reusable compressor/output storage, 1,000 warmup iterations, and three samples.
 It roundtrips each case before timing. The JSON pattern matches the HTTP workload;
 deterministic random input exposes incompressible behavior. Raw samples and host
@@ -81,7 +86,7 @@ application-level improvement of state reuse separately from backend selection.
 
 ## Linux qualification of the integrated revision
 
-[The final paired CI run](https://github.com/elide-dev/bemo/actions/runs/37581322288) also measured all three providers
+[The preceding paired CI run](https://github.com/elide-dev/bemo/actions/runs/37581322288) also measured all three providers
 on its Linux x86-64 throughput host before the network samples. This uses the
 same pinned zlib-rs revision as the integrated encoder, with 2,000 iterations
 per sample and three samples per case. These standalone timings exclude
@@ -97,8 +102,37 @@ commit and locked provider versions.
 | 64 KiB JSON | 288,624 ns | 25,236 ns | 23,804 ns | 282 / 545 / 545 |
 | 64 KiB random | 1,250,658 ns | 1,111,043 ns | 1,520,857 ns | 65,574 / 65,574 / 65,574 |
 
-zlib-ng remains a follow-up candidate rather than an integrated provider.
+The application keeps zlib-rs; these historical alternatives are not integrated.
 The full-stack [follow-up comparison](performance-updates.md) measures the
 shipped zlib-rs path against the preceding reusable Java compressor. Selection
 prioritizes speed over compressed size; the larger 64 KiB JSON output is
 recorded as context.
+
+## Level selection through 128 KiB
+
+[The Linux level qualification](https://github.com/elide-dev/bemo/actions/runs/37587314983)
+measured reusable zlib-rs at levels 1/3/6, with 1,000 warmup iterations and
+three samples of 2,000 members each. Every case independently roundtrips before
+timing. [Raw samples, compiler, CPU, and checksums](data/gzip-levels-linux-x86_64.json)
+and [provenance](data/gzip-levels-provenance.json) retain the selection evidence.
+
+| Payload | Level 1 | Level 3 | Level 6 | Compressed bytes: 1 / 3 / 6 |
+| --- | ---: | ---: | ---: | --- |
+| 1 KiB JSON | 2,612 ns | 6,367 ns | 6,305 ns | 83 / 84 / 85 |
+| 1 KiB random | 8,918 ns | 27,163 ns | 28,107 ns | 1,098 / 1,047 / 1,047 |
+| 64 KiB JSON | 16,564 ns | 24,098 ns | 25,183 ns | 859 / 545 / 545 |
+| 64 KiB random | 516,103 ns | 1,053,030 ns | 1,129,567 ns | 69,126 / 65,574 / 65,574 |
+| 128 KiB JSON | 33,011 ns | 44,245 ns | 46,039 ns | 1,653 / 990 / 990 |
+| 128 KiB random | 1,194,949 ns | 2,281,494 ns | 2,459,294 ns | 138,261 / 131,130 / 131,130 |
+
+Level 1 was fastest in all six shapes. The larger output on large bodies is
+accepted in favor of speed. The [full transport scaling comparison](scaling-results.md)
+qualifies the effect through 128 KiB against the same native provider at level 6.
+The native API still requires an explicit level; this selects the HTTP benchmark
+default and documents the application recommendation.
+
+The checksum microbenchmarks compare equivalent IEEE CRC32 results separately
+from gzip. At 64/128 KiB, crc32fast took approximately 5.4/10.9 µs and zlib-rs CRC
+5.1/10.2 µs. That small difference does not establish a large provider-swap win.
+It does show that checksum work is roughly a third of the fast level-1 encoder
+cost, motivating a separately qualified runtime-dispatched wide checksum path.

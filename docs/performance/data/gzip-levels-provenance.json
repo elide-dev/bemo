@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-07",
+  "commit": "ac4388a9e10316cd1f999d66dd5ea2ea193e71bf",
+  "run_url": "https://github.com/elide-dev/bemo/actions/runs/37587314983",
+  "artifact": "compression-level-evidence",
+  "summary": "gzip-levels-linux-x86_64.json",
+  "scope": "Standalone zlib-rs level and checksum qualification; used to select level 1"
+}

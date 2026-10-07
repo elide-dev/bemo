@@ -5,7 +5,7 @@
   "artifact": "compression-evidence",
   "summary": "linux-compression.json",
   "sha256": "9dabb29ed1fb1aae00fdf16af022a0ad4337638a33fd04a6f12394a810bb82c9",
-  "environment": "paired-environment.json",
+  "environment": "first-follow-up-environment.json",
   "providers": [
     {
       "name": "flate2",

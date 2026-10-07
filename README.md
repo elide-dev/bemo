@@ -75,20 +75,20 @@ Bemo puts HTTP parsing, response encoding, socket I/O, and Rustls/aws-lc-rs TLS
 in Rust. These comparisons run Bemo as an optimized Native Image against stock
 OpenJDK Netty with its native epoll transport. Both use the same external client.
 
-![Throughput across all eight HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput.svg)
+![Throughput across all twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput.svg)
 
-![Identity throughput and p99 latency at measured 1 KiB and 64 KiB payload sizes](docs/performance/graphs/payload-curves.svg)
+![Identity throughput and p99 latency at measured 1 KiB, 64 KiB, and 128 KiB payload sizes](docs/performance/graphs/payload-curves.svg)
 
 ![Server CPU per request and combined server/client memory for all workloads](docs/performance/graphs/efficiency.svg)
 
 Snapshot: Linux x86-64, three paired samples per workload,
-[paired benchmark run on October 7, 2026 (UTC)](https://github.com/elide-dev/bemo/actions/runs/37581322288).
-Both the merged stack and performance follow-ups were rebuilt and measured on
-the same runner; see [the follow-up results](docs/performance/performance-updates.md)
-for throughput, latency, CPU, and memory changes across all eight workloads.
+[paired benchmark run on October 7, 2026 (UTC)](https://github.com/elide-dev/bemo/actions/runs/37588109048).
+Both versions were rebuilt and measured on the same runner; see
+[the scaling results](docs/performance/scaling-results.md) for throughput, latency,
+CPU, memory, and 64–128 KiB scaling across all twelve workloads.
 These are closed-loop, full-stack comparisons on a shared hosted runner.
-Gzip includes native zlib-rs application compression for every Bemo response;
-Netty uses its own compressor. Memory is the sum of
+Gzip includes native zlib-rs level-1 application compression for every Bemo response;
+Netty uses its own compressor at its default level 6. Memory is the sum of
 process lifetime high-water marks, including the client. Lines connect measured endpoints;
 they do not predict intermediate payload sizes.
 
