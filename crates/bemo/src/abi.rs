@@ -20,6 +20,9 @@ use crate::buffer::{Budget, Buffer, FrozenBuffer};
 use crate::driver::{Backend, Driver};
 use compio_buf::{IoBuf, IoBufMut, SetLen};
 
+mod handle_hash;
+use handle_hash::HandleMap;
+
 mod tls;
 pub use tls::*;
 
@@ -76,7 +79,7 @@ const DOMAINS: usize = 1024;
 const DOMAIN_SHIFT: u32 = 48;
 const MAX_SEQUENCE: u64 = (1 << DOMAIN_SHIFT) - 1;
 
-type Registry = Mutex<IntMap<u64, Storage>>;
+type Registry = Mutex<HandleMap<Storage>>;
 
 static REGISTRIES: LazyLock<Box<[Registry]>> = LazyLock::new(|| (0..DOMAINS).map(|_| Registry::default()).collect());
 static NEXT_DOMAIN: AtomicU64 = AtomicU64::new(1);

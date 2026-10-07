@@ -66,28 +66,27 @@ payloads, output growth, and teardown. Check repeated use does not concatenate
 members accidentally or reuse an earlier CRC/size. Measure dynamic gzip against
 the previous implementation for both sizes and retain output-size evidence.
 
-## PR 2: Send bodies through existing owned streaming storage
+## PR 2: Retain immutable response body storage
 
 ### Design
 
-Use the existing `httpRespond` streaming flag, `httpChunkPrepare`, and
-`httpChunkSend` APIs for the benchmark server's response body. Encode the head
-with the existing native encoder, write or compress the body into prepared
-native storage, and transfer the completed body buffer to the driver. This
-avoids copying the body again into a contiguous head-plus-body allocation.
+Use the existing `httpRespond` streaming flag and add `CHUNK_RETAIN` to
+`httpChunkSend`. The body is a frozen handle whose initialized bytes begin at
+offset zero. The caller keeps the handle on every result; successful submission
+creates an independent driver lease. HTTP/1 declared-length/close framing and
+HTTP/2 support retained parts; HTTP/1 chunked framing still requires prepared
+mutable storage. No C symbol, ABI version, or layout changes.
 
-Retain the copy-based `httpRespond` contract: borrowed body pointers are read
-only during its call. Do not extend their lifetime implicitly. Prepared body
-storage belongs to the request until successful transfer; failed submissions
-must release it once, while successful submissions leave retirement to the
-driver. No address may be reused while a kernel operation still retains it.
+Identity bodies are uploaded once and reused per response. Dynamic gzip still
+compresses every response and copies the result once into frozen native storage,
+then queues the head and body separately. Borrowed-pointer `httpRespond` keeps
+its existing synchronous copy contract. Both Java bindings forward the new
+flag and run the same wire and lifetime contract.
 
-Support declared-length identity responses and correctly framed gzip output
-whose encoded length becomes known only after compression. Keep HEAD and
-bodiless status handling correct. Account for `EVENT_PART_SENT` without leaking
-exchange or body storage. Use the same Java benchmark server for FFM and Native
-Image bindings. The core already supports vectored queued sends, so no new C
-export or borrowed-pointer ABI is needed.
+Storage cannot return to the allocator while a queued part or kernel operation
+still holds a lease. Freeing an exchange after its final part suppresses
+undelivered notifications but leaves remaining parts on the wire. Driver
+retirement can remain busy while cancellation completes, especially on io_uring.
 
 ### Acceptance
 
@@ -122,9 +121,12 @@ pooled bytes belonged to an earlier request. Provided receives with return
 slots retain their dedicated return path. Closed owners do not admit new pool
 entries or allocations; trimming and thread teardown free idle entries.
 
-The first implementation reuses backing storage. Pooling Arc allocation
-metadata is excluded because it would introduce a separate provenance and
-shared-ownership redesign.
+Retain the backing storage and its Arc descriptor through an allocation-lease
+wrapper. Only the final lease may admit an exclusively owned descriptor; idle
+entries are uncharged, and reuse restores their charge before exposure.
+Ordinary exact entries can change budget owners after all old leases end;
+receive entries keep owner affinity. Provided return slots cannot enter this
+pool. Miri and lifetime/accounting contracts verify the descriptor reuse.
 
 ### Acceptance
 
@@ -139,19 +141,17 @@ live charges separately from retained pool memory.
 
 ### Design
 
-Retain an incremental scan offset for the partial HTTP head accumulator.
-After the first parser result is partial, scan newly appended bytes with the
-small overlap needed to detect CRLF boundaries; avoid reparsing the entire
-prefix until the complete head terminator is available. Bound scanning and
-storage with existing head limits. Parse the completed head with the existing
-strict parser so framing, header validation, and error semantics remain shared.
+Cache validated request-line metadata, complete header spans, and a parse cursor
+while accumulating a fragmented head. Completed lines are processed once;
+the incomplete current line still goes through the existing strict parser on
+every fragment, preserving early rejection without adding a second validator.
+Reserve at least 128 accumulator bytes for common fragmented heads. Contiguous
+requests keep temporary progress on the stack.
 
-Reduce header-vector churn with bounded initial capacity or retained scratch
-storage where ownership permits. A delivered exchange owns its header spans;
-do not reuse its storage while the exchange survives. Preserve early rejection
-of malformed input where the existing API promises it, and reset all scan
-state on completion, error, and closure. Keep trailer parsing and request-body
-framing distinct from head scanning.
+Delivered exchanges own their header spans; progress resets on completion and
+error. Body and trailer framing keep their separate existing paths and bounds.
+This avoids reprocessing complete prefixes and rebuilding their header vectors;
+very long individual incomplete lines may still require repeated scanning.
 
 ### Acceptance
 
@@ -167,11 +167,12 @@ visible separately.
 
 ### Design
 
-Improve hash distribution for internally minted numeric owner and buffer
-handles, preserving existing keys, domain routing, identities, locks, and
-reentry rules. Identity hashing leaves sequential handles with shared high
-fingerprint bits. Use a small deterministic integer mixer, following the
-existing address-map pattern, in the affected registries. Scope replacement to
+Improve buffer-registry fingerprint distribution for internally minted numeric
+handles, preserving bucket locality, keys, domain routing, identities, locks,
+and reentry rules. Keep owner identity hashing: measured lookups did not benefit
+from mixing. Identity hashing leaves sequential handles with shared high
+fingerprint bits. Use a cheap deterministic multiplicative fingerprint mixer in buffer registries;
+a full avalanche mixer loses sequential lookup locality. Scope replacement to
 maps verified to use internal numeric keys; keep untrusted string hashing
 unchanged.
 
