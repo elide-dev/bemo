@@ -50,6 +50,7 @@ public final class NativeIoHandler implements IoHandler {
   private @Nullable ByteBuffer events;
   @Nullable NativeByteBufAllocator allocator;
   private boolean inlineWrites;
+  private final ByteBuffer[] borrowedSend = new ByteBuffer[64];
   private long sendStaging;
   private @Nullable ByteBuffer sendStagingView;
 
@@ -66,8 +67,30 @@ public final class NativeIoHandler implements IoHandler {
     return api.socketSendInline(workload, driver, socket, source);
   }
 
-  long trySendInline(long workload, long socket, ByteBuffer[] buffers, int count, int length) {
+  long trySendInline(
+      long workload, long socket, ByteBuffer[] buffers, int count, int length, boolean borrow) {
     if (!inlineWrites) return 0;
+    if (borrow && api.supportsInlineVectoredWrites()) {
+      boolean direct = true;
+      for (int i = 0; i < count; i++) direct &= buffers[i].isDirect();
+      if (direct) {
+        int remaining = length, used = 0;
+        for (int i = 0; i < count && remaining > 0; i++) {
+          ByteBuffer source = buffers[i];
+          int take = Math.min(source.remaining(), remaining);
+          borrowedSend[used++] =
+              take == source.remaining()
+                  ? source
+                  : source.duplicate().limit(source.position() + take);
+          remaining -= take;
+        }
+        try {
+          return api.socketSendInlineVectored(workload, driver, socket, borrowedSend, used);
+        } finally {
+          java.util.Arrays.fill(borrowedSend, 0, used, null);
+        }
+      }
+    }
     ByteBuffer target = sendStagingView;
     if (target == null || target.capacity() < length) {
       releaseSendStaging();
@@ -155,7 +178,7 @@ public final class NativeIoHandler implements IoHandler {
           "Native transport initialization failed",
           status == 0 ? null : NativeTransportException.operation("driver", status));
     }
-    inlineWrites = api.supportsInlineWrites() && api.driverBackend(driver) == 1;
+    inlineWrites = api.supportsInlineWrites();
     backendName = DriverSelection.observe(api, driver, owner, backend).driver();
     events = api.bufferView(batch).order(ByteOrder.nativeOrder());
     allocator = new NativeByteBufAllocator(api, owner);

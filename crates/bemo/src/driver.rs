@@ -878,7 +878,7 @@ impl Driver {
     }
   }
 
-  /// Try one nonblocking send on the polling backend without allocating an operation.
+  /// Try one nonblocking send on a Unix backend without allocating an operation.
   /// `None` requests normal asynchronous submission; no source storage is retained.
   ///
   /// # Errors
@@ -894,7 +894,7 @@ impl Driver {
     if bytes.is_empty() {
       return Err(io::ErrorKind::InvalidInput.into());
     }
-    if self.backend() != Backend::Polling || connection.write.get() || self.transient_outstanding() >= self.limit {
+    if connection.write.get() || self.transient_outstanding() >= self.limit {
       return Ok(None);
     }
     #[cfg(unix)]
@@ -906,6 +906,77 @@ impl Driver {
       let flags = libc::MSG_NOSIGNAL;
       // SAFETY: The live nonblocking socket borrows initialized bytes only until send returns.
       let sent = unsafe { libc::send(connection.socket.as_raw_fd(), bytes.as_ptr().cast(), bytes.len(), flags) };
+      if sent >= 0 {
+        return Ok(Some(sent as usize));
+      }
+      let error = io::Error::last_os_error();
+      if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) {
+        return Ok(None);
+      }
+      Err(error)
+    }
+    #[cfg(not(unix))]
+    {
+      Ok(None)
+    }
+  }
+
+  /// Borrow initialized regions for one nonblocking vectored Unix send. No region is retained.
+  /// `None` requests owned asynchronous submission on backpressure or an unsupported platform.
+  ///
+  /// # Errors
+  /// Rejects foreign/closed connections, empty or oversized vectors, and socket errors.
+  pub fn try_send_vectored(
+    &mut self,
+    connection: &Connection,
+    regions: &[io::IoSlice<'_>],
+  ) -> io::Result<Option<usize>> {
+    self.check_failed()?;
+    if self.closing {
+      return Err(io::ErrorKind::BrokenPipe.into());
+    }
+    if !Rc::ptr_eq(&self.owner, &connection.owner)
+      || regions.is_empty()
+      || regions.len() > 64
+      || regions.iter().any(|region| region.is_empty())
+      || regions
+        .iter()
+        .try_fold(0usize, |sum, region| sum.checked_add(region.len()))
+        .is_none_or(|sum| sum > 128 * 1024)
+    {
+      return Err(io::ErrorKind::InvalidInput.into());
+    }
+    if connection.write.get() || self.transient_outstanding() >= self.limit {
+      return Ok(None);
+    }
+    #[cfg(unix)]
+    {
+      use std::os::fd::AsRawFd;
+      let mut vectors = [libc::iovec {
+        iov_base: std::ptr::null_mut(),
+        iov_len: 0,
+      }; 64];
+      for (vector, region) in vectors.iter_mut().zip(regions) {
+        vector.iov_base = region.as_ptr().cast_mut().cast();
+        vector.iov_len = region.len();
+      }
+      let mut message = libc::msghdr {
+        msg_name: std::ptr::null_mut(),
+        msg_namelen: 0,
+        msg_iov: std::ptr::null_mut(),
+        msg_iovlen: 0,
+        msg_control: std::ptr::null_mut(),
+        msg_controllen: 0,
+        msg_flags: 0,
+      };
+      message.msg_iov = vectors.as_mut_ptr();
+      message.msg_iovlen = regions.len() as _;
+      #[cfg(target_vendor = "apple")]
+      let flags = 0; // attach sets SO_NOSIGPIPE and O_NONBLOCK.
+      #[cfg(not(target_vendor = "apple"))]
+      let flags = libc::MSG_NOSIGNAL | libc::MSG_DONTWAIT;
+      // SAFETY: The socket is live and nonblocking; sendmsg borrows initialized regions only until return.
+      let sent = unsafe { libc::sendmsg(connection.socket.as_raw_fd(), &message, flags) };
       if sent >= 0 {
         return Ok(Some(sent as usize));
       }

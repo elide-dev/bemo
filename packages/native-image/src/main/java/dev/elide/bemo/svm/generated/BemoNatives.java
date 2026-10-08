@@ -17,7 +17,7 @@ public final class BemoNatives {
   private BemoNatives() {}
 
   public static final String ABI_FINGERPRINT =
-      "f278becae8c21729439997d49a82529e10c03a04382f2bea3c2942af4c44d030";
+      "97ee157f66707a3521a4e8e790547bbd44337f12bef4bea043eddd7b5fa1a8bf";
 
   public static final class elide_transport_buffer_view_t {
     private elide_transport_buffer_view_t() {}
@@ -418,6 +418,10 @@ public final class BemoNatives {
   @CFunction(value = "elide_transport_socket_send_inline")
   public static native long elide_transport_socket_send_inline(
       long workload, long driver, long socket, CCharPointer source, long length);
+
+  @CFunction(value = "elide_transport_socket_send_inline_vectored")
+  public static native long elide_transport_socket_send_inline_vectored(
+      long workload, long driver, long socket, CLongPointer regions, int count);
 
   @CFunction(value = "elide_transport_socket_shutdown")
   public static native int elide_transport_socket_shutdown(long driver, long socket, int direction);

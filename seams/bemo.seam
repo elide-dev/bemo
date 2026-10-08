@@ -435,6 +435,14 @@ import elide_transport_socket_send symbol=elide_transport_socket_send return=u64
   param length type=u64
 end
 
+import elide_transport_socket_send_inline_vectored symbol=elide_transport_socket_send_inline_vectored return=i64 error=no_failure
+  param workload type=u64
+  param driver type=u64
+  param socket type=u64
+  param regions type=ptr<u64>
+  param count type=u32
+end
+
 import elide_transport_socket_send_gathered symbol=elide_transport_socket_send_gathered return=u64 error=no_failure
   param workload type=u64
   param driver type=u64

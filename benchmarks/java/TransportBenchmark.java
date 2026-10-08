@@ -264,10 +264,14 @@ public final class TransportBenchmark {
                 .sync()
                 .channel();
       if (serverOnly) {
+        DriverSelection selection = transport.equals("bemo") ? DriverSelection.observed() : null;
+        if (transport.equals("bemo") && selection == null)
+          throw new IllegalStateException("Native server backend was not observed");
         System.out.printf(
-            "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":false,\"gzip_level\":%d,\"tls_provider\":\"%s\",\"tls_version\":\"%s\",\"server_channel\":\"%s\"}%n",
+            "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":%s,\"gzip_level\":%d,\"tls_provider\":\"%s\",\"tls_version\":\"%s\",\"server_channel\":\"%s\"}%n",
             ((InetSocketAddress) server.localAddress()).getPort(),
-            transport,
+            selection == null ? transport : selection.driver(),
+            selection != null && selection.fallback() != null,
             gzip ? gzipLevel : 0,
             tls ? tlsProvider : "none",
             tls && tlsProvider.equals("openssl") ? OpenSsl.versionString() : "none",

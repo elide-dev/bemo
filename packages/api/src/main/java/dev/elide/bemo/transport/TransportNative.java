@@ -242,19 +242,35 @@ public interface TransportNative {
   /** Lease a frozen byte range for an asynchronous send; the caller retains its original handle. */
   long socketSend(long workload, long driver, long socket, long buffer, long offset, long length);
 
-  /** Whether this binding exposes bounded nonblocking inline writes on the polling backend. */
+  /** Whether this binding exposes bounded nonblocking inline writes on Unix backends. */
   default boolean supportsInlineWrites() {
     return false;
   }
 
   /**
-   * Try a nonblocking polling-backend send of 1..131072 remaining direct-buffer bytes. Returns
-   * bytes sent, zero for backpressure/unsupported backend, or a negative transport error. No
-   * operation or completion is created. Serialize source writes with this call; source storage may
-   * be reused immediately after return. Caller buffer indices are unchanged.
+   * Try a nonblocking Unix send of 1..131072 remaining direct-buffer bytes. Returns bytes sent,
+   * zero for backpressure/unsupported backend, or a negative transport error. No operation or
+   * completion is created. Serialize source writes with this call; source storage may be reused
+   * immediately after return. Caller buffer indices are unchanged.
    */
   default long socketSendInline(long workload, long driver, long socket, ByteBuffer source) {
     throw new UnsupportedOperationException("Inline native writes");
+  }
+
+  /** Whether this binding can borrow several direct buffers for one bounded nonblocking send. */
+  default boolean supportsInlineVectoredWrites() {
+    return false;
+  }
+
+  /**
+   * Borrow 1..64 nonempty direct buffers, totalling at most 131072 remaining bytes. All source
+   * storage must stay alive without concurrent mutation through return. Indices are unchanged.
+   * Returns bytes sent, zero for owned asynchronous fallback, or a negative transport error. No
+   * source address or completion survives return.
+   */
+  default long socketSendInlineVectored(
+      long workload, long driver, long socket, ByteBuffer[] sources, int count) {
+    throw new UnsupportedOperationException("Inline vectored native writes");
   }
 
   /** Whether this binding can submit several immutable buffer regions in one operation. */

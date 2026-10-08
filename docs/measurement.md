@@ -71,7 +71,7 @@ Main push runs retain baselines; superseded PR runs may be cancelled.
 | --- | --- | --- |
 | CodSpeed CPU simulation | Every run, hosted Linux | Rust buffers, handles, complete/fragmented HTTP/1 request parsing, response encoding |
 | Native/JVM loopback RPS and RSS | Every run, hosted Linux | Native Netty channels, HTTP/1 codec, plaintext/TLS, identity/gzip, 1 KiB/64 KiB/128 KiB bodies |
-| CodSpeed wall time | Trusted runs on `linux-amd64-bench` | TLS 1.2/1.3 handshakes and records; all eight end-to-end workloads |
+| CodSpeed wall time | Trusted runs on `linux-amd64-bench` | TLS 1.2/1.3 handshakes and records; all twelve end-to-end workloads |
 
 The Rust benches use Criterion through CodSpeed's compatibility crate, so local
 `cargo bench` remains available. HTTP parsing includes receive-buffer allocation,
@@ -226,3 +226,53 @@ coverage of those performance dimensions.
 References: [Nextest JUnit](https://nexte.st/docs/machine-readable/junit/),
 [CodSpeed Criterion integration](https://codspeed.io/docs/benchmarks/rust/criterion),
 [JaCoCo](https://www.jacoco.org/jacoco/trunk/doc/).
+
+## Large-payload optimization measurements
+
+`make bench-tls-records` measures established TLS 1.3 / AES-128-GCM encryption on
+JVM NativeSslEngine (FFM/Rustls/AWS-LC) and Netty's reference-counted tcnative /
+BoringSSL engine. Run `make bench-prepare` first to build the optimized release library. Every sample starts fresh engines,
+warms them, and validates every encrypted response using the same JSSE peer.
+The reported `encrypt_ns_per_response` times only server wraps; handshake,
+peer decryption, plaintext validation, and process startup are outside that
+timer. It includes the respective FFM/JNI binding costs, so it does not isolate
+cryptographic primitives. `wraps_per_response` records managed/native batching.
+The report is written to `build/reports/benchmarks/tls-records.json`.
+
+For a short correctness run:
+
+```sh
+python3 tools/tls_records.py --warmup 10 --rounds 20 --samples 1 --size 65536 131072
+```
+
+The Rust `tls/*/established-encrypt` cases measure the established native session
+without peer processing or the roundtrip harness; the existing roundtrip cases
+continue to validate interoperability, including 128 KiB bodies. The HTTP
+copying/retained response microbenchmarks perform no asymmetric payload scan
+inside their measured regions. Their previous copying-path numbers therefore
+are not a compatible regression baseline.
+
+The JVM server readiness report now records the resolved native backend and
+fallback state, and the harness rejects a mismatched explicitly requested
+backend.
+
+CodSpeed's command matrix now includes the established JVM TLS commands, 128 KiB native HTTP cases and JVM
+Netty-codec identity cases with both Bemo and native Netty. Those command timings
+still include startup and warmup; use the accompanying warmed RPS and server CPU
+JSON for steady-state comparisons. Historical command names containing
+`nio-client` describe the shared external client, while comparator servers use
+native transports and tcnative.
+
+Native session application writes accept at most 128 KiB of plaintext per
+transition. Rustls fragments this into protocol-sized records in one pooled
+ciphertext allocation, falling back toward single-record batches when the owner
+cannot afford the larger allocation. The HTTP lane retains original response parts until all
+ciphertext completes; handshake transmission acknowledgements, partial sends,
+and cancellation ownership are preserved. Native Netty writes can borrow up to
+64 eligible direct buffers for a bounded Unix nonblocking vectored send.
+Sources are borrowed only through the syscall; backpressure retains the owned
+asynchronous fallback. Borrowing also works on io_uring-attached nonblocking
+sockets; it creates no completion and does not change the selected receive
+backend. Shared, heap, and frozen native buffers retain their existing ownership
+paths. The additive ABI entry point is optional for FFM consumers of older
+libraries; both current bindings implement the same contract.

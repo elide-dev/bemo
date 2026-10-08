@@ -189,6 +189,7 @@ public final class TransportAbiTest {
     allocatedReceive(api, driver, server, client, owner, batch, events, output);
     gatheredSend(api, driver, server, client, owner, batch, events);
     inlineSend(api, driver, server, client, owner, batch, events);
+    inlineVectoredSend(api, driver, server, client, owner, batch, events);
     receiveResults(api, driver, server, client, owner, batch, events, output);
     api.socketClose(driver, server);
     api.socketClose(driver, client);
@@ -324,7 +325,7 @@ public final class TransportAbiTest {
     long written = api.socketSendInline(owner, driver, client, source);
     check(source.position() == 1 && source.limit() == 6, "inline preserves caller geometry");
     check(api.ownerUsed(owner) == before + 16, "inline creates no private storage");
-    if (api.driverBackend(driver) != 1) {
+    if (api.driverBackend(driver) == 3) {
       check(written == 0, "completion backend requests asynchronous fallback");
       api.bufferRelease(sourceHandle);
       return;
@@ -356,6 +357,78 @@ public final class TransportAbiTest {
       }
     }
     check(api.ownerUsed(owner) == before, "inline receive reclamation");
+  }
+
+  private static void inlineVectoredSend(
+      TransportNative api,
+      long driver,
+      long server,
+      long client,
+      long owner,
+      long batch,
+      ByteBuffer events) {
+    check(api.supportsInlineVectoredWrites(), "inline vector binding availability");
+    long before = api.ownerUsed(owner);
+    ByteBuffer first = ByteBuffer.allocateDirect(4).put(new byte[] {99, 1, 2, 99});
+    first.position(1).limit(3);
+    ByteBuffer second = ByteBuffer.allocateDirect(3).put(new byte[] {3, 4, 5}).flip();
+    ByteBuffer[] sources = {first.asReadOnlyBuffer(), second};
+    check(
+        api.socketSendInlineVectored(owner, driver, client, sources, 0) < 0,
+        "empty vector rejection");
+    check(
+        api.socketSendInlineVectored(owner, driver, client, sources, 65) < 0,
+        "oversized vector rejection");
+    check(
+        api.socketSendInlineVectored(0, driver, client, sources, 2) < 0,
+        "vector workload isolation");
+    check(
+        api.socketSendInlineVectored(owner, driver, 0, sources, 2) < 0, "vector socket isolation");
+    check(
+        api.socketSendInlineVectored(
+                owner, driver, client, new ByteBuffer[] {ByteBuffer.wrap(new byte[1])}, 1)
+            < 0,
+        "vector heap rejection");
+    check(
+        api.socketSendInlineVectored(
+                owner, driver, client, new ByteBuffer[] {ByteBuffer.allocateDirect(131073)}, 1)
+            < 0,
+        "vector byte bound");
+    long written = api.socketSendInlineVectored(owner, driver, client, sources, 2);
+    check(
+        first.position() == 1 && sources[0].position() == 1 && second.position() == 0,
+        "vector geometry preserved");
+    check(api.ownerUsed(owner) == before, "vector creates no native storage");
+    if (api.driverBackend(driver) == 3) {
+      check(written == 0, "unsupported vector fallback");
+      return;
+    }
+    check(written == 5, "vector send length");
+    first.put(1, (byte) 0);
+    second.put(0, (byte) 0);
+    int received = 0;
+    long receive = api.socketReceiveNew(owner, driver, server, owner, 8);
+    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+    while (received < 5 && System.nanoTime() < deadline) {
+      int count = api.driverPoll(driver, 10_000_000L, batch, 16);
+      check(count >= 0, "vector poll success");
+      if (count == 0) continue;
+      for (int i = 0; i < count; i++) {
+        int p = i * 40;
+        check(
+            events.getInt(p + 32) == 3 && events.getLong(p) == receive,
+            "vector creates no send completion");
+        long handle = events.getLong(p + 16), length = events.getLong(p + 24);
+        check(length > 0 && length <= 5 - received, "vector receive length");
+        ByteBuffer bytes = api.bufferView(handle);
+        for (int j = 0; j < length; j++)
+          check(bytes.get(j) == ++received, "vector ordered bytes survive mutation");
+        check(api.bufferRelease(handle) == 0, "vector receive release");
+        if (received < 5) receive = api.socketReceiveNew(owner, driver, server, owner, 8);
+      }
+    }
+    check(received == 5, "vector receive progress");
+    check(api.ownerUsed(owner) == before, "vector storage reclamation");
   }
 
   private static void gatheredSend(

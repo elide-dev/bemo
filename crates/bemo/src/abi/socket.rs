@@ -498,7 +498,7 @@ pub fn elide_transport_socket_send(
   })
 }
 
-/// Try one nonblocking polling-backend send. Returns bytes sent, zero to use asynchronous
+/// Try one nonblocking Unix send. Returns bytes sent, zero to use asynchronous
 /// submission (unsupported backend or backpressure), or a negative transport error.
 /// No operation/completion is created, and no source address is retained after return.
 ///
@@ -533,6 +533,57 @@ pub unsafe fn elide_transport_socket_send_inline(
     state
       .driver
       .try_send(connection, bytes)
+      .map_or_else(error_code, |sent| sent.unwrap_or(0) as i64)
+  })
+}
+
+/// Borrow 1..64 native-endian (address, length) pairs for one nonblocking vectored send.
+/// Total initialized bytes must be 1..131072. Returns bytes sent, zero for fallback, or an error.
+/// No address, descriptor, operation, or completion survives this call.
+///
+/// # Safety
+/// `regions` points to `count * 2` aligned initialized u64 values. Every described range
+/// is readable and remains alive without concurrent mutation until return.
+pub unsafe fn elide_transport_socket_send_inline_vectored(
+  workload: u64,
+  driver: u64,
+  socket: u64,
+  regions: *const u64,
+  count: u32,
+) -> i64 {
+  if count == 0 || count > 64 || regions.is_null() || !regions.is_aligned() {
+    return -1;
+  }
+  // SAFETY: Descriptor extent and alignment are bounded above and supplied by the caller.
+  let descriptors = unsafe { std::slice::from_raw_parts(regions, count as usize * 2) };
+  let mut views = [io::IoSlice::new(&[]); 64];
+  let mut total = 0usize;
+  for (view, descriptor) in views.iter_mut().zip(descriptors.as_chunks::<2>().0) {
+    let (address, length) = (descriptor[0], descriptor[1]);
+    if address == 0 || length == 0 || length > 128 * 1024 {
+      return -1;
+    }
+    total += length as usize;
+    if total > 128 * 1024 {
+      return -1;
+    }
+    // SAFETY: The caller supplies initialized readable bytes borrowed only through this call.
+    *view = io::IoSlice::new(unsafe { std::slice::from_raw_parts(address as *const u8, length as usize) });
+  }
+  DRIVERS.with(|drivers| {
+    let mut drivers = drivers.borrow_mut();
+    let Some(state) = drivers.0.get_mut(&driver) else {
+      return -1;
+    };
+    if !owned(state, socket, workload) {
+      return -1;
+    }
+    let Some(connection) = state.sockets.get(&socket) else {
+      return -1;
+    };
+    state
+      .driver
+      .try_send_vectored(connection, &views[..count as usize])
       .map_or_else(error_code, |sent| sent.unwrap_or(0) as i64)
   })
 }

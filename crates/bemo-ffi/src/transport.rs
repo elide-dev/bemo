@@ -568,6 +568,22 @@ pub unsafe extern "C" fn elide_transport_socket_send_inline(
   unsafe { bemo::abi::elide_transport_socket_send_inline(workload, driver, socket, source, length) }
 }
 
+/// Forward to [`bemo::abi::elide_transport_socket_send_inline_vectored`].
+///
+/// # Safety
+/// The caller must satisfy the safety contract of [`bemo::abi::elide_transport_socket_send_inline_vectored`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn elide_transport_socket_send_inline_vectored(
+  workload: u64,
+  driver: u64,
+  socket: u64,
+  regions: *const u64,
+  count: u32,
+) -> i64 {
+  // SAFETY: the exported contract is identical to the Rust handle API.
+  unsafe { bemo::abi::elide_transport_socket_send_inline_vectored(workload, driver, socket, regions, count) }
+}
+
 /// Forward to [`bemo::abi::elide_transport_socket_send_gathered`].
 ///
 /// # Safety

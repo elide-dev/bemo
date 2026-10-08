@@ -243,3 +243,90 @@ fn a_fresh_server_session_waits_for_the_client_hello() {
   let step = session.step(&mut [], Action::Write(b"early")).unwrap();
   assert_eq!(step.accepted, 0);
 }
+
+#[test]
+#[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+fn batched_records_are_bounded_ordered_and_keep_their_storage_until_release() {
+  for version in [&rustls::version::TLS12, &rustls::version::TLS13] {
+    let (config, peer) = configs_with_versions(&[version]);
+    for limit in [1024 * 1024, 32768] {
+      let budget = Budget::new(limit);
+      let mut session = Session::client(config.clone(), ServerName::try_from("localhost").unwrap(), budget).unwrap();
+      let mut peer = rustls::ServerConnection::new(peer.clone()).unwrap();
+      peer.set_buffer_limit(None);
+      let mut incoming = Vec::new();
+      let mut transmitted = false;
+      let payload: Vec<u8> = (0..bemo::tls::MAX_WRITE + 1).map(|i| (i % 251) as u8).collect();
+      let mut outputs = Vec::new();
+      let mut decoded = Vec::new();
+      let mut accepted = 0;
+      for _ in 0..100 {
+        let action = if transmitted {
+          transmitted = false;
+          Action::Transmitted
+        } else {
+          Action::Write(&payload[accepted..])
+        };
+        let step = session.step(&mut incoming, action).unwrap();
+        incoming.drain(..step.discard);
+        if step.accepted != 0 {
+          assert_eq!(
+            step.accepted,
+            if limit == 32768 {
+              16384
+            } else {
+              (payload.len() - accepted).min(bemo::tls::MAX_WRITE)
+            }
+          );
+          accepted += step.accepted;
+          outputs.push(step.output.as_ref().unwrap().clone());
+        }
+        if let Some(output) = step.output {
+          let mut cursor = Cursor::new(output.as_ref());
+          while cursor.position() < output.as_ref().len() as u64 {
+            peer.read_tls(&mut cursor).unwrap();
+            peer.process_new_packets().unwrap();
+            let mut fragment = [0; 16384];
+            while let Ok(length) = peer.reader().read(&mut fragment) {
+              if length == 0 {
+                break;
+              }
+              decoded.extend_from_slice(&fragment[..length]);
+            }
+          }
+          transmitted = true;
+        }
+        peer.write_tls(&mut incoming).unwrap();
+        if accepted == payload.len() || (limit == 32768 && accepted != 0) {
+          break;
+        }
+      }
+      if limit == 32768 {
+        assert_eq!(accepted, 16384);
+        assert_eq!(decoded, payload[..16384]);
+        continue;
+      }
+      assert_eq!(accepted, payload.len());
+      assert_eq!(outputs.len(), 2, "large response uses two bounded output allocations");
+      let first = outputs[0].as_ref().to_vec();
+      let mut offset = 0;
+      let mut records = 0;
+      while offset < first.len() {
+        assert_eq!(first[offset], 23);
+        let length = u16::from_be_bytes([first[offset + 3], first[offset + 4]]) as usize;
+        assert!(length <= 16384 + 2048);
+        offset += 5 + length;
+        records += 1;
+      }
+      assert_eq!(offset, first.len());
+      assert_eq!(records, 8);
+      assert_eq!(decoded, payload);
+      drop(session);
+      assert_eq!(
+        outputs[0].as_ref(),
+        first,
+        "ciphertext lease survives later writes and session release"
+      );
+    }
+  }
+}

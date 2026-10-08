@@ -94,3 +94,7 @@ examples-native: examples-prepare
 	$(PYTHON) tools/examples.py native
 test-examples-native: examples-prepare
 	$(PYTHON) tools/examples.py test --native
+
+.PHONY: bench-tls-records
+bench-tls-records:
+	$(PYTHON) tools/tls_records.py
