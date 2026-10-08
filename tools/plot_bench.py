@@ -368,16 +368,122 @@ def render_frameworks(source, output, png=False):
   print(f"Rendered framework matrix: {name.name}")
 
 
+FOCUSED_DATA = ROOT / "docs/performance/data/tls-batching-20261008.json"
+FOCUSED_CASES = ("plain-identity-131072", "tls-identity-65536", "tls-identity-131072")
+
+
+def load_focused(source):
+  evidence = json.loads(source.read_text())
+  groups, repetitions, cohorts = {}, set(), {}
+  controls = evidence["controls"]
+  for entry in evidence["samples"]:
+    case, variant, sample = entry["case"], entry["variant"], entry["metrics"]
+    stack = "bemo" if sample["transport"] == "bemo" else "netty"
+    key = case, variant, stack
+    repetition = entry["repetition"]
+    if case not in FOCUSED_CASES or variant not in ("before", "after") or (key, repetition) in repetitions:
+      raise ValueError("Unexpected or duplicate focused sample")
+    repetitions.add((key, repetition))
+    tls = case.startswith("tls-")
+    if sample["case"] != case or sample["payload_bytes"] != int(case.split("-")[-1]) or sample["tls"] != tls or sample["gzip"]:
+      raise ValueError("Focused sample does not match its workload")
+    for metric in ("requests_per_second", "latency_p99_ns", "requests", "server_cpu_ns"):
+      if not isinstance(sample[metric], (int, float)) or not math.isfinite(sample[metric]) or sample[metric] <= 0:
+        raise ValueError("Invalid focused metric")
+    expected = ("native", "native-image", "capi") if tls and stack == "bemo" else ("netty", "jvm", "ffm" if stack == "bemo" else "netty")
+    if tuple(sample[field] for field in ("http_provider", "runtime", "binding")) != expected:
+      raise ValueError("Unexpected focused runtime or HTTP codec")
+    if sample["auto_fallback"] or sample["server_cpus"] != controls["server_cpus"] or sample["client_cpus"] != controls["client_cpus"] or not sample["server_cpus"] or not sample["client_cpus"]:
+      raise ValueError("Unmatched focused affinity or backend fallback")
+    if sample["clients"] != controls["connections"] or sample["requests"] != controls["requests_per_sample"] or sample["warmup_rounds"] != controls["warmup_rounds_per_connection"]:
+      raise ValueError("Unmatched focused sampling controls")
+    if stack == "netty":
+      if sample["transport"] != "epoll" or sample["driver"] != "epoll" or sample["server_channel"] != "io.netty.channel.epoll.EpollServerSocketChannel" or (tls and (sample["tls_provider"], sample["tls_implementation"]) != ("openssl", "BoringSSL")):
+        raise ValueError("Missing focused native Netty/tcnative evidence")
+    elif sample["requested_backend"] != 2 or sample["driver"] != ("bemo" if variant == "before" and not tls else "io-uring") or (tls and sample["tls_provider"] != "native"):
+      raise ValueError("Unexpected focused Bemo backend")
+    if tls and (sample["load_generator_tls_protocol"], sample["load_generator_tls_cipher"]) != ("TLSv1.3", "TLS_AES_128_GCM_SHA256"):
+      raise ValueError("Unmatched focused TLS")
+    fields = ("host", "java_version", "clients", "requests", "warmup_rounds", "server_cpus", "client_cpus", "load_generator_transport", "socket_buffer_bytes")
+    measured_source = sample["commit"], sample["workload_sha256"]
+    if cohorts.setdefault(("source", variant), measured_source) != measured_source:
+      raise ValueError("Mixed focused sources within one variant")
+    cohort = tuple(sample[field] for field in fields)
+    if cohorts.setdefault(case, cohort) != cohort:
+      raise ValueError("Mixed focused measurement environments")
+    groups.setdefault(key, []).append(sample)
+  expected = {(case, variant, stack) for case in FOCUSED_CASES for variant in ("before", "after") for stack in ("bemo", "netty")}
+  if set(groups) != expected or any({rep for candidate, rep in repetitions if candidate == key} != set(range(controls["repetitions"])) for key in expected) or controls["repetitions"] < 3:
+    raise ValueError("Incomplete focused paired matrix")
+  return hashlib.sha256(source.read_bytes()).hexdigest(), groups
+
+
+def render_focused(source, output, png=False):
+  import matplotlib
+  matplotlib.use("Agg")
+  import matplotlib.pyplot as plt
+  matplotlib.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11,
+                             "text.color": INK, "axes.labelcolor": MUTED, "xtick.color": MUTED,
+                             "ytick.color": INK, "svg.fonttype": "path", "svg.hashsalt": "bemo-bench-v1"})
+  sha, groups = load_focused(source)
+  series = (("before", "bemo", -.27), ("after", "bemo", -.09), ("before", "netty", .09), ("after", "netty", .27))
+  labels = ("JVM HTTP · 128 KiB", "Native HTTP + TLS · 64 KiB", "Native HTTP + TLS · 128 KiB")
+  for name, title, metrics in (
+      ("focused-throughput", "Large payloads after batching", (("requests_per_second", "Completed requests / second (thousands)"),)),
+      ("focused-cost", "Server CPU and tail latency", (("cpu", "Server CPU / request (µs)"), ("latency_p99_ns", "Response p99 (µs)")))):
+    fig, axes = plt.subplots(len(metrics), 1, figsize=(12, 5.8 if len(metrics) == 1 else 8.4), facecolor=BG, squeeze=False)
+    fig.subplots_adjust(left=.30, right=.94, top=.76 if len(metrics) == 1 else .82, bottom=.28 if len(metrics) == 1 else .22, hspace=.45)
+    fig.text(.04, .95, "BEMO / OCTOBER 8 OPTIMIZATION FOLLOW-UP", fontsize=10, weight="bold", color=COLORS["bemo"])
+    fig.text(.04, .89 if len(metrics) == 1 else .91, title, fontsize=24, weight="bold")
+    fig.text(.04, .83 if len(metrics) == 1 else .87, "Three paired samples · medians and observed min–max · before and after on the same host", fontsize=11, color=MUTED)
+    for ax, (metric, xlabel) in zip(axes.flat, metrics):
+      ax.set_facecolor(BG)
+      for variant, stack, offset in series:
+        for index, case in enumerate(FOCUSED_CASES):
+          data = values({(case, stack): groups[case, variant, stack]}, case, stack, metric)
+          median = statistics.median(data)
+          ax.errorbar(median, index + offset, xerr=[[median - min(data)], [max(data) - median]], fmt="o", color=COLORS[stack], markerfacecolor=BG if variant == "before" else COLORS[stack], markersize=7, capsize=3, linewidth=1.7)
+      ax.set_yticks(range(3), labels)
+      ax.set_ylim(2.55, -.55)
+      ax.set_xlim(left=0)
+      ax.set_xlabel(xlabel, labelpad=10)
+      ax.spines[["top", "right", "left"]].set_visible(False)
+      ax.spines["bottom"].set_color(GRID)
+      ax.tick_params(length=0, pad=8)
+      ax.set_axisbelow(True)
+      ax.grid(axis="x", color=GRID)
+      if metric == "requests_per_second":
+        for index, case in enumerate(FOCUSED_CASES):
+          before = statistics.median(s[metric] for s in groups[case, "before", "bemo"])
+          after = statistics.median(s[metric] for s in groups[case, "after", "bemo"])
+          ax.text(.98, index - .38, f"Bemo gain {after / before - 1:+.1%}", transform=ax.get_yaxis_transform(), ha="right", fontsize=10, color=COLORS["bemo"])
+    handles = [plt.Line2D([], [], marker="o", linestyle="", color=COLORS[stack], markerfacecolor=BG if variant == "before" else COLORS[stack], markersize=7) for variant, stack, _ in series]
+    fig.legend(handles, ("Bemo before", "Bemo after", "Native Netty before", "Native Netty after"), loc="lower left", bbox_to_anchor=(.04, .12), frameon=False, ncol=4, fontsize=10)
+    fig.text(.04, .10, "Unclemax · Linux Threadripper PRO 9965WX · servers CPU 12–17 / clients 18–21 · four connections", fontsize=10, color=MUTED)
+    fig.text(.04, .065, "Plain HTTP: JVM / Netty codec on both sides. TLS: Bemo Native Image / native HTTP vs Netty JVM / Netty HTTP.", fontsize=9, color=MUTED)
+    fig.text(.04, .03, "Bemo io_uring / Rustls + AWS-LC · Netty epoll / tcnative BoringSSL · TLS 1.3 / AES-128-GCM · source " + sha[:12], fontsize=9, color=MUTED)
+    output.mkdir(parents=True, exist_ok=True)
+    path = output / f"{name}-{sha[:12]}.svg"
+    fig.savefig(path, format="svg", facecolor=BG, metadata={"Date": None, "Creator": "tools/plot_bench.py", "Title": title, "Description": f"Source SHA-256: {sha}. docs/performance/tls-batching.md. Focused three-case matrix; ranges are not confidence intervals."})
+    path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
+    if png:
+      fig.savefig(path.with_suffix(".png"), dpi=140, facecolor=BG)
+    plt.close(fig)
+    print(f"Rendered focused optimization chart: {path.name}")
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--provenance", type=Path, default=DEFAULT)
   parser.add_argument("--output", type=Path, default=ROOT / "docs/performance/graphs")
   parser.add_argument("--framework-data", type=Path, default=FRAMEWORK_DATA)
+  parser.add_argument("--focused-data", type=Path, default=FOCUSED_DATA)
   parser.add_argument("--png", action="store_true", help="Also render PNG previews")
   args = parser.parse_args()
   meta, groups = load(args.provenance)
   render(meta, groups, args.output, args.png)
   render_frameworks(args.framework_data, args.output, args.png)
+  render_focused(args.focused_data, args.output, args.png)
   print(f"Rendered basic charts from {meta['sha256']}")
 
 

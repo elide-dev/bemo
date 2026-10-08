@@ -71,6 +71,22 @@ a package-private ALPN adapter and currently requires the classpath rather than 
 
 ## Performance
 
+The latest [optimization follow-up](docs/performance/tls-batching.md) measures
+three large-payload workloads against **Netty epoll and tcnative/BoringSSL**.
+TLS batching raises Bemo throughput **17.8% at 64 KiB** and **12.3% at 128 KiB**,
+bringing both within **0.5% of native Netty**. Borrowed vectored writes improve
+JVM plaintext throughput **8.3%**, leaving it **13.1% behind Netty**.
+These are three-sample medians on unclemax, with matched CPU affinity and
+validated responses. The sub-percent TLS differences indicate near parity.
+
+![Before and after throughput for the three measured large-payload workloads](docs/performance/graphs/focused-throughput-853bfaa4f9bf.svg)
+
+![Before and after server CPU and p99 latency for the same three workloads](docs/performance/graphs/focused-cost-853bfaa4f9bf.svg)
+
+The full basic and framework charts below retain the **pre-optimization** cycle.
+Frameworks and the remaining basic workloads have not been remeasured since
+batching and borrowed writes changed; their results describe that earlier code.
+
 The [native-baseline cycle](docs/performance/native-baseline.md)
 compares against **Netty epoll and tcnative/BoringSSL**, with **gzip level 1**
 and **TLS 1.3 / AES-128-GCM** on both sides. It retains three samples for every
@@ -86,8 +102,8 @@ shared Threadripper PRO 9965WX host; sample ranges describe observed variation.
 
 The basic matrix compares complete server stacks: Bemo Native Image `-O3`,
 native HTTP, io_uring and Rustls/aws-lc-rs against OpenJDK Netty epoll, Netty
-HTTP and tcnative/BoringSSL. Bemo has higher median throughput in ten of twelve
-workloads; uncompressed TLS at 64 KiB and 128 KiB is **15% and 12% slower**.
+HTTP and tcnative/BoringSSL. In this earlier cycle, Bemo had higher median throughput in ten of twelve
+workloads; uncompressed TLS at 64 KiB and 128 KiB was **15% and 12% slower**.
 Both stacks use the same external OpenJDK NIO/JSSE client.
 
 ![Throughput across twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput-0fe6f875e1f9.svg)

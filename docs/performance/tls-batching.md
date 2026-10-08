@@ -76,8 +76,12 @@ in the evidence.
 
 [Raw samples, summaries, artifact fingerprints, and encryption measurements](data/tls-batching-20261008.json)
 include the before-run source manifest and the after-run source fingerprints.
-The only subsequent change to a fingerprinted input adds readiness unit tests
-in `tools/test_bench.py`; its measured and PR hashes are recorded separately.
+Subsequent changes add readiness unit tests in `tools/test_bench.py` (its measured
+and PR hashes are recorded separately) and bound the Rust established-session
+microbenchmark to 4,096 operations per fresh session. The latter avoids TLS
+record-counter exhaustion during long Criterion warmups; handshakes remain
+outside its encryption timer. Neither change alters the measured macro servers
+or timed load generator.
 Validation passed on macOS/kqueue and Linux/io_uring and epoll: `make build`,
 `make check`, `make test`, `make test-native-image`, `make bench-smoke`, and
 `python3 tools/test_git_dependency.py`. Both FFM and Native Image contracts cover

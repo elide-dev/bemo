@@ -226,5 +226,41 @@ class FrameworkChartTest(unittest.TestCase):
         sample[field] = original
 
 
+class FocusedChartTest(unittest.TestCase):
+  def setUp(self):
+    self.evidence = json.loads(charts.FOCUSED_DATA.read_text())
+
+  def load(self):
+    with tempfile.TemporaryDirectory() as directory:
+      source = Path(directory) / "focused.json"
+      source.write_text(json.dumps(self.evidence))
+      return charts.load_focused(source)
+
+  def test_measured_pairs_load(self):
+    _, groups = self.load()
+    self.assertEqual(len(groups), 12)
+    self.assertTrue(all(len(samples) == 3 for samples in groups.values()))
+
+  def test_missing_and_duplicate_pairs_are_rejected(self):
+    self.evidence["samples"].pop()
+    with self.assertRaisesRegex(ValueError, "Incomplete focused"):
+      self.load()
+    self.evidence["samples"].append(copy.deepcopy(self.evidence["samples"][0]))
+    with self.assertRaisesRegex(ValueError, "duplicate focused"):
+      self.load()
+
+  def test_jdk_tls_and_mismatched_affinity_are_rejected(self):
+    entry = next(e for e in self.evidence["samples"] if e["case"].startswith("tls-") and e["metrics"]["transport"] == "epoll")
+    sample = entry["metrics"]
+    for field, value, message in (("tls_implementation", "JDK", "native Netty/tcnative"),
+                                  ("server_cpus", "1-4", "affinity")):
+      with self.subTest(field=field):
+        original = sample[field]
+        sample[field] = value
+        with self.assertRaisesRegex(ValueError, message):
+          self.load()
+        sample[field] = original
+
+
 if __name__ == "__main__":
   unittest.main()

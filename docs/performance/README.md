@@ -13,8 +13,8 @@ make bench-graphs
 ```
 
 This creates an isolated environment under `build/chart-venv` and renders the
-four checked-in SVGs: three basic transport charts and the Spring Boot/Micronaut/Ktor
-framework matrix. The framework chart derives medians and sample ranges from
+six current SVGs: two focused optimization charts, three basic transport charts,
+and the Spring Boot/Micronaut/Ktor framework matrix. The framework chart derives medians and sample ranges from
 the declared framework evidence, with all five endpoints in JVM and Native
 Image modes. Archived two-framework evidence remains supported. Each filename includes the first 12 characters of the
 source data SHA-256, so GitHub image redirects cannot reuse an older chart URL.
@@ -27,6 +27,16 @@ and alternate destinations are available:
 ```sh
 make bench-graphs CHART_ARGS='--output build/chart-preview --png'
 ```
+
+The focused charts read `data/tls-batching-20261008.json` (override with
+`--focused-data`). They retain the three measured cases as a separate before/after
+matrix and compute throughput, server CPU per request and p99 directly from raw
+samples. The loader checks paired repetitions, affinity, sampling controls,
+source consistency within each variant, runtime/codec identity and native
+transport/TLS evidence. Before and after source fingerprints can differ;
+the report records the readiness-reporting change alongside the optimization.
+Do not splice these samples into the older complete matrix. The README labels
+that matrix and the framework results as pre-optimization evidence.
 
 ## Refresh from a benchmark
 
