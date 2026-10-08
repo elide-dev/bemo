@@ -1,63 +1,118 @@
-# Netty I/O ownership and batching
+# I/O ownership and batching
 
-The Netty adapter batches flushed byte buffers into sends bounded by 128 KiB and
-64 NIO views. Partial writes advance both Netty's cached NIO views and the
-outbound buffers by the completed byte count. Buffer component counts can exceed
-one batch; omitted components belong to a later send.
+The Netty adapter and Rust driver share responsibility for buffer lifetime.
+Netty tracks application references and write progress. Rust tracks native
+allocations and memory still accessible to the kernel.
 
-On the polling backend, the adapter first tries a bounded nonblocking inline
-send. This borrows initialized direct storage only until the syscall returns;
-it creates no operation or send completion. Exclusively owned, unfrozen direct
-buffers can be borrowed directly. Other buffers use one reusable staging
-allocation per I/O handler. Staging is charged to the handler's allocation owner
-and released during handler teardown.
+## Ownership rules
 
-Backpressure, an occupied write lane, and completion backends use the ordinary
-asynchronous path. Before that fallback, reusable staging is released so a tight
-owner can afford an immutable send allocation. Kernel leases survive original
-handle release and cancellation until native retirement. Frozen native buffers
-use their native handles, including gathered sends of independently leased
-regions; an old mutable view is never revived for an inline send. Inline write
-spins are bounded by Netty's configured write-spin count, then resume through the
-event loop's task queue.
+| Resource | Who keeps it alive | When it can be reused or released |
+| --- | --- | --- |
+| Mutable buffer | Its native handle and Java references | After borrowed views are no longer used |
+| Frozen buffer | Its handles, retained slices, and pending send leases | After the last reference and kernel lease are released |
+| Borrowed direct send storage | The caller for the duration of the syscall | When the inline send returns |
+| Pending receive storage | The driver | After completion or cancellation has retired kernel access |
+| Reusable send staging | The I/O handler's allocation owner | Between inline sends, or at handler teardown |
 
-Default adaptive receive allocations that have grown to at least 16 KiB use a
-64 KiB floor to amortize completion handoff across TLS records. Explicit receive
-allocators retain their requested sizes and feedback. Private receive storage
-charges its pinned capacity and exposes only bytes initialized by the kernel.
+A memory view does not own its allocation. Keep the owning buffer alive while
+using the view. Freezing a native buffer invalidates earlier mutable access;
+those old views cannot be used for a later inline send.
 
-Receive submission returns bytes immediately when CompIO can complete the read
-at submission. Pending reads still use the ordinary operation, cancellation,
-and retirement path. Immediate positive results publish one mutable handle and
-its initialized view, without an operation or queued completion. EOF and errors
-publish no storage. The pinned polling fork preserves readiness after a full
-receive so a bounded read can drain bytes still queued in the socket. A short
-receive waits for fresh level-triggered readiness, avoiding a syscall just to
-observe backpressure. Blocked attempts also wait until the kernel reports
-readiness again.
+Cancellation is a request to stop work. It does not immediately return memory
+to the caller. A pending operation keeps its lease until the driver observes
+that kernel access has ended, even if the caller has released its handle.
 
-Ready reads are bounded to 16 messages before yielding to the event loop. Read
-callbacks cannot recursively submit another read while this batch is dispatching.
-Transport-owned TLS defers read submission until its engine pump returns, so
-ciphertext arriving inline cannot strand work behind the pump's reentry guard.
+## Writes
 
-The driver reuses its completion scratch vectors between polls. Callback and
-ordinary polls have separate scratch storage, preserving callback reentry and
-retirement rules. External wakeups coalesce until the next poll; the I/O thread
-does not wake itself. The wake flag resets before checking the event loop's task
-queue, so a producer racing with a blocking poll still signals the driver.
+The adapter batches flushed buffers into sends of at most **128 KiB** and
+**64 NIO views**. A buffer with more components spans multiple sends. Partial
+writes advance both the cached NIO views and Netty's outbound buffers by the
+completed byte count.
 
-The shared FFM/C-API contract covers borrowed-source reuse and release, workload
-and driver isolation, gathered-send lease retention, and asynchronous fallback.
-Transfer tests exercise fragmented reads, more than 64 components, partial
-writes, tight allocation budgets, retained slices, and teardown. The TLS engine
-also tests terminal failure and delivery of its queued fatal alert. Performance
-comparisons use the procedures in [measurement.md](measurement.md).
+The polling backend first tries a bounded nonblocking send. It can borrow
+exclusively owned, unfrozen direct buffers until the syscall returns. Other
+buffers use one reusable staging allocation per I/O handler. An inline send
+creates no pending operation or send completion.
 
-The V2 native HTTP/TLS data plane bypasses the Netty channel adapter. Its Rust
-write lane also tries polling-backend ciphertext sends inline, preserving frozen
-storage across partial writes and acknowledging a TLS record only after every
-byte is accepted. A drive yields after 128 KiB or its transition limit, explicitly
-schedules remaining work, and keeps ordinary completion-driven sends for
-backpressure and io_uring/IOCP. The primary benchmark uses this data plane through
-optimized Native Image C bindings.
+Backpressure, an occupied write lane, and completion-based backends use the
+asynchronous path. Before falling back, the handler releases reusable staging
+so its budget can cover the immutable send allocation. Frozen buffers use their
+native handles. Gathered sends retain a lease for each region.
+
+Inline write attempts are limited by Netty's write-spin count. Remaining work
+resumes through the event-loop task queue, allowing other channels to run.
+
+## Reads
+
+A receive can finish during submission or remain pending:
+
+- An immediate positive result returns one mutable handle and a view of the
+  initialized bytes. There is no outstanding operation or queued completion.
+- A pending read retains its storage in the driver until completion or
+  cancellation retires kernel access.
+- Immediate EOF and errors return no storage.
+
+Receive allocations charge their pinned capacity to the owner budget. Views
+expose only the bytes initialized by the kernel. When the default adaptive
+allocator grows to at least 16 KiB, Bemo uses a 64 KiB floor to reduce handoffs
+between TLS records. Explicit receive allocators keep their requested sizes
+and feedback.
+
+On the polling backend, a full receive preserves readiness so another bounded
+read can drain the socket. A short or blocked receive waits for fresh readiness.
+A batch handles at most **16 messages** before yielding to the event loop.
+Read callbacks cannot recursively submit another read while that batch is being
+dispatched.
+
+## TLS writes and read scheduling
+
+Transport-owned TLS keeps outgoing ciphertext until every byte of its record
+has been accepted. A partial socket write does not complete the application
+write. Read submission waits until the TLS engine pump returns, so an inline
+receive cannot leave work behind the pump's reentry guard.
+
+The separate native HTTP/TLS path applies the same record-lifetime rule in Rust.
+It tries inline ciphertext sends on the polling backend and uses completion-based
+sends for backpressure, io_uring, and IOCP. Each drive yields after 128 KiB or its
+transition limit and schedules any remaining work.
+
+## Polling and wakeups
+
+A driver reuses its completion vectors between polls. Callback polls and
+ordinary polls have separate scratch storage so reentrant callbacks do not
+overwrite results being dispatched.
+
+External wakeups coalesce until the next poll. The I/O thread does not wake
+itself. It resets the wake flag before checking the event-loop task queue, so
+an external producer racing with a blocking poll still signals the driver.
+
+## Shutdown
+
+For a Netty application:
+
+1. Close the listening channel and active connections.
+2. Shut down the event-loop groups and wait for termination. The handlers retire
+   pending native operations and release their drivers and staging allocations.
+3. Close the workload after all event-loop groups using it have stopped.
+4. Close application-owned TLS contexts and release retained buffers once their
+   users have finished.
+
+The [README setup](../README.md#java-and-netty) shows event-loop and workload
+cleanup. The [transport examples](../tests/transport/java) include TLS context
+and channel lifetimes. Keep the FFM library loaded while native handles or
+views remain in use.
+
+For C and Rust handle callers, a busy release means cancellation has not
+finished. Continue driving completion on the owner thread before retrying the
+release. Do not free storage still leased to a pending operation.
+
+## Checks
+
+The shared FFM and Native Image contracts cover borrowed-source reuse, handle
+release, workload and driver isolation, gathered-send leases, and asynchronous
+fallback. Transfer tests cover fragmented reads, more than 64 components,
+partial writes, tight budgets, retained slices, and teardown. TLS tests cover
+terminal failure and delivery of the queued fatal alert.
+
+See [native safety](native-safety.md) for sanitizers and ownership checks, and
+[measurement](measurement.md) for performance tests.

@@ -8,45 +8,106 @@
 
 # Netty, powered by Rust
 
-Bemo brings Rust networking, TLS, and compression to [Netty](https://netty.io).
-Keep your Netty pipelines and application handlers; use Bemo's channels and
-event loops for native I/O, [Rustls](https://github.com/rustls/rustls) with
-[AWS-LC](https://github.com/aws/aws-lc-rs) for TLS, and
-[zlib-rs](https://github.com/trifectatechfoundation/zlib-rs) for compression.
-It runs on the JVM through FFM and links statically into GraalVM Native Image.
+Bemo adds native I/O, [Rustls](https://github.com/rustls/rustls) TLS with
+[AWS-LC](https://github.com/aws/aws-lc-rs), and
+[zlib-rs](https://github.com/trifectatechfoundation/zlib-rs) compression to
+[Netty](https://netty.io). It runs on the JVM through FFM or links statically
+into GraalVM Native Image. Your application keeps its Netty pipelines and handlers.
 
-Bemo is the main transport for [Elide](https://github.com/elide-dev/elide).
-Its name comes from the [small minibuses](https://en.wikipedia.org/wiki/Share_taxi#Indonesia)
-that carry people around Indonesia—including [Bali](https://github.com/elide-dev/bali).
+## Usage
 
-## Try it
+Bemo **0.3.0** is on Maven Central. For a Netty application on **JDK 22+**, add
+the dependencies below and run with `--enable-native-access=ALL-UNNAMED`.
+The examples use Linux x86-64 with glibc. On macOS ARM64, replace
+`linux-x86_64-gnu` with `osx-aarch64`.
 
-The [Spring Boot, Micronaut, and Ktor examples](docs/framework-examples.md)
-are a good place to start. Each has Elide, Maven, and Gradle builds, runs on
-the JVM or as a Native Image, and serves HTTP, HTTPS, and gzip responses.
-You can switch between Bemo and stock Netty with a runtime flag.
+<details open>
+<summary><strong>Gradle</strong> (build.gradle.kts)</summary>
+
+```kotlin
+repositories { mavenCentral() }
+
+dependencies {
+  implementation("dev.elide.bemo:bemo-netty:0.3.0")
+  implementation("dev.elide.bemo:bemo-ffm:0.3.0")
+  runtimeOnly("dev.elide.bemo:bemo-ffm:0.3.0:linux-x86_64-gnu")
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Maven</strong> (pom.xml)</summary>
+
+Maven uses Central by default. Add these dependencies inside `<project>`:
+
+```xml
+<properties>
+  <bemo.version>0.3.0</bemo.version>
+</properties>
+
+<dependencies>
+  <dependency>
+    <groupId>dev.elide.bemo</groupId>
+    <artifactId>bemo-netty</artifactId>
+    <version>${bemo.version}</version>
+  </dependency>
+  <dependency>
+    <groupId>dev.elide.bemo</groupId>
+    <artifactId>bemo-ffm</artifactId>
+    <version>${bemo.version}</version>
+  </dependency>
+  <dependency>
+    <groupId>dev.elide.bemo</groupId>
+    <artifactId>bemo-ffm</artifactId>
+    <version>${bemo.version}</version>
+    <classifier>linux-x86_64-gnu</classifier>
+    <scope>runtime</scope>
+  </dependency>
+</dependencies>
+```
+
+</details>
+
+<details>
+<summary><strong>Gradle version catalog</strong></summary>
+
+In `gradle/libs.versions.toml`:
+
+```toml
+[versions]
+bemo = "0.3.0"
+
+[libraries]
+bemo-netty = { module = "dev.elide.bemo:bemo-netty", version.ref = "bemo" }
+bemo-ffm = { module = "dev.elide.bemo:bemo-ffm", version.ref = "bemo" }
+```
+
+In `build.gradle.kts`:
+
+```kotlin
+repositories { mavenCentral() }
+
+dependencies {
+  implementation(libs.bemo.netty)
+  implementation(libs.bemo.ffm)
+  runtimeOnly(variantOf(libs.bemo.ffm) { classifier("linux-x86_64-gnu") })
+}
+```
+
+The classifier belongs in the build script; [version catalogs](https://docs.gradle.org/current/userguide/version_catalogs.html#sec:classifiers-artifact-types-capabilities)
+store the module and version.
+
+</details>
+
+Bemo loads the native library from the classifier JAR automatically. See the
+[package guide](docs/publishing.md) for platform requirements and Native Image
+linking. The [Spring Boot, Micronaut, and Ktor examples](docs/framework-examples.md)
+each include Elide, Maven, and Gradle builds.
 
 ### Java and Netty
 
-Use **JDK 22+** for the FFM binding. Packages are available for **Linux glibc
-x86-64** and **macOS ARM64**. Stable releases are on **Maven Central**;
-see the [package guide](docs/publishing.md) for platform requirements and setup.
-
-All artifacts use the Maven group `dev.elide.bemo`:
-
-| Artifact | Use it for |
-| --- | --- |
-| `bemo-netty` | Netty 4.2 channels, event loops, buffers, and TLS |
-| `bemo-ffm` | Loading Bemo on a regular JVM |
-| `bemo-native-image` | Statically linking Bemo into a GraalVM Native Image |
-| `bemo-api` | Shared Java interfaces; included by the bindings |
-
-For a JVM application, add `bemo-netty`, `bemo-ffm`, and the `bemo-ffm`
-classifier for your platform (`linux-x86_64-gnu` or `osx-aarch64`). The binding
-loads the native library from the classifier JAR automatically.
-Run with `--enable-native-access=ALL-UNNAMED`.
-
-Here is the event-loop setup for a Netty server:
+Create an event-loop group and use Bemo's server channel:
 
 ```java
 import dev.elide.bemo.transport.FfmTransportNative;
@@ -76,7 +137,7 @@ than JPMS. For library paths and extraction settings, see
 
 ### Rust
 
-The Rust core can also be used directly. Pin a full commit SHA:
+To use the Rust core directly, pin a full commit SHA:
 
 ```toml
 [dependencies]
@@ -89,13 +150,11 @@ For C exports, add `bemo-ffi` at the same revision. Public headers live in
 ## Performance
 
 These charts compare Bemo with **Netty epoll and tcnative/BoringSSL** across
-HTTP, TLS, and gzip workloads. They are a snapshot from the
-[native-baseline benchmark](docs/performance/native-baseline.md), taken before
-later transport optimizations; they do not measure the current code.
+HTTP, TLS, and gzip workloads. The [benchmark run](docs/performance/native-baseline.md)
+predates the transport optimizations in 0.3.0.
 
-The server comparison below covers twelve workloads. It compares Bemo Native
-Image with Netty on OpenJDK, so the results include both the transport and
-runtime differences.
+The server comparison uses Bemo Native Image and Netty on OpenJDK. These results
+include both transport and runtime differences.
 
 ![HTTP and TLS throughput across twelve workloads](docs/performance/graphs/throughput-0fe6f875e1f9.svg)
 
@@ -104,15 +163,14 @@ same within each pair:
 
 ![Spring Boot, Micronaut, and Ktor throughput on the JVM and Native Image](docs/performance/graphs/framework-throughput-4c1e3556f5cc.svg)
 
-In that run, gzip was Bemo's strongest workload: **2.4–2.8×** the stock JVM
-framework throughput and **4.1–7.6×** the stock Native Image throughput.
-Large uncompressed JVM responses were **15–20% slower**. Both sides used gzip
+In this run, gzip throughput was **2.4 to 2.8×** the stock JVM
+framework throughput and **4.1 to 7.6×** the stock Native Image throughput.
+Large uncompressed JVM responses were **15 to 20% slower**. Both sides used gzip
 level 1, but Bemo produced larger compressed bodies: **1,580 vs. 909 bytes**
 for the 128 KiB framework payload.
 
 These are loopback measurements on a shared Linux host, with three samples per
-workload; chart ranges show the observed minimum and maximum. Your application's
-handlers, traffic, and hardware will affect the result. The
+workload; chart ranges show the observed minimum and maximum. The
 [benchmark reports](docs/performance/README.md) include the methodology,
 latency, CPU, memory, raw results, and subsequent measurements.
 
@@ -142,7 +200,7 @@ JVM tools, or `BEMO_TEST_JAVA` to test with another JVM. Windows builds also
 need NASM or `AWS_LC_SYS_PREBUILT_NASM=1`; OpenSSL on `PATH` enables additional
 TLS interoperability checks.
 
-A few places to explore:
+Source and documentation:
 
 - [`crates/bemo`](crates/bemo): Rust core.
 - [`crates/bemo-ffi`](crates/bemo-ffi) and [`include`](include): C interface.
@@ -150,6 +208,10 @@ A few places to explore:
 - [Architecture](docs/architecture.md) and [I/O ownership](docs/transport-io.md): how the pieces fit together.
 - [Measurement](docs/measurement.md) and [native safety](docs/native-safety.md): benchmarks, coverage, sanitizers, and fuzzing.
 
-## License
+## About
+
+Bemo is the main transport for [Elide](https://github.com/elide-dev/elide).
+The name comes from the [minibuses](https://en.wikipedia.org/wiki/Share_taxi#Indonesia)
+that carry people around Indonesia, including [Bali](https://github.com/elide-dev/bali).
 
 Apache-2.0.
