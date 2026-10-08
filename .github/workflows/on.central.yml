@@ -19,82 +19,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   central:
-    if: github.repository == 'elide-dev/bemo' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    environment: release
-    env:
-      CENTRAL_VERSION: ${{ inputs.version }}
-      GNUPGHOME: ${{ github.workspace }}/build/central-gnupg
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.13'
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.0.5
-      - name: Verify the immutable release and its main-source provenance
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 tools/publish_central.py fetch --version "$CENTRAL_VERSION" --source build/central/release
-      - name: Import the release PGP key
-        env:
-          BEMO_PGP_PRIVATE_KEY: ${{ secrets.BEMO_PGP_PRIVATE_KEY }}
-        run: |
-          python3 - <<'PY'
-          import os, pathlib, subprocess
-          home = pathlib.Path(os.environ['GNUPGHOME'])
-          home.mkdir(mode=0o700)
-          key = os.environ['BEMO_PGP_PRIVATE_KEY']
-          if not key:
-            raise SystemExit('Configure BEMO_PGP_PRIVATE_KEY in the release environment')
-          subprocess.run(['gpg', '--batch', '--import'], input=key.encode(), check=True)
-          PY
-      - name: Sign the existing POMs and JARs
-        env:
-          BEMO_SIGNING_KEY: ${{ vars.BEMO_SIGNING_KEY }}
-          BEMO_PGP_PASSPHRASE: ${{ secrets.BEMO_PGP_PASSPHRASE }}
-        run: |
-          python3 - <<'PY'
-          import os, pathlib, subprocess, zipfile
-          version = os.environ['CENTRAL_VERSION']
-          key = os.environ['BEMO_SIGNING_KEY']
-          if not key:
-            raise SystemExit('Configure the BEMO_SIGNING_KEY fingerprint in release environment variables')
-          source = pathlib.Path('build/central/release')
-          command = ['python3', 'tools/publish_central.py', 'prepare', '--version', version,
-                     '--source', str(source), '--key', key]
-          # Historical releases can predate optional ThinLTO classifiers.
-          # The merge still requires a complete, matching platform inventory.
-          includes_thinlto = False
-          for bundle in source.glob('*-unsigned.zip'):
-            with zipfile.ZipFile(bundle) as archive:
-              includes_thinlto |= any(name.endswith('-thinlto.jar') for name in archive.namelist())
-          if not includes_thinlto:
-            command.append('--without-thinlto')
-          subprocess.run(command, check=True)
-          PY
-      - name: Upload, validate, publish, and verify public artifact bytes
-        env:
-          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          python3 tools/publish_central.py deploy --version "$CENTRAL_VERSION"
-          printf 'Published and verified dev.elide.bemo %s\n' "$CENTRAL_VERSION" >> "$GITHUB_STEP_SUMMARY"
-      - name: Preserve signed bundle and deployment evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: central-${{ inputs.version }}-${{ github.run_id }}
-          path: build/central/
-          if-no-files-found: warn
-          retention-days: 90
-      - name: Remove the private signing key
-        if: always()
-        run: |
-          gpgconf --kill gpg-agent || true
-          rm -rf -- "$GNUPGHOME"
+    uses: ./.github/workflows/job.central.yml
+    secrets: inherit
+    with:
+      version: ${{ inputs.version }}
+    permissions:
+      contents: read

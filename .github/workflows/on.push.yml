@@ -44,6 +44,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release.outputs.version != ''
     needs: [verify, release]
     uses: ./.github/workflows/on.central.yml
+    secrets: inherit
     with:
       version: ${{ needs.release.outputs.version }}
     permissions:

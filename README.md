@@ -29,8 +29,8 @@ You can switch between Bemo and stock Netty with a runtime flag.
 ### Java and Netty
 
 Use **JDK 22+** for the FFM binding. Packages are available for **Linux glibc
-x86-64** and **macOS ARM64**; see the [package guide](docs/publishing.md) for
-platform requirements, Maven configuration, and GitHub Packages authentication.
+x86-64** and **macOS ARM64**. Stable releases are on **Maven Central**;
+see the [package guide](docs/publishing.md) for platform requirements and setup.
 
 All artifacts use the Maven group `dev.elide.bemo`:
 

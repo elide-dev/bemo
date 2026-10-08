@@ -68,14 +68,12 @@ metadata and transport ownership operations. `make test-native-image` separately
 checks the complete statically linked Java transport contracts.
 
 The Maven group is `dev.elide.bemo` and the repository is `elide-dev/bemo`.
-The current Maven registry is GitHub Packages at
-`https://maven.pkg.github.com/elide-dev/bemo`.
-Central namespace ownership must be verified before a release.
-Central accepts stable release versions; snapshot publication stays in GitHub
-Packages. Qualification targets glibc 2.39/Linux x86-64 and macOS 15/ARM64;
+Stable releases are available on Maven Central without authentication.
+Use `mavenCentral()` in Gradle; Maven includes Central by default.
+Snapshots are available from GitHub Packages at
+`https://maven.pkg.github.com/elide-dev/bemo` and require authentication.
+Qualification targets glibc 2.39/Linux x86-64 and macOS 15/ARM64;
 packaging verifies binary requirements and CI runs consumers on those builders.
-The first signed release and its consumer provenance verification still require
-a successful merged-source release run.
 
 ## GitHub Packages
 
@@ -94,7 +92,7 @@ The publishing job follows the GitHub release job and uses the release environme
 and `GITHUB_TOKEN` with `packages: write`. PR verification receives no publishing
 credentials. Stable releases also publish to Maven Central through the separate Central job described below.
 
-Consumers add this repository alongside Central:
+For snapshots, consumers add this repository alongside Central:
 
 ```xml
 <repository>
