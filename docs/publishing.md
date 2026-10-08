@@ -135,57 +135,88 @@ and make the signing key's public key available on a
 Keep the private signing key and token outside the repository and PR workflows.
 The Portal token is distinct from a GitHub Packages token.
 
-1. Set `.version` to the stable version and keep Cargo's workspace version in
-   sync. Review the POM licensing, developer, and SCM metadata.
-2. Complete the merged-main verification graph and gather both tested platform
-   bundles and their provenance files into `build/release-input`. Set
-   `GITHUB_REPOSITORY=elide-dev/bemo` and `GITHUB_SHA` to that tested revision,
-   then run `python3 tools/release.py stage` to verify its main-source
-   attestations. Use the release workflow's staged output, or download its
-   matching build artifacts; do not mix runs or rebuild for publication.
-3. With the project's PGP key loaded into GPG, prepare the signed bundle:
+### Publish an existing release
 
-   ```sh
-   python3 tools/publish_central.py prepare --key "$BEMO_SIGNING_KEY"
-   ```
+Central publication uses the bytes from an **immutable GitHub release**. Choose
+its stable version; a newer development checkout does not replace that release's
+artifacts. To include unreleased code, create a new GitHub release first.
 
-   `BEMO_SIGNING_KEY` is the signing key fingerprint, not key material. GPG
-   uses its normal agent/pinentry for unlocking the key. Preparation merges
-   both platforms, rejects differing common files, signs and verifies every
-   POM/JAR, regenerates MD5/SHA-1/SHA-256/SHA-512 checksums, and writes
-   `build/central/bemo-<version>-central.zip` with `dev/` at its root. It
-   requires no Portal credentials and makes no network requests.
-4. Supply `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` through your
-   secret manager or protected publishing environment, then upload:
+```sh
+central_version=0.2.0
+python3 tools/publish_central.py fetch --version "$central_version" \
+  --source build/central/release
+python3 tools/publish_central.py prepare --version "$central_version" \
+  --source build/central/release --key "$BEMO_SIGNING_KEY" --without-thinlto
+```
 
-   ```sh
-   python3 tools/publish_central.py upload
-   python3 tools/publish_central.py status --deployment "$BEMO_DEPLOYMENT_ID"
-   ```
+`fetch` checks the published release's immutability, resolves its source tag,
+verifies GitHub asset digests and the Sigstore-signed checksum list, and verifies
+both platform build attestations against that exact main-source commit and
+hosted build workflow. It records the release URL, commit and checksums in
+`build/central/release/central-release.json`. It does not compile or rebuild.
 
-   Save the UUID printed by `upload` as `BEMO_DEPLOYMENT_ID`. The upload uses
-   `USER_MANAGED`, so validation does not publish. Inspect status errors in
-   the Portal; poll `status` until `VALIDATED`. Review all four modules,
-   sources, Javadocs, and ordinary/ThinLTO native classifiers together.
-5. After reviewing the validated deployment, publish through the Portal UI or:
+The original `0.2.0` release has ordinary native classifiers, without ThinLTO.
+`--without-thinlto` prepares that historical layout. Omit it for newer releases
+with ThinLTO; incomplete classifier pairs are rejected. The default package
+build and GitHub Packages publisher continue to require ThinLTO classifiers.
 
-   ```sh
-   python3 tools/publish_central.py publish --deployment "$BEMO_DEPLOYMENT_ID"
-   python3 tools/publish_central.py status --deployment "$BEMO_DEPLOYMENT_ID"
-   ```
+`prepare` merges both platforms, rejects differing common files, signs and
+verifies every POM/JAR, regenerates MD5/SHA-1/SHA-256/SHA-512 checksums, and writes
+`build/central/bemo-<version>-central.zip` with `dev/` at its root. It requires
+no Portal credentials. The PGP key fingerprint is selected with `--key`; local
+GPG uses its agent/pinentry. In automation, `BEMO_PGP_PASSPHRASE` supplies the
+passphrase to GPG through standard input, never command arguments.
 
-   `publish` rejects any state other than `VALIDATED`. Continue checking status
-   until `PUBLISHED`, then run `python3 tools/publish_central.py verify` to
-   compare every public POM/JAR with the signed bundle. The POST acknowledges
-   a publication request, not its completion. A released version is immutable. Preserve the signed ZIP and
-   deployment ID with the source revision before announcing availability.
+Set `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` from a **Central Portal
+user token**, then upload and wait for validation:
 
-`--version`, `--source`, and `--bundle` support an explicit staged release;
-the default version comes from `.version`. Only stable `major.minor.patch`
-versions are accepted. Local GPG verification requires the signing public key
-in the local keyring. No Central upload or publication is wired into main/PR
-verification. Namespace verification, Portal validation, and the first live
-publication still require the maintainer's account and credentials.
+```sh
+python3 tools/publish_central.py upload --version "$central_version"
+# Save the returned UUID as BEMO_DEPLOYMENT_ID.
+python3 tools/publish_central.py wait --deployment "$BEMO_DEPLOYMENT_ID" --state VALIDATED
+python3 tools/publish_central.py publish --deployment "$BEMO_DEPLOYMENT_ID"
+python3 tools/publish_central.py wait --deployment "$BEMO_DEPLOYMENT_ID" --state PUBLISHED
+python3 tools/publish_central.py verify --version "$central_version"
+```
+
+Uploads use `USER_MANAGED`; `publish` requires `VALIDATED`. `wait` reports Portal
+validation errors and times out after 30 minutes by default (`--timeout` adjusts
+that limit). `status` remains available for one-shot checks. Final verification
+compares every public POM/JAR with the signed bundle. Preserve the ZIP,
+`central-release.json` and deployment UUID together. A published version is
+immutable; a successful publication POST is not proof that consumers can resolve
+it. Use `--bundle` to select a saved ZIP explicitly.
+
+### GitHub Actions
+
+The separate [Publish Maven Central workflow](../../.github/workflows/on.central.yml)
+is dispatched from `main` for an existing immutable release:
+
+```sh
+gh workflow run on.central.yml --ref main -f version=0.2.0
+```
+
+Configure these in the protected GitHub `release` environment:
+
+| Setting | Type | Contents |
+| --- | --- | --- |
+| `CENTRAL_TOKEN_USERNAME` | Secret | Portal token username |
+| `CENTRAL_TOKEN_PASSWORD` | Secret | Portal token password |
+| `BEMO_PGP_PRIVATE_KEY` | Secret | ASCII-armored private signing key |
+| `BEMO_PGP_PASSPHRASE` | Secret | Signing-key passphrase; empty for an unprotected key |
+| `BEMO_SIGNING_KEY` | Variable | Full signing-key fingerprint |
+
+The workflow authenticates the release artifacts, signs them, uploads a
+user-managed deployment, waits for validation, requests publication, waits for
+`PUBLISHED`, and checks the public bytes. It preserves the signed bundle, source
+manifest, deployment UUID and state logs as `central-<version>-<run-id>` for
+90 days, including on failure. It deletes the imported private key afterward.
+PR and main verification do not receive these credentials or run this job.
+
+If validation or publication fails after upload, use the saved deployment UUID
+with `status`, `wait`, and `publish` to resume rather than uploading a duplicate
+deployment. Namespace verification and a valid Portal token remain account setup
+requirements; the workflow cannot establish namespace ownership on your behalf.
 
 GitHub release Sigstore signatures authenticate the staged ZIPs and provenance;
 they do not replace Central's per-POM/JAR PGP signatures. See

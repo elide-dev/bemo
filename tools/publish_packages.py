@@ -24,23 +24,23 @@ REGISTRY = "https://maven.pkg.github.com/elide-dev/bemo"
 DEPLOY_GOAL = "org.apache.maven.plugins:maven-deploy-plugin:3.2.0:deploy-file"
 
 
-def artifacts(value, platform=None):
+def artifacts(value, platform=None, *, include_thinlto=True):
   names = set()
   for module in MODULES:
     prefix = f"dev/elide/bemo/bemo-{module}/{value}/bemo-{module}-{value}"
     names.update(prefix + suffix for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"))
     if platform and module in ("ffm", "native-image"):
       names.add(f"{prefix}-{platform}.jar")
-      if module == "native-image":
+      if module == "native-image" and include_thinlto:
         names.add(f"{prefix}-{platform}-thinlto.jar")
   return names
 
 
-def merge(source, destination, value):
+def merge(source, destination, value, *, include_thinlto=True):
   merged = {}
   for platform in release.PLATFORMS.values():
     bundle = source / f"bemo-{value}-{platform}-unsigned.zip"
-    required = artifacts(value, platform)
+    required = artifacts(value, platform, include_thinlto=include_thinlto)
     expected = required | {f"{name}.{algorithm}" for name in required for algorithm in CHECKSUMS}
     with zipfile.ZipFile(bundle) as archive:
       names = archive.namelist()

@@ -1,6 +1,7 @@
 """Exercise Central signing failures and the validation/publication boundary offline."""
 from pathlib import Path
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -13,8 +14,8 @@ import publish_central as central
 
 
 class CentralPublishingTest(unittest.TestCase):
-  def repository(self, source, destination, value):
-    names = set().union(*(central.packages.artifacts(value, platform)
+  def repository(self, source, destination, value, *, include_thinlto=True):
+    names = set().union(*(central.packages.artifacts(value, platform, include_thinlto=include_thinlto)
                          for platform in central.packages.release.PLATFORMS.values()))
     for name in names:
       path = destination / name
@@ -122,6 +123,109 @@ class CentralPublishingTest(unittest.TestCase):
           with self.assertRaisesRegex(RuntimeError, "VALIDATED"):
             central.publish(deployment)
           request.assert_not_called()
+
+
+  def test_older_release_without_thinlto_is_complete(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      with patch.object(central.packages, "merge", side_effect=self.repository), \
+           patch.object(central.subprocess, "run", side_effect=self.sign):
+        bundle = central.prepare(root, root / "bundle.zip", "0.2.0", "fingerprint", include_thinlto=False)
+        central.validate_bundle(bundle, "0.2.0")
+        with zipfile.ZipFile(bundle) as archive:
+          self.assertFalse(any("-thinlto.jar" in name for name in archive.namelist()))
+          self.assertEqual(sum(name.endswith((".jar", ".pom")) for name in archive.namelist()), 20)
+        with zipfile.ZipFile(bundle, "a") as archive:
+          name = next(name for name in central.packages.artifacts("0.2.0", "linux-x86_64-gnu") if name.endswith("-thinlto.jar"))
+          archive.writestr(name, b"incomplete optional classifier pair")
+        with self.assertRaisesRegex(RuntimeError, "unexpected"):
+          central.validate_bundle(bundle, "0.2.0")
+
+  def test_signing_passphrase_uses_stdin(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      with patch.object(central.packages, "merge", side_effect=self.repository), \
+           patch.object(central.subprocess, "run", side_effect=self.sign) as run, \
+           patch.dict(os.environ, {"BEMO_PGP_PASSPHRASE": "not-in-arguments"}):
+        central.prepare(root, root / "bundle.zip", "0.2.0", "fingerprint")
+      signing = [call for call in run.call_args_list if "--detach-sign" in call.args[0]]
+      self.assertTrue(signing)
+      for call in signing:
+        self.assertNotIn("not-in-arguments", call.args[0])
+        self.assertIn("--passphrase-fd", call.args[0])
+        self.assertEqual(call.kwargs["input"], b"not-in-arguments")
+
+  def test_wait_handles_validation_publication_failure_and_timeout(self):
+    deployment = "28570f16-da32-4c14-bd2e-c1acc0782365"
+    with patch.object(central, "status", side_effect=[{"deploymentState": state} for state in ("PENDING", "VALIDATING", "VALIDATED")]), \
+         patch.object(central.time, "sleep"):
+      self.assertEqual(central.wait(deployment, "VALIDATED")["deploymentState"], "VALIDATED")
+    with patch.object(central, "status", side_effect=[{"deploymentState": state} for state in ("PUBLISHING", "PUBLISHED")]), \
+         patch.object(central.time, "sleep"):
+      self.assertEqual(central.wait(deployment, "PUBLISHED")["deploymentState"], "PUBLISHED")
+    with patch.object(central, "status", return_value={"deploymentState": "FAILED", "errors": {"namespace": "not verified"}}):
+      with self.assertRaisesRegex(RuntimeError, "not verified"):
+        central.wait(deployment, "VALIDATED")
+    with patch.object(central, "status", return_value={"deploymentState": "VALIDATING"}), \
+         patch.object(central.time, "monotonic", side_effect=(0, 2)):
+      with self.assertRaises(TimeoutError):
+        central.wait(deployment, "VALIDATED", timeout=1)
+    with patch.object(central, "status", return_value={"deploymentState": "VALIDATED"}):
+      with self.assertRaisesRegex(RuntimeError, "not been requested"):
+        central.wait(deployment, "PUBLISHED")
+
+  def release_fixture(self):
+    value = "0.2.0"
+    payload = central.packages.release.expected_assets(value)
+    files = {name: name.encode() for name in payload}
+    files["SHA256SUMS"] = "".join(f"{hashlib.sha256(data).hexdigest()}  {name}\n" for name, data in sorted(files.items())).encode()
+    files.update({name + ".sigstore.json": b"sigstore" for name in list(files)})
+    release = {"immutable": True, "draft": False, "prerelease": False,
+               "html_url": "https://github.com/elide-dev/bemo/releases/tag/v0.2.0",
+               "assets": [{"name": name, "digest": "sha256:" + hashlib.sha256(data).hexdigest()} for name, data in files.items()]}
+    return release, files
+
+  def test_fetch_authenticates_existing_release_without_building(self):
+    release, files = self.release_fixture()
+    def execute(command, **kwargs):
+      if command[:3] == ["gh", "release", "download"]:
+        destination = Path(command[command.index("--dir") + 1])
+        for name, data in files.items():
+          (destination / name).write_bytes(data)
+    commit = "a" * 40
+    with tempfile.TemporaryDirectory() as directory, \
+         patch.object(central.packages.release, "gh", side_effect=(json.dumps(release), json.dumps({"object": {"type": "commit", "sha": commit}}))), \
+         patch.object(central.subprocess, "run", side_effect=execute) as run:
+      manifest = central.fetch_release(Path(directory) / "verified", "0.2.0")
+      self.assertEqual(manifest["source_commit"], commit)
+      provenance = [call.args[0] for call in run.call_args_list if call.args[0][:3] == ["gh", "attestation", "verify"]]
+      self.assertEqual(len(provenance), 2)
+      for command in provenance:
+        self.assertIn(commit, command)
+        self.assertIn("refs/heads/main", command)
+        self.assertIn("--deny-self-hosted-runners", command)
+      self.assertFalse(any(call.args[0][0] in ("cargo", "elide", "make") for call in run.call_args_list))
+
+  def test_fetch_rejects_mutable_releases_and_changed_asset_bytes(self):
+    release, files = self.release_fixture()
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      release["immutable"] = False
+      with patch.object(central.packages.release, "gh", return_value=json.dumps(release)), \
+           patch.object(central.subprocess, "run") as run:
+        with self.assertRaisesRegex(RuntimeError, "immutable"):
+          central.fetch_release(root / "verified", "0.2.0")
+        run.assert_not_called()
+      release["immutable"] = True
+      def changed_download(command, **kwargs):
+        destination = Path(command[command.index("--dir") + 1])
+        for name, data in files.items():
+          (destination / name).write_bytes(data + b"tampered")
+      with patch.object(central.packages.release, "gh", side_effect=(json.dumps(release), json.dumps({"object": {"type": "commit", "sha": "a" * 40}}))), \
+           patch.object(central.subprocess, "run", side_effect=changed_download):
+        with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
+          central.fetch_release(root / "verified", "0.2.0")
+      self.assertFalse((root / "verified").exists())
 
 
 if __name__ == "__main__":
