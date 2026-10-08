@@ -1,0 +1,69 @@
+amends "elide:project.pkl"
+import "elide:Sources.pkl" as src
+import "pkl:json" as json
+
+local versions = new json.Parser {}.parse(read("file:../../tools/versions.json").text)
+local stock = build.flags.bool("STOCK")
+name = "bemo-ktor"
+version = "0.1.0"
+
+jvm {
+  main = "dev.elide.bemo.examples.ktor.Application"
+  target = versions.jvm_release
+  java { release = versions.jvm_release }
+  features { testing = false }
+  flags {
+    "--enable-native-access=ALL-UNNAMED"
+    "-Dbemo.enabled=\(if (stock) "false" else "true")"
+  }
+}
+
+sources {
+  ["main"] = new src.SourceSetSpec {
+    paths {
+      "src/main/kotlin/**/*.kt"
+      "../shared/src/main/java/**/*.java"
+    }
+  }
+}
+
+dependencies {
+  maven {
+    runtimeOnly {
+      "../../build/examples/bemo-native.jar"
+      "../../build/examples/bemo-example-resources.jar"
+    }
+    packages {
+      "../../build/examples/bemo-api.jar"
+      "../../build/examples/bemo-ffm.jar"
+      "../../build/examples/bemo-netty.jar"
+      "../../build/examples/bemo-native-image.jar"
+      "org.graalvm.sdk:nativeimage:\(versions.graalvm_sdk)"
+      "org.graalvm.sdk:word:\(versions.graalvm_sdk)"
+      "io.ktor:ktor-server-netty-jvm:\(versions.ktor)"
+      "ch.qos.logback:logback-classic:1.5.32"
+      "org.jspecify:jspecify:\(versions.jspecify)"
+      // Keep all framework transports on Bemo's Netty version.
+      "io.netty:netty-common:\(versions.netty)"
+      "io.netty:netty-buffer:\(versions.netty)"
+      "io.netty:netty-transport:\(versions.netty)"
+      "io.netty:netty-resolver:\(versions.netty)"
+      "io.netty:netty-resolver-dns:\(versions.netty)"
+      "io.netty:netty-handler:\(versions.netty)"
+      "io.netty:netty-codec:\(versions.netty)"
+      "io.netty:netty-codec-http3:\(versions.netty)"
+      "io.netty:netty-codec-base:\(versions.netty)"
+      "io.netty:netty-codec-compression:\(versions.netty)"
+      "io.netty:netty-codec-http:\(versions.netty)"
+      "io.netty:netty-codec-http2:\(versions.netty)"
+      "io.netty:netty-codec-dns:\(versions.netty)"
+      "io.netty:netty-transport-native-unix-common:\(versions.netty)"
+      "io.netty:netty-transport-classes-epoll:\(versions.netty)"
+      "io.netty:netty-transport-classes-kqueue:\(versions.netty)"
+    }
+  }
+}
+
+scripts {
+  ["native"] = "python3 ../../tools/examples.py native --project ktor"
+}

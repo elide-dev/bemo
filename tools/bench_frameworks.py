@@ -117,7 +117,7 @@ def measure(args, case, repetition, output):
     tls_port = listener.getsockname()[1]
   path, tls, compress, size = WORKLOADS[args.workload]
   selected_port = tls_port if tls else port
-  prop = "server.port" if project == "spring-boot" else "micronaut.server.port"
+  prop = "server.port" if project in ("spring-boot", "ktor") else "micronaut.server.port"
   properties = [f"-Dbemo.enabled={str(transport == 'bemo').lower()}", f"-D{prop}={port}",
                 "-Dreactor.netty.ioWorkerCount=2", f"-Dbemo.tls.port={tls_port}",
                 f"-Dbemo.tls.enabled={str(tls).lower()}", f"-Dbemo.gzip.level={args.gzip_level}"]

@@ -285,6 +285,8 @@ def fmt(check=False):
 
 
 def check():
+  run(sys.executable, ROOT / "tools/test_publish_packages.py")
+  run(sys.executable, ROOT / "tools/test_publish_central.py")
   run(sys.executable, ROOT / "tools/test_seam.py")
   run(sys.executable, ROOT / "tools/test_bitcode.py")
   run(sys.executable, ROOT / "tools/test_setup_llvm.py")

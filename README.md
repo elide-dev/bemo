@@ -176,7 +176,7 @@ Test XML, coverage, and continuous CPU/RPS/RSS benchmarks are described in
 ASAN, TSAN, Miri, and bounded native fuzzing are described in
 [native safety verification](docs/native-safety.md).
 
-Minimal Spring Boot and Micronaut applications support JVM and Native Image builds
+Minimal Spring Boot, Micronaut, and Ktor applications support JVM and Native Image builds
 with Elide, Maven, and Gradle, including native gzip, TLS, and TLS+gzip workloads.
 See [the framework examples guide](docs/framework-examples.md).
 

@@ -1,0 +1,81 @@
+plugins {
+  id 'application'
+  id 'org.jetbrains.kotlin.jvm' version '2.4.20'
+}
+
+group = 'dev.elide.bemo.examples'
+version = '0.1.0'
+
+def pins = new groovy.json.JsonSlurper().parse(file('../../tools/versions.json'))
+def bemoVersion = file('../../.version').text.trim()
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def arch = System.getProperty('os.arch') in ['aarch64', 'arm64'] ? 'aarch64' : 'x86_64'
+def platformName = osName.contains('mac') ? 'osx' : osName.contains('windows') ? 'windows' : 'linux'
+def classifier = "${platformName}-${arch}" + (platformName == 'linux' ? '-gnu' : '')
+def sharedTools = file('../../tools/examples.py')
+def nativeOutput = file('../../build/examples/native/gradle/ktor' + (platformName == 'windows' ? '.exe' : ''))
+
+repositories {
+  maven { url = uri('../../build/examples/maven') }
+  mavenCentral()
+}
+
+configurations.configureEach { resolutionStrategy.cacheChangingModulesFor 0, 'seconds' }
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+  compilerOptions.jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_22
+}
+
+sourceSets.main.java.srcDir '../shared/src/main/java'
+sourceSets.main.resources.srcDir '../shared/src/main/resources'
+tasks.withType(JavaCompile).configureEach {
+  options.release = pins.jvm_release
+  options.encoding = 'UTF-8'
+  options.compilerArgs.add('-parameters')
+}
+
+dependencies {
+  implementation enforcedPlatform("io.netty:netty-bom:${pins.netty}")
+  implementation("dev.elide.bemo:bemo-netty:${bemoVersion}") { changing = true }
+  implementation("dev.elide.bemo:bemo-ffm:${bemoVersion}") { changing = true }
+  implementation("dev.elide.bemo:bemo-native-image:${bemoVersion}") { changing = true }
+  implementation "org.graalvm.sdk:nativeimage:${pins.graalvm_sdk}"
+  implementation "org.graalvm.sdk:word:${pins.graalvm_sdk}"
+  runtimeOnly("dev.elide.bemo:bemo-ffm:${bemoVersion}:${classifier}") { changing = true }
+  implementation "io.ktor:ktor-server-netty-jvm:${pins.ktor}"
+  runtimeOnly 'ch.qos.logback:logback-classic:1.5.32'
+}
+
+application {
+  mainClass = 'dev.elide.bemo.examples.ktor.Application'
+  applicationDefaultJvmArgs = [
+    '--enable-native-access=ALL-UNNAMED',
+    "-Dbemo.enabled=${providers.gradleProperty('bemo.enabled').getOrElse('true')}",
+    "-Dbemo.tls.enabled=${providers.gradleProperty('bemo.tls.enabled').getOrElse('true')}",
+    "-Dbemo.tls.port=${providers.gradleProperty('bemo.tls.port').getOrElse('8443')}",
+    "-Dbemo.gzip.level=${providers.gradleProperty('bemo.gzip.level').getOrElse('1')}"
+  ]
+}
+
+tasks.register('writeRuntimeClasspath') {
+  dependsOn classes
+  def destination = layout.buildDirectory.file('runtime.classpath')
+  inputs.files(sourceSets.main.runtimeClasspath)
+  outputs.file(destination)
+  doLast { destination.get().asFile.text = sourceSets.main.runtimeClasspath.asPath }
+}
+
+// Share C linkage flags with the Maven and Elide builds.
+tasks.register('nativeCompile', Exec) {
+  dependsOn writeRuntimeClasspath
+  commandLine 'python3', sharedTools, 'native', '--project', 'ktor',
+      '--builder', 'gradle', '--skip-build'
+}
+
+tasks.register('nativeRun', Exec) {
+  dependsOn nativeCompile
+  commandLine nativeOutput, "-Dbemo.enabled=${providers.gradleProperty('bemo.enabled').getOrElse('true')}",
+      "-Dbemo.tls.enabled=${providers.gradleProperty('bemo.tls.enabled').getOrElse('true')}",
+      "-Dbemo.tls.port=${providers.gradleProperty('bemo.tls.port').getOrElse('8443')}",
+      "-Dbemo.gzip.level=${providers.gradleProperty('bemo.gzip.level').getOrElse('1')}"
+}

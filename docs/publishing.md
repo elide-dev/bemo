@@ -71,8 +71,8 @@ The Maven group is `dev.elide.bemo` and the repository is `elide-dev/bemo`.
 The current Maven registry is GitHub Packages at
 `https://maven.pkg.github.com/elide-dev/bemo`.
 Central namespace ownership must be verified before a release.
-The initial `.version` is a snapshot, intentionally unsuitable for a Central
-release. Qualification targets glibc 2.39/Linux x86-64 and macOS 15/ARM64;
+Central accepts stable release versions; snapshot publication stays in GitHub
+Packages. Qualification targets glibc 2.39/Linux x86-64 and macOS 15/ARM64;
 packaging verifies binary requirements and CI runs consumers on those builders.
 The first signed release and its consumer provenance verification still require
 a successful merged-source release run.
@@ -119,35 +119,79 @@ or use a workflow token granted access to this package:
 See [GitHub's Maven registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry)
 for authentication and repository access.
 
-## Release preparation
+## Maven Central
 
-1. Set `.version` to the release version and keep Cargo's workspace version in
-   sync. Confirm repository, licensing, developer, and SCM metadata.
-2. Run the verification graph and review native classifier coverage. Establish
-   the Linux glibc floor and test release binaries on each supported platform.
-3. Gather the staged repositories from the platform build artifacts. Merge
-   native classifiers into one repository; common POMs and Java artifacts should
-   be identical. Investigate differing common files instead of overwriting them.
-4. Sign each POM and JAR with the project's PGP key using detached armored
-   signatures (`gpg --armor --detach-sign <file>`). The stage includes MD5,
-   SHA-1, SHA-256, and SHA-512 checksums. Checksums are compatibility metadata;
-   PGP signatures establish publisher authenticity.
-5. ZIP the merged repository with `dev/` at the archive root, then validate it
-   through the Central Publisher Portal under the verified namespace. Publish
-   only after reviewing the deployment. Snapshot versions require a snapshot
-   repository, not Central's release endpoint.
-6. Tag the source revision and record the matching Cargo Git revision and Maven
-   version in Elide's dependency declarations. Publish one version across all
-   Java artifacts and classifiers.
+Use the Central Publisher Portal API, keeping Cargo and Elide as the producers
+of the artifacts. The retired OSSRH endpoints and a Maven compilation lifecycle
+are unnecessary here. `tools/publish_central.py` reuses the checked platform
+merge, signs the existing artifacts, and exposes separate `prepare`, `upload`,
+`status`, `publish`, and `verify` operations. See the
+[Publisher API](https://central.sonatype.org/publish/publish-portal-api/).
 
-Signing credentials and Central tokens are not required for builds or tests.
-GitHub releases publish the tested, unsigned Maven staging ZIPs with provenance
-and Sigstore signatures. Maven Central publication remains a separate operation:
-Sigstore signatures do not replace Central's per-JAR/POM PGP signatures.
-See [release automation and verification](releases.md).
+Before the first release, a maintainer must verify the `dev.elide.bemo` namespace
+(or an owning parent namespace) in the Portal, generate a Portal user token,
+and make the signing key's public key available on a
+[Central-supported key server](https://central.sonatype.org/publish/requirements/gpg/).
+Keep the private signing key and token outside the repository and PR workflows.
+The Portal token is distinct from a GitHub Packages token.
 
-See [Central's artifact requirements](https://central.sonatype.org/publish/requirements/)
-and [Portal upload layout](https://central.sonatype.org/publish/publish-portal-upload/).
+1. Set `.version` to the stable version and keep Cargo's workspace version in
+   sync. Review the POM licensing, developer, and SCM metadata.
+2. Complete the merged-main verification graph and gather both tested platform
+   bundles and their provenance files into `build/release-input`. Set
+   `GITHUB_REPOSITORY=elide-dev/bemo` and `GITHUB_SHA` to that tested revision,
+   then run `python3 tools/release.py stage` to verify its main-source
+   attestations. Use the release workflow's staged output, or download its
+   matching build artifacts; do not mix runs or rebuild for publication.
+3. With the project's PGP key loaded into GPG, prepare the signed bundle:
+
+   ```sh
+   python3 tools/publish_central.py prepare --key "$BEMO_SIGNING_KEY"
+   ```
+
+   `BEMO_SIGNING_KEY` is the signing key fingerprint, not key material. GPG
+   uses its normal agent/pinentry for unlocking the key. Preparation merges
+   both platforms, rejects differing common files, signs and verifies every
+   POM/JAR, regenerates MD5/SHA-1/SHA-256/SHA-512 checksums, and writes
+   `build/central/bemo-<version>-central.zip` with `dev/` at its root. It
+   requires no Portal credentials and makes no network requests.
+4. Supply `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` through your
+   secret manager or protected publishing environment, then upload:
+
+   ```sh
+   python3 tools/publish_central.py upload
+   python3 tools/publish_central.py status --deployment "$BEMO_DEPLOYMENT_ID"
+   ```
+
+   Save the UUID printed by `upload` as `BEMO_DEPLOYMENT_ID`. The upload uses
+   `USER_MANAGED`, so validation does not publish. Inspect status errors in
+   the Portal; poll `status` until `VALIDATED`. Review all four modules,
+   sources, Javadocs, and ordinary/ThinLTO native classifiers together.
+5. After reviewing the validated deployment, publish through the Portal UI or:
+
+   ```sh
+   python3 tools/publish_central.py publish --deployment "$BEMO_DEPLOYMENT_ID"
+   python3 tools/publish_central.py status --deployment "$BEMO_DEPLOYMENT_ID"
+   ```
+
+   `publish` rejects any state other than `VALIDATED`. Continue checking status
+   until `PUBLISHED`, then run `python3 tools/publish_central.py verify` to
+   compare every public POM/JAR with the signed bundle. The POST acknowledges
+   a publication request, not its completion. A released version is immutable. Preserve the signed ZIP and
+   deployment ID with the source revision before announcing availability.
+
+`--version`, `--source`, and `--bundle` support an explicit staged release;
+the default version comes from `.version`. Only stable `major.minor.patch`
+versions are accepted. Local GPG verification requires the signing public key
+in the local keyring. No Central upload or publication is wired into main/PR
+verification. Namespace verification, Portal validation, and the first live
+publication still require the maintainer's account and credentials.
+
+GitHub release Sigstore signatures authenticate the staged ZIPs and provenance;
+they do not replace Central's per-POM/JAR PGP signatures. See
+[artifact requirements](https://central.sonatype.org/publish/requirements/),
+[Portal bundle layout](https://central.sonatype.org/publish/publish-portal-upload/),
+and [release automation](releases.md).
 
 Native Image additionally stages `<platform>-thinlto` classifiers. Their
 archive, target contracts, and manifest are verified from the staged JAR through

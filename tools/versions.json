@@ -33,5 +33,7 @@
   "myna": {
     "repository": "https://github.com/elide-dev/myna.git",
     "revision": "34a0213e0ce05a7d46d351e2208ed9518b802a98"
-  }
+  },
+  "ktor": "3.6.0",
+  "kotlin": "2.4.20"
 }

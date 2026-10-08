@@ -14,7 +14,7 @@ import time
 
 import build
 
-PROJECTS = {"spring-boot": "spring", "micronaut": "micronaut"}
+PROJECTS = {"spring-boot": "spring", "micronaut": "micronaut", "ktor": "ktor"}
 STAGE = build.BUILD / "examples"
 
 
@@ -83,7 +83,8 @@ def runtime_classpath(project, builder):
   classes = "target/classes" if builder == "maven" else ".dev/jvm/classes/main/java"
   dependencies = (directory / classpath_file).read_text().strip()
   resources = [] if builder == "maven" else [str(directory / "src/main/resources")]
-  return os.pathsep.join([str(directory / classes), *resources, dependencies])
+  kotlin = [str(directory / ".dev/jvm/classes/main/kotlin")] if builder == "elide" and project == "ktor" else []
+  return os.pathsep.join([str(directory / classes), *kotlin, *resources, dependencies])
 
 
 def native_binary(project, builder):
@@ -234,7 +235,7 @@ def smoke(builder="elide", native=False, projects=None):
       with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         tls_port = listener.getsockname()[1]
-      port_property = "server.port" if project == "spring-boot" else "micronaut.server.port"
+      port_property = "server.port" if project in ("spring-boot", "ktor") else "micronaut.server.port"
       properties = [f"-Dbemo.enabled={str(enabled).lower()}", f"-D{port_property}={port}",
                     "-Dreactor.netty.ioWorkerCount=2", f"-Dbemo.tls.port={tls_port}"]
       command = ([native_binary(project, builder), *properties] if native else

@@ -1,12 +1,13 @@
-# Spring Boot and Micronaut examples
+# Spring Boot, Micronaut, and Ktor examples
 
-`examples/spring-boot` and `examples/micronaut` each contain an `elide.pkl`,
-`pom.xml`, Gradle build, and pinned Gradle wrapper beside the same Java sources.
-Both expose `GET /plaintext`, returning `Hello, World!` with `Content-Type:
-text/plain`, on loopback port 8080. Both also serve the same framework routes
+`examples/spring-boot`, `examples/micronaut`, and `examples/ktor` each contain
+an `elide.pkl`, `pom.xml`, Gradle build, and pinned Gradle wrapper beside shared
+application sources (Java for Spring/Micronaut, Kotlin for Ktor).
+All expose `GET /plaintext`, returning `Hello, World!` with `Content-Type:
+text/plain`, on loopback port 8080. All also serve the same framework routes
 over HTTPS on loopback port 8443.
 
-Both applications run on the JVM and as GraalVM Native Images. Bemo is enabled
+All applications run on the JVM and as GraalVM Native Images. Bemo is enabled
 by default. JVM applications use FFM and the platform shared library; native
 executables use the C API and a statically linked Bemo archive. The shared
 `BemoRuntime` factory selects the binding without changing the HTTP handler.
@@ -22,6 +23,16 @@ acceptor and worker groups share one binding for socket ownership transfer.
 The compression workloads additionally invoke Bemo's reusable native gzip
 encoder, and the HTTPS listener uses `NativeSslContext` over Rustls/aws-lc-rs.
 The frameworks retain HTTP parsing, routing, and response encoding.
+
+Ktor uses its Netty engine's `configureBootstrap` hook to install Bemo acceptor
+and worker groups with one shared binding and a `NativeServerSocketChannel`
+factory. `shareWorkGroup` keeps coroutine calls on the worker loops. The HTTPS
+server uses the same Ktor routes and inserts the shared TLS context through
+`channelPipelineConfig`. Each engine owns and stops its groups before the TLS
+workload is released. HTTP/2 is disabled for parity with the existing examples.
+Ktor and Kotlin versions are pinned in `tools/versions.json`; the Gradle Kotlin
+plugin and Maven Kotlin compiler use the same Kotlin version as Elide.
+See [Ktor's Netty configuration](https://api.ktor.io/ktor-server-netty/io.ktor.server.netty/-netty-application-engine/-configuration/index.html).
 
 ## Workload endpoints
 
@@ -94,18 +105,18 @@ is used even when its version has not changed.
 
 ## JVM builds
 
-Use either example directory in these commands.
+Use any example directory in these commands.
 
 ### Elide
 
 ```sh
 make examples-build # from the repository root
-cd examples/spring-boot # or examples/micronaut
+cd examples/spring-boot # or examples/micronaut or examples/ktor
 elide run
 elide -f STOCK run # stock baseline; run separately
 ```
 
-After staging, `elide install` and `elide build` work inside either project.
+After staging, `elide install` and `elide build` work inside any project.
 Elide 1.5.4 uses an external JVM compiler for Micronaut's annotation processors.
 Its manifests name configuration files directly because that Elide version
 does not copy application resources into the compiled output.
@@ -113,7 +124,7 @@ does not copy application resources into the compiled output.
 ### Maven
 
 ```sh
-cd examples/spring-boot # or examples/micronaut
+cd examples/spring-boot # or examples/micronaut or examples/ktor
 mvn -Dmaven.repo.local=../../build/examples/m2 package
 mvn -Dmaven.repo.local=../../build/examples/m2 exec:exec
 mvn -Dmaven.repo.local=../../build/examples/m2 -Dbemo.enabled=false exec:exec
@@ -122,7 +133,7 @@ mvn -Dmaven.repo.local=../../build/examples/m2 -Dbemo.enabled=false exec:exec
 ### Gradle
 
 ```sh
-cd examples/spring-boot # or examples/micronaut
+cd examples/spring-boot # or examples/micronaut or examples/ktor
 ./gradlew build
 ./gradlew run
 ./gradlew -Pbemo.enabled=false run
@@ -145,11 +156,11 @@ Stock mode does not initialize Bemo.
 All three build paths share the native pipeline in `tools/examples.py`. It
 runs Spring AOT processing and compiles the generated initializers with Elide;
 Micronaut supplies its generated bean definitions and GraalVM metadata during
-normal annotation processing. Both then link the staged optimized Bemo archive
+normal annotation processing. All then link the staged optimized Bemo archive
 with Native Image. Netty is initialized at runtime so logging state is not
 captured in the image heap.
 
-Build both examples with Elide from the repository root:
+Build all examples with Elide from the repository root:
 
 ```sh
 make examples-native
@@ -204,7 +215,7 @@ python3 tools/examples.py test --builder gradle
 python3 tools/examples.py test --builder gradle --native
 ```
 
-Each command builds and starts both frameworks with Bemo and stock Netty,
+Each command builds and starts all frameworks with Bemo and stock Netty,
 checks every endpoint's exact decoded response and content type, verifies gzip
 members and CRCs, tests negotiation and TLS requirements, validates TLS 1.2 and
 1.3 using the fixture trust anchor, and exercises concurrent requests and
@@ -287,7 +298,7 @@ python3 tools/bench_frameworks.py --server-cpus 12-17 --client-cpus 18-21 \
   --workload tls-compression --gzip-level 1 --output build/reports/framework-tls-gzip
 ```
 
-Each invocation runs both frameworks, both runtimes, and both transport modes.
+Each invocation runs all frameworks, both runtimes, and both transport modes.
 Non-TLS measurements disable the HTTPS listener. Gzip levels are matched across
 providers; these comparisons do not repeat the earlier level-1 versus level-6
 compression tuning comparison.
@@ -308,3 +319,18 @@ TLS benchmark clients now use the shared TLS 1.3 / AES-128-GCM policy. Run
 `make bench-prepare` before TLS benchmarking to build the Linux OpenSSL client
 policy shim; it requires OpenSSL development headers. The benchmark runner
 checks negotiation during readiness and records the policy and shim hash.
+
+## Ktor verification
+
+After `make examples-prepare`, build and smoke-test Ktor through each tool:
+
+```sh
+python3 tools/examples.py test --project ktor
+python3 tools/examples.py test --project ktor --builder maven
+python3 tools/examples.py test --project ktor --builder gradle
+```
+
+Add `--native` to each command for a statically linked Native Image. These
+checks cover Bemo and stock Netty, HTTP, gzip negotiation, TLS 1.2/1.3,
+concurrent requests, keep-alive, and native workload reclamation. They do not
+run benchmarks. Ktor uses `-Dserver.port` to override the HTTP listener.
