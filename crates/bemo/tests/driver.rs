@@ -1605,3 +1605,83 @@ fn listeners_reject_negative_backlogs_and_closed_drivers_reject_sockets() {
   );
   assert!(other.try_shutdown(Duration::ZERO).unwrap());
 }
+
+#[cfg(unix)]
+#[test]
+#[cfg_attr(miri, ignore = "real sockets are unavailable under miri")]
+fn borrowed_vectors_handle_partial_writes_backpressure_and_owned_fallback() {
+  let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+  let client = socket2::Socket::from(TcpStream::connect(listener.local_addr().unwrap()).unwrap());
+  client.set_send_buffer_size(4096).unwrap();
+  let (mut peer, _) = listener.accept().unwrap();
+  peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+  let mut driver = driver(8);
+  let connection = driver.attach(client).unwrap();
+  let left = vec![11; 65536];
+  let right = vec![22; 65536];
+  let regions = [std::io::IoSlice::new(&left), std::io::IoSlice::new(&right)];
+  assert!(driver.try_send_vectored(&connection, &[]).is_err());
+  let mut expected = Vec::new();
+  let mut partial = false;
+  let mut blocked = false;
+  for _ in 0..1024 {
+    match driver.try_send_vectored(&connection, &regions).unwrap() {
+      Some(sent) if sent > 0 => {
+        assert!(sent <= left.len() + right.len());
+        partial |= sent < left.len() + right.len();
+        expected.extend_from_slice(&left[..sent.min(left.len())]);
+        if sent > left.len() {
+          expected.extend_from_slice(&right[..sent - left.len()]);
+        }
+      }
+      _ => {
+        blocked = true;
+        break;
+      }
+    }
+  }
+  assert!(blocked, "nonblocking writes must yield on backpressure");
+  assert!(partial, "small send window exercises region advancement");
+  assert_eq!(driver.outstanding(), 0, "borrowed sends create no completion or lease");
+  let tail = vec![33; 2 * 1024 * 1024];
+  let budget = Budget::new(tail.len());
+  let mut storage = Buffer::new(tail.len(), budget.clone()).unwrap();
+  storage.write(0, &tail).unwrap();
+  let mut id = driver.send(&connection, storage.freeze()).unwrap();
+  assert!(
+    driver.try_send_vectored(&connection, &regions).unwrap().is_none(),
+    "pending owned writes preserve order"
+  );
+  expected.extend_from_slice(&tail);
+  let length = expected.len();
+  let reader = std::thread::spawn(move || {
+    let mut received = vec![0; length];
+    peer.read_exact(&mut received).unwrap();
+    received
+  });
+  let mut remaining = tail.len();
+  loop {
+    let Event::Sent {
+      id: sent,
+      result,
+      buffer,
+    } = next(&mut driver)
+    else {
+      panic!("owned fallback completion");
+    };
+    assert_eq!(sent, id);
+    let count = result.unwrap();
+    assert!(count > 0 && count <= remaining);
+    remaining -= count;
+    if remaining == 0 {
+      drop(buffer);
+      break;
+    }
+    let rest = buffer.slice(count..buffer.as_ref().len()).unwrap();
+    drop(buffer);
+    id = driver.send(&connection, rest).unwrap();
+  }
+  assert_eq!(reader.join().unwrap(), expected);
+  drop(driver);
+  assert_eq!(budget.used(), 0);
+}

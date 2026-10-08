@@ -19,6 +19,8 @@ use crate::buffer::{Budget, Buffer, FrozenBuffer};
 pub mod engine;
 
 const MAX_OUTPUT: usize = 1024 * 1024;
+/// Bound application work per transition while allowing Rustls to fragment records internally.
+pub const MAX_WRITE: usize = 128 * 1024;
 
 /// Work requested at the next TLS transition. Unaccepted writes remain owned by the caller.
 #[derive(Clone, Copy)]
@@ -27,7 +29,7 @@ pub enum Action<'a> {
   Continue,
   /// All previously encoded handshake bytes have completed transport writes.
   Transmitted,
-  /// Encrypt up to one plaintext record when the handshake permits it.
+  /// Encrypt up to MAX_WRITE plaintext bytes as an ordered record batch when the handshake permits it.
   Write(&'a [u8]),
   /// Queue close-notify when application writes are permitted.
   Close,
@@ -190,17 +192,21 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
     }
     ConnectionState::WriteTraffic(mut traffic) => {
       step.state = State::Ready;
-      let mut encrypt = |output: &mut [u8]| match action {
-        Action::Write(bytes) => traffic.encrypt(&bytes[..bytes.len().min(16384)], output),
-        Action::Close => traffic.queue_close_notify(output),
-        _ => unreachable!(),
+      let mut write_length = match action {
+        Action::Write(bytes) => bytes.len().min(MAX_WRITE),
+        _ => 0,
       };
       if matches!(action, Action::Write(bytes) if !bytes.is_empty()) || matches!(action, Action::Close) {
         let mut buffer: Option<Buffer> = None;
         let mut capacity = 0;
         loop {
           let output = buffer.as_mut().map_or(&mut [][..], Buffer::ensure_init);
-          match encrypt(output) {
+          let encrypted = match action {
+            Action::Write(bytes) => traffic.encrypt(&bytes[..write_length], output),
+            Action::Close => traffic.queue_close_notify(output),
+            _ => unreachable!(),
+          };
+          match encrypted {
             Ok(length) => {
               if let Some(mut buffer) = buffer {
                 // SAFETY: Encryption received fully initialized capacity and returned the length written.
@@ -215,13 +221,22 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
               // A size probe does not encrypt payload, but may queue a key update before retry.
               capacity = size.required_size;
               drop(buffer.take());
-              buffer = Some(Buffer::new(capacity, budget.clone())?);
+              match Buffer::new(capacity, budget.clone()) {
+                Ok(storage) => buffer = Some(storage),
+                Err(error) if error.kind() == io::ErrorKind::OutOfMemory && write_length > 16384 => {
+                  // Preserve the single-record path for owners whose remaining budget cannot
+                  // afford a batch. The failed size probe consumed no application bytes.
+                  write_length = (write_length / 2).max(16384);
+                  capacity = 0;
+                }
+                Err(error) => return Err(error),
+              }
             }
             Err(error) => return Err(tls_error(error)),
           }
         }
-        if let Action::Write(bytes) = action {
-          step.accepted = bytes.len().min(16384);
+        if let Action::Write(_) = action {
+          step.accepted = write_length;
         }
       }
     }

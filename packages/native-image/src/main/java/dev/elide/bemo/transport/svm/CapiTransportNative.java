@@ -513,6 +513,40 @@ public final class CapiTransportNative implements TransportNative {
         source.remaining());
   }
 
+  private static final ThreadLocal<long[]> INLINE_REGIONS =
+      ThreadLocal.withInitial(() -> new long[128]);
+
+  @Override
+  public boolean supportsInlineVectoredWrites() {
+    return true;
+  }
+
+  @Override
+  public long socketSendInlineVectored(
+      long workload, long driver, long socket, ByteBuffer[] sources, int count) {
+    if (count < 1 || count > 64 || count > sources.length) return -1;
+    long[] regions = INLINE_REGIONS.get();
+    long total = 0;
+    for (int i = 0; i < count; i++) {
+      ByteBuffer source = sources[i];
+      if (!source.isDirect() || !source.hasRemaining()) return -1;
+      total += source.remaining();
+      if (total > 128 * 1024) return -1;
+      regions[i * 2] = MemorySegment.ofBuffer(source).address();
+      regions[i * 2 + 1] = source.remaining();
+    }
+    try (PinnedObject pinned = PinnedObject.create(regions)) {
+      return BemoNatives.elide_transport_socket_send_inline_vectored(
+          workload,
+          driver,
+          socket,
+          WordFactory.pointer(pinned.addressOfArrayElement(0).rawValue()),
+          count);
+    } finally {
+      java.lang.ref.Reference.reachabilityFence(sources);
+    }
+  }
+
   private static long socketSendGathered0(
       long workload, long driver, long socket, Pointer regions, int count) {
     return BemoNatives.elide_transport_socket_send_gathered(

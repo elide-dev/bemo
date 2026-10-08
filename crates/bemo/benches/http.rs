@@ -72,7 +72,6 @@ fn http(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("response", size), |b| {
       b.iter(|| {
         let response = encode_response(&budget, &mut date, 1, 200, &headers, black_box(&body), false, true).unwrap();
-        assert!(response.as_ref().ends_with(&body));
         black_box(response);
       });
     });

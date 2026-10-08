@@ -254,6 +254,17 @@ class BackendTransport implements TransportNative {
   }
 
   @Override
+  public boolean supportsInlineVectoredWrites() {
+    return delegate.supportsInlineVectoredWrites();
+  }
+
+  @Override
+  public long socketSendInlineVectored(
+      long workload, long driver, long socket, ByteBuffer[] sources, int count) {
+    return delegate.socketSendInlineVectored(workload, driver, socket, sources, count);
+  }
+
+  @Override
   public boolean supportsGatheredWrites() {
     return delegate.supportsGatheredWrites();
   }

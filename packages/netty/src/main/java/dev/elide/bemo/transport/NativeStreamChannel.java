@@ -44,6 +44,18 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
   private int sentLength;
   private final long[] sendRegions = new long[64 * 3];
   private final @Nullable NativeByteBuf[] sendBuffers = new NativeByteBuf[64];
+  private boolean borrowDirect;
+  private int borrowedBytes;
+  private final ChannelOutboundBuffer.MessageProcessor collectBorrowed =
+      message -> {
+        ByteBuf bytes = (ByteBuf) message;
+        borrowDirect &=
+            bytes.refCnt() == 1
+                && bytes.isDirect()
+                && (!(bytes instanceof NativeByteBuf nativeBytes) || !nativeBytes.isFrozen());
+        borrowedBytes += Math.min(bytes.readableBytes(), 128 * 1024 - borrowedBytes);
+        return borrowDirect && borrowedBytes < 128 * 1024;
+      };
   private int sendRegionCount;
   private int sendRegionBytes;
   private final ChannelOutboundBuffer.MessageProcessor collectSendRegions = this::collectSendRegion;
@@ -541,11 +553,21 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
         handle = nativeBytes.freeze();
         offset = bytes.readerIndex();
       } else {
-        long written = io().trySendInline(workload, socket, buffers, count, sentLength);
+        borrowDirect = io().api.supportsInlineVectoredWrites();
+        borrowedBytes = 0;
+        if (borrowDirect) {
+          try {
+            outbound.forEachFlushedMessage(collectBorrowed);
+          } catch (Exception error) {
+            throw new IllegalStateException("Cannot inspect borrowed writes", error);
+          }
+        }
+        long written =
+            io().trySendInline(workload, socket, buffers, count, sentLength, borrowDirect);
         if (written < 0) throw NativeTransportException.operation("send", written);
         if (written > sentLength) throw new NativeTransportException("Invalid inline send length");
         if (written > 0) {
-          TransportEvents.copy(this, "tcp-write", (int) written);
+          if (!borrowDirect) TransportEvents.copy(this, "tcp-write", (int) written);
           advanceWritten(outbound, written);
           if (--spins == 0) {
             eventLoop().execute(() -> ((NativeUnsafe) unsafe()).resumeWrites());

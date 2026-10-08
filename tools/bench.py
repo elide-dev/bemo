@@ -119,6 +119,23 @@ def read_json(stream, timeout):
   return json.loads(result.get(timeout=timeout))
 
 
+def validate_server_ready(ready, transport, tls_provider, tls, backend):
+  expected_tls = tls_provider if tls else "none"
+  driver = ready.get("driver")
+  if transport == "bemo":
+    expected = {0: {"io-uring", "epoll", "kqueue", "iocp"},
+                1: {"epoll", "kqueue"}, 2: {"io-uring"}, 3: {"iocp"}}[backend]
+    driver_matches = driver in expected
+  else:
+    driver_matches = driver == transport
+  if ready.get("tls_provider") != expected_tls or not driver_matches or ready.get("auto_fallback"):
+    raise RuntimeError("Unexpected comparison transport/TLS provider")
+  if transport in ("epoll", "kqueue"):
+    expected_channel = "io.netty.channel." + transport + "." + ("Epoll" if transport == "epoll" else "KQueue") + "ServerSocketChannel"
+    if ready.get("server_channel") != expected_channel:
+      raise RuntimeError("Unexpected comparison server channel")
+
+
 def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="auto", backend=0,
             http_provider="native", runtime="native-image"):
   tls, gzip, size = CASES[case]
@@ -160,13 +177,7 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
     try:
       ready = read_json(server.stdout, 60)
       if not native_http:
-        expected_tls = tls_provider if tls else "none"
-        if ready.get("tls_provider") != expected_tls or ready.get("driver") != transport or ready.get("auto_fallback"):
-          raise RuntimeError("Unexpected comparison transport/TLS provider")
-        if transport in ("epoll", "kqueue"):
-          expected_channel = "io.netty.channel." + transport + "." + ("Epoll" if transport == "epoll" else "KQueue") + "ServerSocketChannel"
-          if ready.get("server_channel") != expected_channel:
-            raise RuntimeError("Unexpected comparison server channel")
+        validate_server_ready(ready, transport, tls_provider, tls, backend)
       log.write(json.dumps(ready) + "\n")
       log.flush()
       command = [*java_args, "TransportBenchmark", *inputs, str(rounds), str(warmup),

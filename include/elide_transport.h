@@ -119,10 +119,14 @@ typedef struct {
 } elide_transport_receive_result_t;
 int32_t elide_transport_socket_receive_new_result(uint64_t workload, uint64_t driver, uint64_t socket, uint64_t owner, uint64_t capacity, elide_transport_receive_result_t *output);
 uint64_t elide_transport_socket_send(uint64_t workload, uint64_t driver, uint64_t socket, uint64_t buffer, uint64_t offset, uint64_t length);
-/* One nonblocking polling-backend send of 1..131072 borrowed bytes. Returns bytes sent,
+/* One nonblocking Unix send of 1..131072 borrowed bytes. Returns bytes sent,
  * 0 for backpressure/unsupported backend, or a negative transport error. No operation or
  * completion is created; source is not retained. Serialize source writes with this call. */
 int64_t elide_transport_socket_send_inline(uint64_t workload, uint64_t driver, uint64_t socket, const uint8_t *source, uint64_t length);
+/* Borrow 1..64 native-endian (address, nonzero length) pairs, totalling at most 131072 bytes.
+ * Returns bytes sent, 0 for fallback, or a negative error. No address is retained after return.
+ * All ranges must stay readable, alive, and free of concurrent writes until return. */
+int64_t elide_transport_socket_send_inline_vectored(uint64_t workload, uint64_t driver, uint64_t socket, const uint64_t *regions, uint32_t count);
 /* Additive gathered send: 1..64 native-endian triples (frozen handle, offset, nonzero length).
  * Descriptors are borrowed only during this call; storage is leased until native completion.
  * Release of the original handles does not retire outstanding kernel leases. Returns 0 on rejection. */

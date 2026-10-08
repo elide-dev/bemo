@@ -74,6 +74,7 @@ public final class FfmTransportNative implements TransportNative {
   private final @Nullable MethodHandle socketReceiveNewResult;
   private final MethodHandle socketSend;
   private final @Nullable MethodHandle socketSendInline;
+  private final @Nullable MethodHandle socketSendInlineVectored;
   private final @Nullable MethodHandle socketSendGathered;
   private static final ThreadLocal<MemorySegment> SEND_REGIONS =
       ThreadLocal.withInitial(() -> Arena.ofAuto().allocate(64 * 24, 8));
@@ -585,6 +586,22 @@ public final class FfmTransportNative implements TransportNative {
                                 ValueLayout.ADDRESS,
                                 ValueLayout.JAVA_LONG)))
             .orElse(null);
+    socketSendInlineVectored =
+        symbols
+            .find("elide_transport_socket_send_inline_vectored")
+            .map(
+                symbol ->
+                    Linker.nativeLinker()
+                        .downcallHandle(
+                            symbol,
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_LONG,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_INT)))
+            .orElse(null);
     socketSendGathered =
         symbols
             .find("elide_transport_socket_send_gathered")
@@ -1085,6 +1102,36 @@ public final class FfmTransportNative implements TransportNative {
       return (long) send.invokeExact(workload, driver, socket, bytes, length);
     } catch (Throwable error) {
       throw failure(error);
+    }
+  }
+
+  @Override
+  public boolean supportsInlineVectoredWrites() {
+    return socketSendInlineVectored != null;
+  }
+
+  @Override
+  public long socketSendInlineVectored(
+      long workload, long driver, long socket, ByteBuffer[] sources, int count) {
+    if (count < 1 || count > 64 || count > sources.length) return -1;
+    MethodHandle send = socketSendInlineVectored;
+    if (send == null) throw new UnsupportedOperationException("Inline vectored native writes");
+    MemorySegment descriptors = SEND_REGIONS.get();
+    long total = 0;
+    for (int i = 0; i < count; i++) {
+      ByteBuffer source = sources[i];
+      if (!source.isDirect() || !source.hasRemaining()) return -1;
+      total += source.remaining();
+      if (total > 128 * 1024) return -1;
+      descriptors.set(ValueLayout.JAVA_LONG, i * 16L, MemorySegment.ofBuffer(source).address());
+      descriptors.set(ValueLayout.JAVA_LONG, i * 16L + 8, source.remaining());
+    }
+    try {
+      return (long) send.invokeExact(workload, driver, socket, descriptors, count);
+    } catch (Throwable error) {
+      throw failure(error);
+    } finally {
+      java.lang.ref.Reference.reachabilityFence(sources);
     }
   }
 

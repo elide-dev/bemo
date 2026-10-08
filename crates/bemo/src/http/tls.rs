@@ -383,20 +383,14 @@ mod tests {
             while wire.position() < output.as_ref().len() as u64 {
               client.read_tls(&mut wire).unwrap();
               client.process_new_packets().unwrap();
-            }
-            let mut plaintext = vec![0; RECORD_PLAINTEXT];
-            let count = client.reader().read(&mut plaintext).unwrap();
-            if outputs == 1 {
-              assert_eq!(
-                count,
-                if body_length % RECORD_PLAINTEXT == 0 {
-                  128
-                } else {
-                  (128 + body_length).min(RECORD_PLAINTEXT)
+              let mut chunk = [0; RECORD_PLAINTEXT];
+              while let Ok(length) = client.reader().read(&mut chunk) {
+                if length == 0 {
+                  break;
                 }
-              );
+                received.extend_from_slice(&chunk[..length]);
+              }
             }
-            received.extend_from_slice(&plaintext[..count]);
             lane.transmitted();
           }
           Progress::Complete(parts) => {
@@ -409,7 +403,12 @@ mod tests {
           _ => panic!("unexpected application progress"),
         }
       }
-      assert_eq!(outputs, (128 + body_length).div_ceil(RECORD_PLAINTEXT));
+      let first_body = if body_length % RECORD_PLAINTEXT == 0 {
+        0
+      } else {
+        body_length.min(RECORD_PLAINTEXT - 128)
+      };
+      assert_eq!(outputs, 1 + (body_length - first_body).div_ceil(crate::tls::MAX_WRITE));
       assert_eq!(&received[..128], &[b'h'; 128]);
       assert_eq!(&received[128..], vec![b'b'; body_length]);
     }

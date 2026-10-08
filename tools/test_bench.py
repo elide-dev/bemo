@@ -140,5 +140,22 @@ class ManifestTests(unittest.TestCase):
         self.assertNotEqual(bench.digest([lock]), before)
 
 
+class ResolvedBackendTest(unittest.TestCase):
+  def test_bemo_readiness_requires_resolved_driver_and_rejects_fallback(self):
+    ready = dict(driver="io-uring", auto_fallback=False, tls_provider="none")
+    bench.validate_server_ready(ready, "bemo", "native", False, 2)
+    for changed in [dict(driver="bemo"), dict(driver="epoll"), dict(auto_fallback=True)]:
+      with self.assertRaises(RuntimeError):
+        bench.validate_server_ready({**ready, **changed}, "bemo", "native", False, 2)
+
+  def test_native_comparator_keeps_channel_and_tls_checks(self):
+    ready = dict(driver="epoll", auto_fallback=False, tls_provider="openssl",
+                 server_channel="io.netty.channel.epoll.EpollServerSocketChannel")
+    bench.validate_server_ready(ready, "epoll", "openssl", True, 0)
+    for changed in [dict(driver="nio"), dict(tls_provider="jdk"), dict(server_channel="nio")]:
+      with self.assertRaises(RuntimeError):
+        bench.validate_server_ready({**ready, **changed}, "epoll", "openssl", True, 0)
+
+
 if __name__ == "__main__":
   unittest.main()

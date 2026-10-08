@@ -111,6 +111,7 @@ jobs:
           mode: walltime
           runner-version: '5.2.1'
           run: |
+            set -e
             sudo -n prlimit --pid $$ --memlock=unlimited:unlimited
             cargo codspeed run
             codspeed run

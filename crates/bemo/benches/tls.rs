@@ -1,6 +1,7 @@
 use std::hint::black_box;
 use std::io::{Cursor, Read, Write};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use bemo::buffer::Budget;
 use bemo::tls::{Action, Session};
@@ -23,7 +24,11 @@ impl Pair {
         Budget::new(1024 * 1024),
       )
       .unwrap(),
-      server: rustls::ServerConnection::new(server).unwrap(),
+      server: {
+        let mut peer = rustls::ServerConnection::new(server).unwrap();
+        peer.set_buffer_limit(None);
+        peer
+      },
       incoming: Vec::new(),
       transmitted: false,
     }
@@ -50,6 +55,14 @@ impl Pair {
         while wire.position() < output.as_ref().len() as u64 {
           assert_ne!(self.server.read_tls(&mut wire).unwrap(), 0);
           self.server.process_new_packets().unwrap();
+          let mut fragment = [0; 16384];
+          while let Ok(count) = self.server.reader().read(&mut fragment) {
+            if count == 0 {
+              break;
+            }
+            received.extend_from_slice(&fragment[..count]);
+            self.server.writer().write_all(&fragment[..count]).unwrap();
+          }
         }
         self.transmitted = true;
       }
@@ -73,6 +86,30 @@ impl Pair {
     }
     panic!("TLS roundtrip did not complete");
   }
+}
+
+// Bound each established session's record count, including Criterion warmup.
+// TLS 1.2 cannot refresh traffic keys; handshakes stay outside the returned time.
+fn measure_established(
+  iterations: u64,
+  client: &Arc<rustls::ClientConfig>,
+  server: &Arc<rustls::ServerConfig>,
+  mut operation: impl FnMut(&mut Pair),
+) -> Duration {
+  let mut remaining = iterations;
+  let mut elapsed = Duration::ZERO;
+  while remaining > 0 {
+    let count = remaining.min(4096);
+    let mut pair = Pair::new(client.clone(), server.clone());
+    pair.roundtrip(b"warmup");
+    let start = Instant::now();
+    for _ in 0..count {
+      operation(&mut pair);
+    }
+    elapsed += start.elapsed();
+    remaining -= count;
+  }
+  elapsed
 }
 
 fn tls(c: &mut Criterion) {
@@ -102,13 +139,33 @@ fn tls(c: &mut Criterion) {
     group.bench_function("full-handshake-and-first-record", |b| {
       b.iter(|| Pair::new(client.clone(), server.clone()).roundtrip(black_box(b"hello")));
     });
-    for size in [64, 4096, 65536] {
+    for size in [64, 4096, 65536, 131072] {
       let payload = vec![42; size];
-      let mut pair = Pair::new(client.clone(), server.clone());
-      pair.roundtrip(b"warmup");
       group.throughput(Throughput::Bytes(size as u64));
+      group.bench_function(BenchmarkId::new("established-encrypt", size), |b| {
+        b.iter_custom(|iterations| {
+          measure_established(iterations, &client, &server, |established| {
+            let mut accepted = 0;
+            while accepted < payload.len() {
+              let step = established
+                .client
+                .step(&mut [], Action::Write(black_box(&payload[accepted..])))
+                .unwrap();
+              accepted += step.accepted;
+              if let Some(output) = step.output {
+                black_box(output);
+              }
+              if step.state == bemo::tls::State::NeedTransmit {
+                black_box(established.client.step(&mut [], Action::Transmitted).unwrap());
+              }
+            }
+          })
+        });
+      });
       group.bench_function(BenchmarkId::new("record-roundtrip", size), |b| {
-        b.iter(|| pair.roundtrip(black_box(&payload)));
+        b.iter_custom(|iterations| {
+          measure_established(iterations, &client, &server, |pair| pair.roundtrip(black_box(&payload)))
+        });
       });
     }
     group.finish();
