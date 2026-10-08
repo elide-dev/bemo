@@ -1,0 +1,24 @@
+--- a/crates/bemo/src/buffer.rs
++++ b/crates/bemo/src/buffer.rs
+@@ -745,6 +745,21 @@
+   use super::*;
+ 
+   #[test]
++  fn tls_output_reuse_prefers_the_most_recent_initialized_allocation() {
++    let budget = Budget::new(1024);
++    let older = TlsOutput::new(32, budget.clone()).unwrap();
++    let mut recent = TlsOutput::new(32, budget.clone()).unwrap();
++    let pointer = recent.as_mut().as_ptr();
++    drop(older);
++    drop(recent);
++    let mut reused = TlsOutput::new(32, budget.clone()).unwrap();
++    assert_eq!(reused.as_mut().as_ptr(), pointer);
++    assert_eq!(budget.used(), 32);
++    drop(reused);
++    assert_eq!(budget.used(), 0);
++  }
++
++  #[test]
+   fn tls_output_reuses_initialized_capacity_and_exposes_only_written_bytes() {
+     let budget = Budget::new(1024);
+     let mut output = TlsOutput::new(32, budget.clone()).unwrap();

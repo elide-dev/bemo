@@ -321,20 +321,26 @@ impl Pool {
     POOL
       .try_with(|pool| {
         let mut pool = pool.borrow_mut();
-        let index = pool
-          .entries
-          .iter()
-          .enumerate()
-          .filter(|(_, entry)| {
-            let allocation = &entry.allocation;
-            allocation.recyclable == Some(reuse)
-              && match reuse {
-                Reuse::Exact | Reuse::TlsOutput => allocation.capacity == capacity,
-                Reuse::Receive => allocation.capacity >= capacity && Arc::ptr_eq(&allocation.budget.0, &budget.0),
-              }
-          })
-          .min_by_key(|(_, entry)| entry.allocation.capacity)?
-          .0;
+        let index = match reuse {
+          // Equal geometry needs no smallest-fit scan. Recently returned storage is usually
+          // at the end; taking it there also avoids moving another entry with swap_remove.
+          Reuse::Exact | Reuse::TlsOutput => pool
+            .entries
+            .iter()
+            .rposition(|entry| entry.allocation.recyclable == Some(reuse) && entry.allocation.capacity == capacity),
+          Reuse::Receive => pool
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+              let allocation = &entry.allocation;
+              allocation.recyclable == Some(Reuse::Receive)
+                && allocation.capacity >= capacity
+                && Arc::ptr_eq(&allocation.budget.0, &budget.0)
+            })
+            .min_by_key(|(_, entry)| entry.allocation.capacity)
+            .map(|(index, _)| index),
+        }?;
         let entry = pool.entries.swap_remove(index);
         pool.retained -= entry.allocation.capacity;
         Some(entry)
@@ -743,6 +749,21 @@ impl IoBuf for FrozenBuffer {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn tls_output_reuse_prefers_the_most_recent_initialized_allocation() {
+    let budget = Budget::new(1024);
+    let older = TlsOutput::new(32, budget.clone()).unwrap();
+    let mut recent = TlsOutput::new(32, budget.clone()).unwrap();
+    let pointer = recent.as_mut().as_ptr();
+    drop(older);
+    drop(recent);
+    let mut reused = TlsOutput::new(32, budget.clone()).unwrap();
+    assert_eq!(reused.as_mut().as_ptr(), pointer);
+    assert_eq!(budget.used(), 32);
+    drop(reused);
+    assert_eq!(budget.used(), 0);
+  }
 
   #[test]
   fn tls_output_reuses_initialized_capacity_and_exposes_only_written_bytes() {

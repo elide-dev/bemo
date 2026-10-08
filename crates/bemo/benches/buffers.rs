@@ -5,7 +5,7 @@
 
 use std::hint::black_box;
 
-use bemo::buffer::{Budget, Buffer, FrozenBuffer};
+use bemo::buffer::{Budget, Buffer, FrozenBuffer, pool_retained, pool_trim};
 use compio_buf::IoBuf;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
@@ -57,6 +57,28 @@ fn buffers(c: &mut Criterion) {
       });
     }
     assert_eq!(budget.used(), 0);
+  }
+  group.finish();
+
+  let mut group = c.benchmark_group("buffer/recent-exact-reuse");
+  for entries in [1, 8, 16] {
+    while pool_retained() != 0 {
+      pool_trim();
+    }
+    let budget = Budget::new(1024 * 1024);
+    // Mixed response sizes fill the idle pool. The repeatedly requested geometry is returned last.
+    for index in 1..entries {
+      drop(Buffer::new(index * 64, budget.clone()).unwrap());
+    }
+    drop(Buffer::new(4096, budget.clone()).unwrap());
+    group.throughput(Throughput::Elements(1));
+    group.bench_function(BenchmarkId::from_parameter(entries), |b| {
+      b.iter(|| drop(black_box(Buffer::new(black_box(4096), budget.clone()).unwrap())));
+    });
+    assert_eq!(budget.used(), 0);
+    while pool_retained() != 0 {
+      pool_trim();
+    }
   }
   group.finish();
 
