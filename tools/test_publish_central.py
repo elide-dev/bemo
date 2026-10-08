@@ -2,6 +2,8 @@
 from pathlib import Path
 import hashlib
 import json
+import io
+import urllib.error
 import os
 import shutil
 import subprocess
@@ -173,6 +175,57 @@ class CentralPublishingTest(unittest.TestCase):
     with patch.object(central, "status", return_value={"deploymentState": "VALIDATED"}):
       with self.assertRaisesRegex(RuntimeError, "not been requested"):
         central.wait(deployment, "PUBLISHED")
+
+  def deployment_bundle(self, root):
+    bundle = root / "bemo-central.zip"
+    with zipfile.ZipFile(bundle, "w") as archive:
+      for name in central.packages.artifacts("0.3.0"):
+        archive.writestr(name, name.encode())
+    return bundle
+
+  def test_deploy_verifies_already_published_bytes_without_upload(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      bundle = self.deployment_bundle(root)
+      first = b"dev/elide/bemo/bemo-api/0.3.0/bemo-api-0.3.0.pom"
+      with patch.object(central, "validate_bundle"), \
+           patch.object(central.urllib.request, "urlopen", return_value=io.BytesIO(first)), \
+           patch.object(central, "verify_remote") as verify, patch.object(central, "upload") as upload:
+        self.assertIsNone(central.deploy(bundle, "0.3.0", root))
+        verify.assert_called_once_with(bundle, "0.3.0")
+        upload.assert_not_called()
+      with patch.object(central, "validate_bundle"), \
+           patch.object(central.urllib.request, "urlopen", return_value=io.BytesIO(b"different")), \
+           patch.object(central, "upload") as upload:
+        with self.assertRaisesRegex(RuntimeError, "different artifacts"):
+          central.deploy(bundle, "0.3.0", root)
+        upload.assert_not_called()
+
+  def test_deploy_resumes_saved_upload_after_interrupted_validation(self):
+    deployment = "28570f16-da32-4c14-bd2e-c1acc0782365"
+    missing = urllib.error.HTTPError("https://repo.maven.apache.org", 404, "not found", {}, None)
+    purls = [f"pkg:maven/dev.elide.bemo/bemo-{module}@0.3.0" for module in central.packages.MODULES]
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      bundle = self.deployment_bundle(root)
+      with patch.object(central, "validate_bundle"), \
+           patch.object(central.urllib.request, "urlopen", side_effect=missing), \
+           patch.object(central, "upload", return_value=deployment) as upload, \
+           patch.object(central, "wait", side_effect=TimeoutError("interrupted")):
+        with self.assertRaises(TimeoutError):
+          central.deploy(bundle, "0.3.0", root)
+        upload.assert_called_once()
+        self.assertEqual(json.loads((root / "deployment.json").read_text())["deployment_id"], deployment)
+      with patch.object(central, "validate_bundle"), \
+           patch.object(central.urllib.request, "urlopen", side_effect=missing), \
+           patch.object(central, "upload") as upload, \
+           patch.object(central, "wait", side_effect=({"deploymentState": "VALIDATED", "purls": purls}, {"deploymentState": "PUBLISHED", "purls": purls})), \
+           patch.object(central, "publish") as publish, patch.object(central, "verify_remote") as verify:
+        self.assertEqual(central.deploy(bundle, "0.3.0", root), deployment)
+        upload.assert_not_called()
+        publish.assert_called_once_with(deployment)
+        verify.assert_called_once_with(bundle, "0.3.0")
+
 
   def release_fixture(self):
     value = "0.2.0"

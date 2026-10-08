@@ -38,6 +38,20 @@ class ReleaseSafetyTest(unittest.TestCase):
       with self.assertRaisesRegex(RuntimeError, "tested commit"):
         release.select()
 
+  def test_selection_outputs_version_only_for_this_released_revision(self):
+    for draft, source, immutable in ((True, "tested", None), (False, "tested", True), (False, "later", True)):
+      with self.subTest(draft=draft, source=source), tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / "outputs"
+        selected = {"tag_name": "v0.3.0", "draft": draft, "immutable": immutable}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "elide-dev/bemo", "GITHUB_SHA": "tested", "GITHUB_OUTPUT": str(output)}), \
+             patch.object(release, "version", return_value="0.3.0"), \
+             patch.object(release, "gh", side_effect=(json.dumps([[selected]]), json.dumps({"object": {"type": "commit", "sha": source}}))):
+          release.select()
+        content = output.read_text() if output.exists() else ""
+        self.assertEqual("version=0.3.0" in content, source == "tested")
+        self.assertEqual("tag=v0.3.0" in content, draft)
+
+
   def test_stage_requires_every_platform_and_provenance(self):
     with tempfile.TemporaryDirectory() as directory:
       root = Path(directory)

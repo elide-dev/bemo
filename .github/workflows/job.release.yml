@@ -1,12 +1,18 @@
 name: Release
 on:
   workflow_call:
+    outputs:
+      version:
+        description: Version published from this tested main revision
+        value: ${{ jobs.release.outputs.version }}
 jobs:
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: release
+    outputs:
+      version: ${{ steps.draft.outputs.version }}
     permissions:
       contents: write
       pull-requests: write

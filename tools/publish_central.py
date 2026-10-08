@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -214,9 +215,58 @@ def verify_remote(bundle, value):
           raise RuntimeError("Central artifact differs from signed bundle: " + name)
 
 
+def deploy(bundle, value, destination):
+  """Publish once and retain a resumable record, verifying already published releases."""
+  validate_bundle(bundle, value)
+  with zipfile.ZipFile(bundle) as archive:
+    artifacts = {name: hashlib.sha256(archive.read(name)).hexdigest()
+                 for name in archive.namelist() if name.endswith((".pom", ".jar"))}
+    first = f"dev/elide/bemo/bemo-api/{value}/bemo-api-{value}.pom"
+    expected = archive.read(first)
+  url = "https://repo.maven.apache.org/maven2/" + first
+  try:
+    with urllib.request.urlopen(url, timeout=120) as response:
+      existing = response.read()
+  except urllib.error.HTTPError as error:
+    if error.code != 404:
+      raise
+    existing = None
+  if existing is not None:
+    if existing != expected:
+      raise RuntimeError("Central already contains different artifacts for " + value)
+    verify_remote(bundle, value)
+    print("Central release is already published and all artifact bytes match", flush=True)
+    return None
+  destination.mkdir(parents=True, exist_ok=True)
+  journal = destination / "deployment.json"
+  if journal.exists():
+    record = json.loads(journal.read_text())
+    if record.get("version") != value or record.get("artifacts_sha256") != artifacts:
+      raise RuntimeError("Saved Central deployment belongs to different release artifacts")
+    deployment = record["deployment_id"]
+  else:
+    deployment = upload(bundle, value)
+    record = {"version": value, "deployment_id": deployment, "artifacts_sha256": artifacts}
+    temporary = journal.with_suffix(".tmp")
+    temporary.write_text(json.dumps(record, indent=2) + "\n")
+    temporary.replace(journal)
+  print("Central deployment: " + deployment, flush=True)
+  validated = wait(deployment, "VALIDATED")
+  (destination / "validation.json").write_text(json.dumps(validated, indent=2) + "\n")
+  expected_purls = {f"pkg:maven/dev.elide.bemo/bemo-{module}@{value}" for module in packages.MODULES}
+  if set(validated.get("purls", [])) != expected_purls:
+    raise RuntimeError("Central deployment does not identify the intended release modules")
+  if validated["deploymentState"] == "VALIDATED":
+    publish(deployment)
+  published = wait(deployment, "PUBLISHED")
+  (destination / "publication.json").write_text(json.dumps(published, indent=2) + "\n")
+  verify_remote(bundle, value)
+  return deployment
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("task", choices=("fetch", "prepare", "upload", "status", "wait", "publish", "verify"))
+  parser.add_argument("task", choices=("fetch", "prepare", "upload", "status", "wait", "publish", "verify", "deploy"))
   parser.add_argument("--version", default=build.VERSION)
   parser.add_argument("--source", type=Path, default=build.BUILD / "release-assets")
   parser.add_argument("--bundle", type=Path)
@@ -233,6 +283,8 @@ def main():
     if not args.key:
       parser.error("prepare requires --key")
     print(prepare(args.source, bundle, args.version, args.key, include_thinlto=not args.without_thinlto))
+  elif args.task == "deploy":
+    print(deploy(bundle, args.version, bundle.parent))
   elif args.task == "upload":
     print(upload(bundle, args.version))
   elif args.task == "verify":

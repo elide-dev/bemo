@@ -6,6 +6,12 @@ on:
         description: Existing immutable GitHub release version (without v)
         required: true
         type: string
+  workflow_call:
+    inputs:
+      version:
+        description: Immutable GitHub release version
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -77,13 +83,8 @@ jobs:
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
         run: |
           set -euo pipefail
-          python3 tools/publish_central.py upload --version "$CENTRAL_VERSION" > build/central/deployment-id.txt
-          deployment=$(cat build/central/deployment-id.txt)
-          python3 tools/publish_central.py wait --version "$CENTRAL_VERSION" --deployment "$deployment" --state VALIDATED > build/central/validation.log
-          python3 tools/publish_central.py publish --version "$CENTRAL_VERSION" --deployment "$deployment"
-          python3 tools/publish_central.py wait --version "$CENTRAL_VERSION" --deployment "$deployment" --state PUBLISHED > build/central/publication.log
-          python3 tools/publish_central.py verify --version "$CENTRAL_VERSION"
-          printf 'Published dev.elide.bemo %s (deployment %s)\n' "$CENTRAL_VERSION" "$deployment" >> "$GITHUB_STEP_SUMMARY"
+          python3 tools/publish_central.py deploy --version "$CENTRAL_VERSION"
+          printf 'Published and verified dev.elide.bemo %s\n' "$CENTRAL_VERSION" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve signed bundle and deployment evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

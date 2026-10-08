@@ -39,15 +39,21 @@ def select():
     return
   repo = os.environ["GITHUB_REPOSITORY"]
   draft = find_release(repo, tag)
-  if draft is None or not draft["draft"]:
+  if draft is None:
     return
   ref = json.loads(gh("api", f"repos/{repo}/git/ref/tags/{tag}"))["object"]
   while ref["type"] == "tag":
     ref = json.loads(gh("api", f"repos/{repo}/git/tags/{ref['sha']}"))["object"]
   if ref["type"] != "commit" or ref["sha"] != os.environ["GITHUB_SHA"]:
-    raise RuntimeError("Draft tag does not identify this run's tested commit")
+    if draft["draft"]:
+      raise RuntimeError("Draft tag does not identify this run's tested commit")
+    return
+  if not draft["draft"] and draft.get("immutable") is not True:
+    raise RuntimeError("Published release is not immutable")
   with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-    output.write(f"tag={tag}\n")
+    if draft["draft"]:
+      output.write(f"tag={tag}\n")
+    output.write(f"version={version()}\n")
 
 
 def expected_assets(value):

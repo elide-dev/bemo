@@ -92,7 +92,7 @@ snapshot metadata. Stable versions publish only from the main revision identifie
 by their release tag; later development commits do not overwrite that version.
 The publishing job follows the GitHub release job and uses the release environment
 and `GITHUB_TOKEN` with `packages: write`. PR verification receives no publishing
-credentials. Maven Central remains a separate publishing step.
+credentials. Stable releases also publish to Maven Central through the separate Central job described below.
 
 Consumers add this repository alongside Central:
 
@@ -189,8 +189,15 @@ it. Use `--bundle` to select a saved ZIP explicitly.
 
 ### GitHub Actions
 
-The separate [Publish Maven Central workflow](../.github/workflows/on.central.yml)
-is dispatched from `main` for an existing immutable release:
+Release Please's merged release PR runs main verification, builds and attests
+both platforms, and publishes an immutable GitHub release. The main workflow
+then calls [Publish Maven Central](../.github/workflows/on.central.yml) with the
+version selected from that tested source revision. Ordinary development pushes,
+snapshots, and PR verification do not publish to Central. GitHub Packages runs
+alongside Central after the GitHub release completes.
+
+The same workflow can be dispatched from `main` to publish or recover an
+existing immutable release:
 
 ```sh
 gh workflow run on.central.yml --ref main -f version=0.2.0
@@ -206,16 +213,22 @@ Configure these in the protected GitHub `release` environment:
 | `BEMO_PGP_PASSPHRASE` | Secret | Signing-key passphrase; empty for an unprotected key |
 | `BEMO_SIGNING_KEY` | Variable | Full signing-key fingerprint |
 
-The workflow authenticates the release artifacts, signs them, uploads a
-user-managed deployment, waits for validation, requests publication, waits for
-`PUBLISHED`, and checks the public bytes. It preserves the signed bundle, source
-manifest, deployment UUID and state logs as `central-<version>-<run-id>` for
+The workflow authenticates the release artifacts and signs them, then calls
+`tools/publish_central.py deploy`. It checks for an existing Central version
+first and verifies every artifact rather than uploading it again. New versions
+use a user-managed deployment: wait for validation, check all four module
+coordinates, request publication, wait for `PUBLISHED`, then verify the public
+bytes. A local `deployment.json` records the UUID and artifact hashes before
+polling, so interrupted validation can resume without another upload. It preserves the signed bundle, source
+manifest, deployment record and state reports as `central-<version>-<run-id>` for
 90 days, including on failure. It deletes the imported private key afterward.
 PR and main verification do not receive these credentials or run this job.
 
-If validation or publication fails after upload, use the saved deployment UUID
-with `status`, `wait`, and `publish` to resume rather than uploading a duplicate
-deployment. Namespace verification and a valid Portal token remain account setup
+If validation or publication fails after upload, download the saved evidence
+and rerun `deploy` with its signed ZIP and sibling `deployment.json`, or use
+`status`, `wait`, and `publish` with the saved UUID. A retry of the original
+main release revision can recover Central after GitHub publication: the release
+job exposes its version while skipping edits to the already immutable release. Namespace verification and a valid Portal token remain account setup
 requirements; the workflow cannot establish namespace ownership on your behalf.
 
 GitHub release Sigstore signatures authenticate the staged ZIPs and provenance;

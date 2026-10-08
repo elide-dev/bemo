@@ -40,3 +40,11 @@ jobs:
       contents: read
       actions: read
       packages: write
+  central:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release.outputs.version != ''
+    needs: [verify, release]
+    uses: ./.github/workflows/on.central.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    permissions:
+      contents: read
