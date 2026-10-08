@@ -86,6 +86,11 @@ successful parsing, encoding, handshakes, and byte-exact record delivery.
 The primary macro workload runs a V2 native HTTP server compiled as an optimized
 Native Image (`-O3`) and statically linked to Bemo through its C bindings. Rust
 owns request parsing, response encoding, socket I/O, and Rustls/aws-lc-rs TLS.
+Benchmark preparation retains Rust line tables and local symbols. On Linux,
+the Native Image server also uses `-g` and `-H:-DeleteLocalSymbols`, retaining
+Java method symbols for CodSpeed without changing `-O3`. Release publication
+builds keep their existing stripping settings. Profiling does not enable
+`SourceLevelDebug` or force frame pointers, which can change generated code.
 The comparator is a stock OpenJDK Netty HTTP server with epoll on Linux or kqueue
 on macOS and reference-counted tcnative/BoringSSL TLS. Explicit NIO comparison
 and `--tls-provider jdk` controls are also available. Neither server

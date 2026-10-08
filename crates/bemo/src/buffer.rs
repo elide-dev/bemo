@@ -207,6 +207,7 @@ impl Drop for Allocation {
 enum Reuse {
   Exact,
   Receive,
+  TlsOutput,
 }
 
 /// Maximum pooled allocations, and the retained bytes they may hold, per thread.
@@ -287,10 +288,10 @@ impl Pool {
     let _ = POOL.try_with(|pool| {
       let mut pool = pool.borrow_mut();
       let allocation = Arc::get_mut(&mut entry.allocation).unwrap();
-      let fraction = if allocation.recyclable == Some(Reuse::Exact) {
-        2
-      } else {
+      let fraction = if allocation.recyclable == Some(Reuse::Receive) {
         8
+      } else {
+        2
       };
       let room = allocation.budget.0.limit / fraction;
       let owned: usize = pool
@@ -328,7 +329,7 @@ impl Pool {
             let allocation = &entry.allocation;
             allocation.recyclable == Some(reuse)
               && match reuse {
-                Reuse::Exact => allocation.capacity == capacity,
+                Reuse::Exact | Reuse::TlsOutput => allocation.capacity == capacity,
                 Reuse::Receive => allocation.capacity >= capacity && Arc::ptr_eq(&allocation.budget.0, &budget.0),
               }
           })
@@ -617,6 +618,47 @@ impl IoBufMut for Buffer {
   }
 }
 
+/// Fully initialized, private TLS encoding storage. Only this wrapper can admit storage to
+/// the TLS output pool; ordinary mutable recovery removes that admission before exposing it.
+#[derive(Debug)]
+pub(crate) struct TlsOutput(Buffer);
+
+impl TlsOutput {
+  pub(crate) fn new(capacity: usize, budget: Budget) -> io::Result<Self> {
+    if capacity == 0 || capacity > isize::MAX as usize {
+      return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let buffer = if let Some(allocation) = Pool::take(capacity, &budget, Reuse::TlsOutput) {
+      Buffer {
+        allocation: AllocationLease::new(allocation),
+        offset: 0,
+        capacity,
+        length: capacity,
+      }
+    } else {
+      // Do not mark fresh storage recyclable until every byte has been initialized.
+      let mut buffer = Buffer::allocate(capacity, budget, None)?;
+      buffer.ensure_init();
+      buffer.length = capacity;
+      Arc::get_mut(&mut buffer.allocation).unwrap().recyclable = Some(Reuse::TlsOutput);
+      buffer
+    };
+    Ok(Self(buffer))
+  }
+
+  pub(crate) fn as_mut(&mut self) -> &mut [u8] {
+    // SAFETY: Construction initializes full capacity, and this wrapper never exposes
+    // MaybeUninit or shared mutable access. Recycled allocations retain that invariant.
+    unsafe { std::slice::from_raw_parts_mut(self.0.pointer(), self.0.capacity) }
+  }
+
+  pub(crate) fn freeze(mut self, length: usize) -> FrozenBuffer {
+    assert!(length <= self.0.capacity);
+    self.0.length = length;
+    self.0.freeze()
+  }
+}
+
 /// Immutable view retaining native storage independently of its connection or request.
 #[derive(Clone, Debug)]
 pub struct FrozenBuffer {
@@ -668,9 +710,13 @@ impl FrozenBuffer {
   ///
   /// # Errors
   /// Returns the unchanged view if another owner exists.
-  pub fn try_into_mut(self) -> Result<Buffer, Self> {
+  pub fn try_into_mut(mut self) -> Result<Buffer, Self> {
     if Arc::strong_count(&self.allocation) != 1 {
       return Err(self);
+    }
+    if self.allocation.recyclable == Some(Reuse::TlsOutput) {
+      // IoBufMut permits callers to write uninitialized bytes after mutable recovery.
+      Arc::get_mut(&mut self.allocation).unwrap().recyclable = Some(Reuse::Exact);
     }
     Ok(Buffer {
       allocation: self.allocation,
@@ -697,6 +743,69 @@ impl IoBuf for FrozenBuffer {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn tls_output_reuses_initialized_capacity_and_exposes_only_written_bytes() {
+    let budget = Budget::new(1024);
+    let mut output = TlsOutput::new(32, budget.clone()).unwrap();
+    assert_eq!(output.as_mut(), &[0; 32]);
+    output.as_mut().fill(0xa5);
+    let frozen = output.freeze(3);
+    let pointer = frozen.as_ref().as_ptr();
+    assert_eq!(frozen.as_ref(), &[0xa5; 3]);
+    assert_eq!(budget.used(), 32);
+    drop(frozen);
+    assert_eq!(budget.used(), 0);
+    let mut output = TlsOutput::new(32, budget.clone()).unwrap();
+    assert_eq!(output.as_mut().as_ptr(), pointer);
+    assert_eq!(output.as_mut(), &[0xa5; 32], "recycling preserves initialized bytes");
+    drop(output);
+    assert_eq!(budget.used(), 0);
+    budget.close();
+    assert_eq!(
+      TlsOutput::new(32, budget).unwrap_err().kind(),
+      io::ErrorKind::BrokenPipe
+    );
+  }
+
+  #[test]
+  fn tls_output_retained_views_prevent_reuse_and_keep_budget_charges() {
+    let budget = Budget::new(64);
+    let mut output = TlsOutput::new(32, budget.clone()).unwrap();
+    output.as_mut().fill(0xa5);
+    let frozen = output.freeze(32);
+    let retained = FrozenBuffer::slice(&frozen, 0..3).unwrap();
+    drop(frozen);
+    let mut next = TlsOutput::new(32, budget.clone()).unwrap();
+    assert_ne!(next.as_mut().as_ptr(), retained.as_ref().as_ptr());
+    assert_eq!(retained.as_ref(), &[0xa5; 3]);
+    assert_eq!(budget.used(), 64);
+    assert_eq!(
+      TlsOutput::new(1, budget.clone()).unwrap_err().kind(),
+      io::ErrorKind::OutOfMemory
+    );
+    drop(next);
+    drop(retained);
+    assert_eq!(budget.used(), 0);
+  }
+
+  #[test]
+  fn tls_output_mutable_recovery_invalidates_initialized_pool_membership() {
+    let budget = Budget::new(1024);
+    let output = TlsOutput::new(32, budget.clone()).unwrap();
+    let mut recovered = output.freeze(3).try_into_mut().unwrap();
+    recovered.as_uninit().fill(MaybeUninit::uninit());
+    drop(recovered);
+    let mut next = TlsOutput::new(32, budget.clone()).unwrap();
+    assert_eq!(
+      next.as_mut(),
+      &[0; 32],
+      "uninitialized storage cannot enter the TLS output pool"
+    );
+    drop(next);
+    let mut foreign = Buffer::new(32, budget).unwrap();
+    assert_eq!(foreign.ensure_init(), &[0; 32]);
+  }
 
   #[test]
   fn racing_owner_close_preserves_live_charges_and_rejects_new_allocations() {
