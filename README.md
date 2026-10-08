@@ -71,7 +71,7 @@ a package-private ALPN adapter and currently requires the classpath rather than 
 
 ## Performance
 
-The [native-baseline Unclemax cycle](docs/performance/native-baseline.md)
+The [native-baseline cycle](docs/performance/native-baseline.md)
 compares against **Netty epoll and tcnative/BoringSSL**, with **gzip level 1**
 and **TLS 1.3 / AES-128-GCM** on both sides. It retains three samples for every
 workload: 72 basic samples and 180 framework samples, including Ktor in JVM
