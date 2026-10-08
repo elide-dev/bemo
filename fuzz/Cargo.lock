@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "bemo"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "bytes",
