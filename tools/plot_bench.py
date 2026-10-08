@@ -23,6 +23,9 @@ COLORS = {"bemo": "#087f8c", "netty": "#b45928"}
 def load(provenance):
   meta = json.loads(provenance.read_text())
   source = provenance.parent / meta["summary"]
+  native_baseline = meta.get("native_netty_baseline", False)
+  matched_fields = (*MATCHED, "server_cpus", "client_cpus") if native_baseline else MATCHED
+  comparator_tls = "openssl" if native_baseline else "jdk"
   rows = json.loads(source.read_text())
   cases = EXTENDED_CASES if any(row["case"].endswith("-131072") for row in rows) else CASES
   groups = {}
@@ -46,8 +49,8 @@ def load(provenance):
     if len(samples) != sample_count:
       raise ValueError("Unpaired sample counts")
     for sample in samples:
-      current = tuple(sample.get(field) for field in MATCHED if field != "load_generator_tls_provider")
-      if any(sample.get(field) is None for field in MATCHED):
+      current = tuple(sample.get(field) for field in matched_fields if field != "load_generator_tls_provider")
+      if any(sample.get(field) is None for field in matched_fields):
         raise ValueError("Missing benchmark comparison metadata")
       if cohort is None:
         cohort = current
@@ -66,8 +69,12 @@ def load(provenance):
         raise ValueError("Unmatched TLS protocol or cipher")
       if sample["load_generator_tls_provider"] != ("jdk" if tls else "none"):
         raise ValueError("Unexpected load-generator TLS provider")
-      if sample["tls_provider"] != (("native" if transport == "bemo" else "jdk") if tls else "none"):
+      if sample["tls_provider"] != (("native" if transport == "bemo" else comparator_tls) if tls else "none"):
         raise ValueError("Unexpected TLS provider")
+      if native_baseline and transport != "bemo":
+        channel = "io.netty.channel." + transport + "." + ("Epoll" if transport == "epoll" else "KQueue") + "ServerSocketChannel"
+        if sample["driver"] != transport or sample.get("server_channel") != channel or (tls and sample.get("tls_implementation") != "BoringSSL"):
+          raise ValueError("Missing native Netty/tcnative baseline evidence")
       provider = sample.get("gzip_provider")
       allowed = {"java.util.zip", "zlib-rs"} if transport == "bemo" else {"netty"}
       if provider not in (allowed if sample["gzip"] else {"none"}):
@@ -149,7 +156,7 @@ def render(meta, groups, output, png=False):
     fig.text(.04, .075, f"{meta['date']} · {meta['runner']} · {'parent' if meta.get('working_tree') else 'commit'} {meta['commit'][:7]} · "
              f"{meta['samples']} paired samples" + (" · working tree" if meta.get("working_tree") else ""), fontsize=9, color=MUTED)
     fig.text(.04, .043, f"Bemo: Native Image −O3 / native HTTP / Rustls + AWS-LC / {meta['backend']}   "
-             f"Netty: OpenJDK / native {meta['comparator']} / JDK TLS", fontsize=9, color=MUTED)
+             f"Netty: OpenJDK / native {meta['comparator']} / {'tcnative BoringSSL' if meta.get('native_netty_baseline') else 'JDK TLS'}", fontsize=9, color=MUTED)
     fig.text(.04, .013, f"Per-response application gzip: Bemo {meta['gzip_provider']} level {meta['gzip_level']} / Netty compressor level {meta['netty_gzip_level']}", fontsize=8, color=MUTED)
     return fig, axes[0]
 
@@ -233,7 +240,7 @@ def render(meta, groups, output, png=False):
   save(fig, "efficiency.svg", "Server CPU and whole-process memory for all measured workloads")
 
 
-FRAMEWORK_DATA = ROOT / "docs/performance/data/framework-unclemax-level1.json"
+FRAMEWORK_DATA = ROOT / "docs/performance/data/native-frameworks-20261007.json"
 FRAMEWORK_WORKLOADS = ("plaintext", "payload", "compression", "tls", "tls-compression")
 FRAMEWORK_LABELS = ("HTTP · 13 B", "HTTP · 128 KiB", "Gzip · 128 KiB", "TLS · 128 KiB", "TLS+gzip · 128 KiB")
 
@@ -242,9 +249,25 @@ def load_frameworks(source):
   evidence = json.loads(source.read_text())
   groups = {}
   artifacts = None
+  settings = None
+  host = None
+  frameworks = tuple(evidence.get("frameworks", ("spring-boot", "micronaut")))
+  if not frameworks or len(set(frameworks)) != len(frameworks) or any(name not in ("spring-boot", "micronaut", "ktor") for name in frameworks):
+    raise ValueError("Invalid declared framework matrix")
   for workload in FRAMEWORK_WORKLOADS:
     run = evidence["workloads"][workload]
-    fingerprints = run["environment"]["artifact_sha256"]
+    environment = run["environment"]
+    if evidence.get("native_netty_baseline"):
+      arguments = environment["arguments"]
+      current = tuple(arguments.get(key) for key in ("builder", "warmup", "duration", "samples", "connections", "threads", "server_cpus", "client_cpus"))
+      if any(value is None for value in current) or (settings is not None and current != settings):
+        raise ValueError("Mixed framework measurement settings")
+      settings = current
+      current_host = tuple(environment.get(key) for key in ("host", "kernel", "java", "native_image", "wrk"))
+      if any(value is None for value in current_host) or (host is not None and current_host != host):
+        raise ValueError("Mixed framework hosts or toolchains")
+      host = current_host
+    fingerprints = environment["artifact_sha256"]
     if artifacts is not None and fingerprints != artifacts:
       raise ValueError("Mixed framework application artifacts")
     artifacts = fingerprints
@@ -260,10 +283,15 @@ def load_frameworks(source):
         raise ValueError("Unmatched framework TLS protocol or cipher")
       if not math.isfinite(sample["requests_per_second"]) or sample["requests_per_second"] <= 0:
         raise ValueError("Invalid framework throughput")
+      if evidence.get("native_netty_baseline") and sample["transport"] == "netty":
+        if sample.get("driver") != "epoll" or sample.get("server_channel") != "io.netty.channel.epoll.EpollServerSocketChannel":
+          raise ValueError("Missing native Netty framework baseline evidence")
+        if sample["tls"] and (sample.get("tls_provider"), sample.get("tls_implementation")) != ("netty-tcnative", "BoringSSL"):
+          raise ValueError("Missing tcnative framework baseline evidence")
       key = sample["framework"], sample["runtime"], workload, sample["transport"]
       groups.setdefault(key, []).append(sample)
   expected = {(framework, runtime, workload, stack)
-              for framework in ("spring-boot", "micronaut") for runtime in ("jvm", "native")
+              for framework in frameworks for runtime in ("jvm", "native")
               for workload in FRAMEWORK_WORKLOADS for stack in ("bemo", "netty")}
   if set(groups) != expected or any(len(samples) != 3 or
       {s["repetition"] for s in samples} != {0, 1, 2} for samples in groups.values()):
@@ -280,15 +308,18 @@ def render_frameworks(source, output, png=False):
   matplotlib.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11,
                              "text.color": INK, "axes.labelcolor": MUTED, "xtick.color": MUTED,
                              "ytick.color": INK, "svg.fonttype": "path", "svg.hashsalt": "bemo-framework-v1"})
-  fig, axes = plt.subplots(2, 2, figsize=(16, 11.5), facecolor=BG)
+  evidence = json.loads(source.read_text())
+  frameworks = tuple(evidence.get("frameworks", ("spring-boot", "micronaut")))
+  names = {"spring-boot": "Spring Boot", "micronaut": "Micronaut", "ktor": "Ktor"}
+  fig, axes = plt.subplots(len(frameworks), 2, figsize=(16, 11.5 + 3.5 * (len(frameworks) - 2)), facecolor=BG, squeeze=False)
   fig.subplots_adjust(left=.17, right=.87, top=.80, bottom=.19, wspace=1.10, hspace=.50)
   fig.text(.04, .955, "BEMO / FRAMEWORK PERFORMANCE", fontsize=10, weight="bold", color=COLORS["bemo"])
-  fig.text(.04, .902, "Spring Boot & Micronaut: every endpoint", fontsize=25, weight="bold")
+  fig.text(.04, .902, " / ".join(names[name] for name in frameworks) + ": every endpoint", fontsize=25, weight="bold")
   fig.text(.04, .857, "Requests/sec · logarithmic scale · dots: medians; whiskers: three-sample min–max", fontsize=12, color=MUTED)
-  pairs = (("spring-boot", "jvm"), ("spring-boot", "native"), ("micronaut", "jvm"), ("micronaut", "native"))
+  pairs = [(framework, runtime) for framework in frameworks for runtime in ("jvm", "native")]
   for ax, (framework, runtime) in zip(axes.flat, pairs):
     ax.set_facecolor(BG)
-    ax.set_title(f"{'Spring Boot' if framework == 'spring-boot' else 'Micronaut'} · {'JVM' if runtime == 'jvm' else 'Native Image −O3'}", loc="left", fontsize=14, weight="bold", pad=18)
+    ax.set_title(f"{names[framework]} · {'JVM' if runtime == 'jvm' else 'Native Image −O3'}", loc="left", fontsize=14, weight="bold", pad=18)
     for stack, offset in (("bemo", -.13), ("netty", .13)):
       for index, workload in enumerate(FRAMEWORK_WORKLOADS):
         data = [s["requests_per_second"] for s in groups[framework, runtime, workload, stack]]
@@ -296,8 +327,9 @@ def render_frameworks(source, output, png=False):
         ax.errorbar(median, index + offset, xerr=[[median - min(data)], [max(data) - median]],
                     fmt="o", color=COLORS[stack], markersize=6, capsize=3, linewidth=1.8)
     ax.set_xscale("log")
-    ax.set_xlim(1000, 320000)
-    ax.xaxis.set_major_locator(FixedLocator((1000, 10000, 100000)))
+    upper = max(320000, max(s["requests_per_second"] for samples in groups.values() for s in samples) * 1.4)
+    ax.set_xlim(1000, upper)
+    ax.xaxis.set_major_locator(FixedLocator([10 ** power for power in range(3, math.floor(math.log10(upper)) + 1)]))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.xaxis.set_major_formatter(FuncFormatter(lambda value, pos: f"{value / 1000:g}k"))
     ax.set_yticks(range(5), FRAMEWORK_LABELS)
@@ -315,17 +347,20 @@ def render_frameworks(source, output, png=False):
       ax.text(1.05, index, f"{delta:+.1%}", transform=ax.get_yaxis_transform(), va="center", fontsize=12,
               weight="bold", color=COLORS["bemo"] if delta >= 0 else COLORS["netty"])
   handles = [plt.Line2D([], [], marker="o", linestyle="", color=COLORS[stack], markersize=7) for stack in ("bemo", "netty")]
-  fig.legend(handles, ("Bemo: io_uring / zlib-rs / Rustls", "Stock: Netty NIO / JDK gzip / JDK TLS"),
+  stock = "Stock: Netty epoll / JDK gzip / tcnative BoringSSL" if evidence.get("native_netty_baseline") else "Stock: Netty NIO / JDK gzip / JDK TLS"
+  fig.legend(handles, ("Bemo: io_uring / zlib-rs / Rustls", stock),
              loc="lower left", bbox_to_anchor=(.04, .115), frameon=False, ncol=2, fontsize=11)
   fig.text(.04, .096, "Unclemax · Linux Threadripper PRO 9965WX · runtime fixed within each panel · shared framework HTTP codecs", fontsize=10, color=MUTED)
   fig.text(.04, .072, "Gzip level 1 on both sides · TLS 1.3 / AES-128-GCM · 64 connections · 20 s warmup + 20 s measured", fontsize=10, color=MUTED)
   fig.text(.04, .048, "Native Image: portable x86-64-v3, no trained PGO · closed-loop loopback results · ranges are not confidence intervals", fontsize=10, color=MUTED)
-  fig.text(.04, .024, "Different compression ratios: 128 KiB ASCII → Bemo 1,580 B / stock 909 B · source " + sha[:12], fontsize=10, color=MUTED)
+  sizes = {stack: sorted({sample["wire_body_max_bytes"] for key, samples in groups.items() if key[2] == "compression" and key[3] == stack for sample in samples}) for stack in ("bemo", "netty")}
+  wire = " / ".join(("Bemo" if stack == "bemo" else "stock") + " " + ", ".join(f"{size:,}" for size in sizes[stack]) + " B" for stack in ("bemo", "netty"))
+  fig.text(.04, .024, "Different compression ratios: 128 KiB ASCII → " + wire + " · source " + sha[:12], fontsize=10, color=MUTED)
   output.mkdir(parents=True, exist_ok=True)
   name = output / f"framework-throughput-{sha[:12]}.svg"
   fig.savefig(name, format="svg", facecolor=BG,
-              metadata={"Date": None, "Creator": "tools/plot_bench.py", "Title": "Spring Boot and Micronaut JVM and Native Image throughput",
-                        "Description": f"Source SHA-256: {sha}. docs/performance/unclemax-matched.md"})
+              metadata={"Date": None, "Creator": "tools/plot_bench.py", "Title": " / ".join(names[name] for name in frameworks) + " JVM and Native Image throughput",
+                        "Description": f"Source SHA-256: {sha}. {evidence.get('report', 'docs/performance/unclemax-matched.md')}"})
   name.write_text("\n".join(line.rstrip() for line in name.read_text().splitlines()) + "\n")
   if png:
     fig.savefig(name.with_suffix(".png"), dpi=140, facecolor=BG)

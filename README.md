@@ -71,55 +71,62 @@ a package-private ALPN adapter and currently requires the classpath rather than 
 
 ## Performance
 
-The [matched-level Unclemax measurements](docs/performance/unclemax-matched.md)
-use **gzip level 1 on both sides** and **TLS 1.3 / AES-128-GCM**, three samples
-per case, and verified response contents. All twelve basic HTTP/TLS workloads
-and all five framework endpoints are retained, including regressions. These are closed-loop loopback measurements
-on a shared Linux Threadripper PRO 9965WX host, not a universal speedup claim.
+The [native-baseline Unclemax cycle](docs/performance/native-baseline.md)
+compares against **Netty epoll and tcnative/BoringSSL**, with **gzip level 1**
+and **TLS 1.3 / AES-128-GCM** on both sides. It retains three samples for every
+workload: 72 basic samples and 180 framework samples, including Ktor in JVM
+and Native Image modes. Responses are validated throughout.
 
-The archived basic matrix compares Bemo Native Image `-O3` with native HTTP, io_uring and
-Rustls/aws-lc-rs against OpenJDK Netty epoll with Netty HTTP and JDK TLS.
-It measures the complete stacks, including the different server runtimes.
+Gzip is Bemo’s strongest measured workload: **2.4–2.8×** the stock JVM framework
+throughput and **4.1–7.6×** the stock Native Image throughput. Large uncompressed
+JVM framework payloads remain **15–20% slower**. Native Image framework TLS is
+near parity (**−2.7% to +0.6%**); the archived 20×-plus TLS advantage disappears
+against this native baseline. These are closed-loop loopback results on a
+shared Threadripper PRO 9965WX host; sample ranges describe observed variation.
 
-![Throughput across twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput-29652ad54cad.svg)
+The basic matrix compares complete server stacks: Bemo Native Image `-O3`,
+native HTTP, io_uring and Rustls/aws-lc-rs against OpenJDK Netty epoll, Netty
+HTTP and tcnative/BoringSSL. Bemo has higher median throughput in ten of twelve
+workloads; uncompressed TLS at 64 KiB and 128 KiB is **15% and 12% slower**.
+Both stacks use the same external OpenJDK NIO/JSSE client.
 
-![Identity throughput and p99 latency at 1 KiB, 64 KiB, and 128 KiB](docs/performance/graphs/payload-curves-29652ad54cad.svg)
+![Throughput across twelve HTTP and TLS workloads, with three-sample ranges](docs/performance/graphs/throughput-0fe6f875e1f9.svg)
 
-![Server CPU and combined server/client memory across all workloads](docs/performance/graphs/efficiency-29652ad54cad.svg)
+![Identity throughput and p99 latency at 1 KiB, 64 KiB, and 128 KiB](docs/performance/graphs/payload-curves-0fe6f875e1f9.svg)
 
-The Spring Boot and Micronaut comparisons hold the runtime fixed within each
-row. Native Images use `-O3` with the portable `x86-64-v3` default target.
-They keep framework HTTP codecs; Bemo supplies native transport, gzip and
-TLS, while stock mode in these archived measurements used Netty NIO, JDK gzip
-and JDK TLS. The corrected harness requires native epoll/kqueue and tcnative;
-these numbers do not describe that baseline. The table shows
-Bemo throughput changes versus stock mode; the report retains absolute rates
-and all sample ranges. Each endpoint uses 64 connections, with 20 seconds of
-warmup and 20 seconds measured per fresh-server sample. TLS clients are pinned
-to the same protocol and cipher; native images retain the portable default target.
+![Server CPU and combined server/client memory across all workloads](docs/performance/graphs/efficiency-0fe6f875e1f9.svg)
 
-![Spring Boot and Micronaut throughput across all five endpoints, in JVM and Native Image modes](docs/performance/graphs/framework-throughput-afcab56b5053.svg)
+Framework comparisons hold the runtime fixed within each row and retain the
+framework HTTP codecs. Bemo supplies io_uring, zlib-rs and Rustls; stock mode
+uses epoll, a reusable JDK Deflater and tcnative/BoringSSL. Native Images use
+`-O3`, the portable `x86-64-v3` target and no trained PGO profile. Each sample
+uses 64 connections, 20 seconds of warmup and 20 seconds measured.
+
+![Spring Boot, Micronaut and Ktor throughput across five endpoints in JVM and Native Image modes](docs/performance/graphs/framework-throughput-4c1e3556f5cc.svg)
+
+Bemo median throughput change versus native Netty:
 
 | Framework | Runtime | HTTP 13 B | HTTP 128 KiB | Gzip 128 KiB | TLS 128 KiB | TLS+gzip 128 KiB |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Spring Boot | JVM | +0.6% | -14.6% | +143.7% | +13.2% | +130.5% |
-| Spring Boot | Native Image | +8.5% | -0.8% | +482.7% | +2135.5% | +457.3% |
-| Micronaut | JVM | -3.8% | -21.9% | +186.4% | +2.7% | +174.0% |
-| Micronaut | Native Image | +5.5% | -7.7% | +669.5% | +2452.2% | +633.7% |
+| Spring Boot | JVM | -0.9% | -15.1% | +141.6% | -2.6% | +126.2% |
+| Spring Boot | Native Image | +3.4% | +0.1% | +474.0% | +0.6% | +420.4% |
+| Micronaut | JVM | -6.8% | -20.4% | +183.4% | -12.7% | +171.1% |
+| Micronaut | Native Image | +1.0% | -10.6% | +664.9% | -2.6% | +590.9% |
+| Ktor | JVM | -7.0% | -20.4% | +183.2% | -7.3% | +165.8% |
+| Ktor | Native Image | -3.1% | +18.5% | +305.6% | -2.7% | +259.5% |
 
-Equal compression levels do not imply equal compressed sizes. For the 128 KiB
-basic JSON body, zlib-rs level 1 produces **1,653 bytes**, Netty level 1 produces
-**1,002 bytes**, and Netty level 6 produces **479 bytes**. The historical level-1
-versus level-6 comparison is superseded; its small 1 KiB exception does not
-justify retaining that mismatch across the matrix.
+Equal gzip levels produce different sizes: the 128 KiB framework ASCII body is
+**1,580 bytes with Bemo versus 909 bytes with stock gzip**. For the basic JSON
+body, the sizes are **1,653 versus 1,002 bytes**; Netty level 6 produces **479
+bytes** as an untimed size control. Throughput gains retain this wire-size cost.
 
-Ranges show observed sample minima and maxima, not confidence intervals.
-Basic-chart memory sums server/client lifetime RSS high-water marks; framework
-memory is server-only. The harnesses use different bodies, clients and concurrency,
-so their absolute rates cannot be compared directly. The measured working tree,
-parent commit, per-file hashes, toolchains, CPU affinity and raw samples are
-checked in with [the evidence](docs/performance/unclemax-matched.md).
-Run `make bench-graphs` to reproduce the charts; see
+Ranges are sample minima and maxima, not confidence intervals. Basic memory
+sums server/client lifetime RSS high-water marks; framework memory is
+server-only. The harnesses use different bodies, clients and concurrency, so
+their absolute rates cannot be compared directly. The report retains CPU,
+latency, memory, source patches, toolchains, artifact hashes and raw samples.
+The [NIO/JDK TLS report](docs/performance/unclemax-matched.md) remains archived.
+Run `make bench-graphs` to reproduce the current charts; see the
 [chart refresh instructions](docs/performance/README.md).
 
 ## Layout

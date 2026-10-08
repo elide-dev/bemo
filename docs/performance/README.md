@@ -13,13 +13,13 @@ make bench-graphs
 ```
 
 This creates an isolated environment under `build/chart-venv` and renders the
-four checked-in SVGs: three basic transport charts and the Spring Boot/Micronaut
+four checked-in SVGs: three basic transport charts and the Spring Boot/Micronaut/Ktor
 framework matrix. The framework chart derives medians and sample ranges from
-`data/framework-unclemax-level1.json`, with all five endpoints in JVM and Native
-Image modes. Each filename includes the first 12 characters of the
+the declared framework evidence, with all five endpoints in JVM and Native
+Image modes. Archived two-framework evidence remains supported. Each filename includes the first 12 characters of the
 source data SHA-256, so GitHub image redirects cannot reuse an older chart URL.
 When the evidence changes, update the affected README image paths to the generated
-filenames and remove the superseded SVGs. Query strings on relative image links
+filenames. Preserve older SVGs while archived reports link to them. Query strings on relative image links
 do not survive GitHub’s redirect to raw content.
 It does not run benchmarks or upload metrics. PNG export
 and alternate destinations are available:
@@ -35,14 +35,16 @@ Prepare and run the existing complete matrix, with at least three samples:
 ```sh
 make bench-prepare
 make bench-transport
-cp build/reports/benchmarks/summary-all.json docs/performance/data/linux-x86_64.json
+bench_cycle=$(date +%Y%m%d)
+cp build/reports/benchmarks/summary-all.json "docs/performance/data/native-basic-$bench_cycle.json"
 ```
 
 Alternatively, download `transport-evidence` from a completed CI run:
 
 ```sh
 gh run download <run-id> --repo elide-dev/bemo --name transport-evidence --dir build/readme-bench/latest
-cp build/readme-bench/latest/summary-all.json docs/performance/data/linux-x86_64.json
+bench_cycle=$(date +%Y%m%d)
+cp build/readme-bench/latest/summary-all.json "docs/performance/data/native-basic-$bench_cycle.json"
 ```
 
 Update `data/provenance.json` with the actual date, full measured commit, run URL,
@@ -51,6 +53,10 @@ use a checked-in evidence reference and identify the host accurately. Record a
 working-tree snapshot and per-file hashes when the measured source is uncommitted;
 the parent commit alone does not identify it. Set `matched_compression: true` and `matched_tls: true` for
 current evidence so charts reject compression-level, TLS protocol, and cipher mismatches.
+Set `native_netty_baseline: true` in basic provenance and framework evidence
+for current runs: the renderer requires actual epoll/kqueue server channels
+and tcnative/BoringSSL, rejecting NIO or JDK TLS. Declare the framework list
+in the evidence; current cycles require Spring Boot, Micronaut and Ktor.
 Then run `make bench-graphs` and review the data and images together. Keep raw
 samples: medians, sample ranges, CPU costs, and memory maxima are computed from
 them, rather than copied from summary aggregates or written into plotting code.
@@ -120,7 +126,7 @@ this evidence and all twelve workloads;
   startup and warmup. It is not a simultaneous peak, server-only RSS, or heap size.
 
 The current snapshot uses Bemo Native Image `-O3`, native HTTP, Rustls/aws-lc-rs,
-and io_uring against stock OpenJDK Netty epoll/JDK TLS. Four persistent clients
+and io_uring against stock OpenJDK Netty epoll/tcnative BoringSSL. Four persistent clients
 use the same external OpenJDK Netty NIO load generator. Each server has one I/O
 thread; server/client heaps are 256 MiB each. Each sample warms 5,000 rounds,
 then measures 25,000 rounds per client, completing 100,000 requests. Gzip uses

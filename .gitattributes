@@ -2,3 +2,6 @@
 *.jar binary
 *.png binary
 fuzz/seeds/** binary
+
+# Evidence patches retain the whitespace prefix on blank diff context lines.
+docs/performance/data/*.patch -whitespace

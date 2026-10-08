@@ -1,12 +1,13 @@
 {
-  "date": "2026-10-07",
-  "commit": "a8bf91d49ea7719ab8a4460aa22f8d97bf93ae51",
+  "date": "2026-10-08",
+  "commit": "1d3ca121bd44d456cdbdadda5a2d46e5328d8517",
   "working_tree": true,
-  "source_manifest": "unclemax-level1-source.json",
-  "run_url": "docs/performance/unclemax-matched.md",
+  "source_manifest": "native-source-20261007.json",
+  "run_url": "docs/performance/native-baseline.md",
   "runner": "Unclemax \u00b7 Linux x86-64 \u00b7 Threadripper PRO 9965WX",
-  "summary": "linux-x86_64.json",
+  "summary": "native-basic-20261007.json",
   "matched_compression": true,
   "matched_tls": true,
-  "sha256": "29652ad54cada1c53f8fc6ef1915895f47b1083d239228341d4ba0de394f099e"
+  "sha256": "0fe6f875e1f90485c49cd774fff6d795a72842412d043df61f83219a2fda07cb",
+  "native_netty_baseline": true
 }

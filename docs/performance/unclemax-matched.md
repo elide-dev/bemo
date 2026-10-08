@@ -3,7 +3,7 @@
 Baseline note: these archived framework measurements used Netty NIO and JDK
 TLS. The current harness requires native epoll/kqueue and tcnative/BoringSSL.
 These numbers must not be presented as results against that native baseline;
-no new benchmark cycle has been run for the correction.
+see the [native epoll/tcnative cycle](native-baseline.md) for the corrected baseline.
 
 Measured with gzip level **1 on both sides**, using an isolated working-tree
 snapshot based on `a8bf91d49ea7719ab8a4460aa22f8d97bf93ae51`.
@@ -11,7 +11,7 @@ The parent commit alone does not identify the measured source. Per-file hashes,
 prepared artifact hashes, environment details, and every timed sample are retained:
 
 - [Source snapshot](data/unclemax-level1-source.json), [basic build fingerprints](data/unclemax-level1-build.json), and [environment](data/unclemax-level1-environment.json).
-- [Basic raw samples](data/linux-x86_64.json) and [chart provenance](data/provenance.json).
+- [Basic raw samples](data/linux-x86_64.json) and [archived chart provenance](data/provenance-jdk.json).
 - [Framework raw samples, summaries, and build environments](data/framework-unclemax-level1.json).
 - [Validated HTTP compression sizes](data/compression-sizes-unclemax-level1.json), [standalone compression backends](data/compression-backends-unclemax-level1.json), and [TLS client policy controls](data/tls-policy-unclemax-level1.json).
 - [Bemo-only Rust microbenchmarks](data/criterion-unclemax-level1.json): 72 cases with default Criterion settings, without a Netty comparator or pinned affinity.
@@ -58,7 +58,11 @@ Three samples per transport complete 7,200,000 measured requests across 12 cases
 | tls-gzip-65536 | 33,046 | 20,208 | +63.5% | 33,010–33,396 | 20,071–20,222 |
 | tls-gzip-131072 | 20,910 | 10,738 | +94.7% | 20,857–20,929 | 10,674–10,798 |
 
-The README charts also show p99 latency, server CPU per completed request,
+The archived [throughput](graphs/throughput-29652ad54cad.svg),
+[payload/latency](graphs/payload-curves-29652ad54cad.svg),
+[CPU/memory](graphs/efficiency-29652ad54cad.svg) and
+[framework](graphs/framework-throughput-afcab56b5053.svg) charts retain these results.
+They show p99 latency, server CPU per completed request,
 and the maximum sample sum of server/client lifetime RSS high-water marks.
 That memory figure includes startup and warmup and is not a simultaneous peak.
 

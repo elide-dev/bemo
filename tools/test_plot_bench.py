@@ -21,6 +21,11 @@ class PerformanceChartTest(unittest.TestCase):
       provenance.write_text(json.dumps(self.meta))
       return charts.load(provenance)
 
+  def test_archived_jdk_tls_evidence_still_loads(self):
+    meta, groups = charts.load(charts.DEFAULT.parent / "provenance-jdk.json")
+    self.assertFalse(meta.get("native_netty_baseline", False))
+    self.assertEqual(len(groups), 24)
+
   def test_raw_samples_are_authoritative(self):
     expected = charts.values(self.load(self.rows)[1], charts.CASES[0], "bemo", "requests_per_second")
     for row in self.rows:
@@ -111,6 +116,27 @@ class PerformanceChartTest(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, "Unmatched TLS"):
       self.load(rows)
 
+  def test_native_baseline_requires_actual_channel_and_tcnative(self):
+    self.meta["native_netty_baseline"] = True
+    for row in self.rows:
+      if row["transport"] == "bemo":
+        continue
+      for sample in row["samples"]:
+        sample["server_channel"] = "io.netty.channel.epoll.EpollServerSocketChannel"
+        if sample["tls"]:
+          sample.update(tls_provider="openssl", tls_implementation="BoringSSL")
+    self.load(self.rows)
+    tls = next(row for row in self.rows if row["transport"] != "bemo" and row["case"].startswith("tls-"))
+    for field, value, message in (("tls_provider", "jdk", "Unexpected TLS provider"),
+                                  ("tls_implementation", None, "baseline evidence"),
+                                  ("server_channel", "io.netty.channel.socket.nio.NioServerSocketChannel", "baseline evidence")):
+      with self.subTest(field=field):
+        rows = copy.deepcopy(self.rows)
+        selected = next(row for row in rows if row["case"] == tls["case"] and row["transport"] == tls["transport"])
+        selected["samples"][0][field] = value
+        with self.assertRaisesRegex(ValueError, message):
+          self.load(rows)
+
   def test_invalid_metrics_are_rejected(self):
     for value in (None, 0, -1, float("nan"), float("inf")):
       with self.subTest(value=value):
@@ -130,13 +156,51 @@ class FrameworkChartTest(unittest.TestCase):
       source.write_text(json.dumps(self.evidence))
       return charts.load_frameworks(source)
 
+  def test_archived_two_framework_matrix_still_loads(self):
+    source = charts.ROOT / "docs/performance/data/framework-unclemax-level1.json"
+    sha, groups = charts.load_frameworks(source)
+    self.assertEqual(len(groups), 40)
+    self.assertEqual(sum(len(samples) for samples in groups.values()), 120)
+
   def test_all_frameworks_runtimes_and_endpoints_use_raw_samples(self):
     for run in self.evidence["workloads"].values():
       run["summary"] = []
     sha, groups = self.load()
     self.assertEqual(len(sha), 64)
-    self.assertEqual(len(groups), 40)
-    self.assertEqual(sum(len(samples) for samples in groups.values()), 120)
+    count = len(self.evidence.get("frameworks", ("spring-boot", "micronaut"))) * 20
+    self.assertEqual(len(groups), count)
+    self.assertEqual(sum(len(samples) for samples in groups.values()), count * 3)
+
+  def test_declared_ktor_matrix_and_native_baseline_are_required(self):
+    self.evidence.update(frameworks=["spring-boot", "micronaut", "ktor"], native_netty_baseline=True)
+    for run in self.evidence["workloads"].values():
+      has_ktor = any(sample["framework"] == "ktor" for sample in run["samples"])
+      for sample in list(run["samples"]):
+        if sample["framework"] == "micronaut" and not has_ktor:
+          ktor = copy.deepcopy(sample)
+          ktor["framework"] = "ktor"
+          run["samples"].append(ktor)
+      for sample in run["samples"]:
+        if sample["transport"] == "netty":
+          sample.update(driver="epoll", server_channel="io.netty.channel.epoll.EpollServerSocketChannel")
+          if sample["tls"]:
+            sample.update(tls_provider="netty-tcnative", tls_implementation="BoringSSL")
+    for run in self.evidence["workloads"].values():
+      run["environment"]["arguments"] = dict(builder="elide", warmup=20, duration=20, samples=3, connections=64, threads=4, server_cpus="12-17", client_cpus="18-21")
+    self.assertEqual(len(self.load()[1]), 60)
+    stock = next(s for s in self.evidence["workloads"]["tls"]["samples"] if s["transport"] == "netty")
+    stock["tls_provider"] = "jdk"
+    with self.assertRaisesRegex(ValueError, "tcnative framework"):
+      self.load()
+    stock["tls_provider"] = "netty-tcnative"
+    arguments = self.evidence["workloads"]["tls"]["environment"]["arguments"]
+    arguments["duration"] = 10
+    with self.assertRaisesRegex(ValueError, "measurement settings"):
+      self.load()
+    arguments["duration"] = 20
+    stock["server_channel"] = "io.netty.channel.socket.nio.NioServerSocketChannel"
+    with self.assertRaisesRegex(ValueError, "native Netty framework"):
+      self.load()
 
   def test_missing_and_duplicate_repetitions_are_rejected(self):
     samples = self.evidence["workloads"]["tls"]["samples"]

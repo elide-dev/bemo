@@ -1,0 +1,83 @@
+[
+  {
+    "transport": "bemo",
+    "gzip_level": 1,
+    "payload_bytes": 1024,
+    "wire_body_bytes": 83,
+    "payload_sha256": "d69685e65ec99d11f47467145b06d3d1b8a7148e686bac5516d49d7f2224b447",
+    "validated_responses": 3,
+    "driver": "io-uring"
+  },
+  {
+    "transport": "epoll",
+    "gzip_level": 1,
+    "payload_bytes": 1024,
+    "wire_body_bytes": 90,
+    "payload_sha256": "d69685e65ec99d11f47467145b06d3d1b8a7148e686bac5516d49d7f2224b447",
+    "validated_responses": 3,
+    "driver": "epoll"
+  },
+  {
+    "transport": "epoll",
+    "gzip_level": 6,
+    "payload_bytes": 1024,
+    "wire_body_bytes": 88,
+    "payload_sha256": "d69685e65ec99d11f47467145b06d3d1b8a7148e686bac5516d49d7f2224b447",
+    "validated_responses": 3,
+    "driver": "epoll"
+  },
+  {
+    "transport": "bemo",
+    "gzip_level": 1,
+    "payload_bytes": 65536,
+    "wire_body_bytes": 859,
+    "payload_sha256": "f500b89f344cdbf793ad13db3afb0cbeea75a051f2fd6d861782171d9d2817ee",
+    "validated_responses": 3,
+    "driver": "io-uring"
+  },
+  {
+    "transport": "epoll",
+    "gzip_level": 1,
+    "payload_bytes": 65536,
+    "wire_body_bytes": 558,
+    "payload_sha256": "f500b89f344cdbf793ad13db3afb0cbeea75a051f2fd6d861782171d9d2817ee",
+    "validated_responses": 3,
+    "driver": "epoll"
+  },
+  {
+    "transport": "epoll",
+    "gzip_level": 6,
+    "payload_bytes": 65536,
+    "wire_body_bytes": 288,
+    "payload_sha256": "f500b89f344cdbf793ad13db3afb0cbeea75a051f2fd6d861782171d9d2817ee",
+    "validated_responses": 3,
+    "driver": "epoll"
+  },
+  {
+    "transport": "bemo",
+    "gzip_level": 1,
+    "payload_bytes": 131072,
+    "wire_body_bytes": 1653,
+    "payload_sha256": "4e7d2b11846f8643b1d92eb57f339198f3153b3251444d4893b884c16ac907da",
+    "validated_responses": 3,
+    "driver": "io-uring"
+  },
+  {
+    "transport": "epoll",
+    "gzip_level": 1,
+    "payload_bytes": 131072,
+    "wire_body_bytes": 1002,
+    "payload_sha256": "4e7d2b11846f8643b1d92eb57f339198f3153b3251444d4893b884c16ac907da",
+    "validated_responses": 3,
+    "driver": "epoll"
+  },
+  {
+    "transport": "epoll",
+    "gzip_level": 6,
+    "payload_bytes": 131072,
+    "wire_body_bytes": 479,
+    "payload_sha256": "4e7d2b11846f8643b1d92eb57f339198f3153b3251444d4893b884c16ac907da",
+    "validated_responses": 3,
+    "driver": "epoll"
+  }
+]

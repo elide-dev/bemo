@@ -1,0 +1,5 @@
+{
+  "archive": "bemo-native-evidence-20261007.tar.gz",
+  "sha256": "fdca7b415c40c0f9d09520c4a853c874813adb3bdd71d4175bea18805b72a867",
+  "scope": "All build, check, JVM/Native Image contract, smoke, probe and benchmark logs; raw Criterion estimates/samples; frozen source patch; cycle commands. Retained locally under build/native-cycle and on the benchmark host."
+}

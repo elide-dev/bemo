@@ -3,7 +3,7 @@
 Baseline note: these archived framework measurements used Netty NIO and JDK
 TLS. The current harness requires native epoll/kqueue and tcnative/BoringSSL.
 These numbers must not be presented as results against that native baseline;
-no new benchmark cycle has been run for the correction.
+see the [native epoll/tcnative cycle](native-baseline.md) for the corrected baseline.
 
 Measured on October 7, 2026, using the Spring Boot and Micronaut examples in
 this working tree. The build snapshot is based on

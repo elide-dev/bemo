@@ -336,8 +336,10 @@ Elide and Gradle read the repository version files. The Spring and Micronaut
 versions are pinned in each build definition. The direct Spring AOT invocation
 is tied to the pinned Spring Boot version; verify it when upgrading Spring.
 
-The [matched-level Unclemax rerun](performance/unclemax-matched.md) covers all five
-workloads in both runtimes. The client records the minimum and maximum HTTP body
+The [native-baseline cycle](performance/native-baseline.md) covers Spring Boot,
+Micronaut and Ktor across all five workloads in both runtimes, against native
+epoll and tcnative/BoringSSL. The [matched-level rerun](performance/unclemax-matched.md)
+retains the archived NIO/JDK TLS measurements. The client records the minimum and maximum HTTP body
 size before decoding; these sizes exclude HTTP headers and TLS framing.
 
 TLS benchmark clients now use the shared TLS 1.3 / AES-128-GCM policy. Run
