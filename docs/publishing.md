@@ -189,7 +189,7 @@ it. Use `--bundle` to select a saved ZIP explicitly.
 
 ### GitHub Actions
 
-The separate [Publish Maven Central workflow](../../.github/workflows/on.central.yml)
+The separate [Publish Maven Central workflow](../.github/workflows/on.central.yml)
 is dispatched from `main` for an existing immutable release:
 
 ```sh
