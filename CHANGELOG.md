@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.3.0](https://github.com/elide-dev/bemo/compare/v0.2.0...v0.3.0) (2026-10-08)
+
+
+### Features
+
+* add framework samples and matched-level benchmark evidence ([571da0e](https://github.com/elide-dev/bemo/commit/571da0e40ed638ddf044d4c95da7baed467ee71f))
+* add Ktor examples and Maven Central publishing tooling ([be68a14](https://github.com/elide-dev/bemo/commit/be68a1420d6e06092316ddb6ab6dc0e1a68647e1))
+* complete Maven Central release publishing workflow ([0262b07](https://github.com/elide-dev/bemo/commit/0262b077742d1efa3019eeba37a73f1818011379))
+* **release:** publish verified Release Please releases to Central ([1e1c30f](https://github.com/elide-dev/bemo/commit/1e1c30f2ee727105420b61cbe706d16de8bd19c6))
+
+
+### Bug Fixes
+
+* require native Netty and tcnative benchmark baselines ([1d3ca12](https://github.com/elide-dev/bemo/commit/1d3ca121bd44d456cdbdadda5a2d46e5328d8517))
+
+
+### Performance Improvements
+
+* **abi:** improve handle fingerprints and shared lease bookkeeping ([#11](https://github.com/elide-dev/bemo/issues/11)) ([a0537b4](https://github.com/elide-dev/bemo/commit/a0537b44c9d17ac312e18adb08500cd1069913ed))
+* batch TLS output and borrow vectored Netty writes ([#15](https://github.com/elide-dev/bemo/issues/15)) ([03ef4a7](https://github.com/elide-dev/bemo/commit/03ef4a7d768b38f1459c589c7ee76baa27013b40))
+* **buffer:** reuse idle allocation storage and descriptors ([#9](https://github.com/elide-dev/bemo/issues/9)) ([dec2571](https://github.com/elide-dev/bemo/commit/dec2571b8a28fee7c781c52e35f2d9523ff07b89))
+* **gzip:** integrate native zlib-rs with pinned teardown fix ([75c4300](https://github.com/elide-dev/bemo/commit/75c4300168f01a93831816694dd0a5d1e06f3bac))
+* **gzip:** select qualified level 1 for native HTTP compression ([639a551](https://github.com/elide-dev/bemo/commit/639a55168df8a6fae94c7a35dba2a17aaee693bb))
+* **http:** encode response heads directly into native storage ([8b45daf](https://github.com/elide-dev/bemo/commit/8b45daf04f6912346fe922e23262747c73fc5b4f))
+* **http:** fill TLS records across retained response parts ([24dccce](https://github.com/elide-dev/bemo/commit/24dccce6300593af3ed7cf6bf9c0a351c4157a9f))
+* **http:** retain immutable response bodies without copying ([#8](https://github.com/elide-dev/bemo/issues/8)) ([df611db](https://github.com/elide-dev/bemo/commit/df611db2bffbca53b44ac96aa242202700dd7645))
+* **http:** retain validated line progress across fragmented heads ([#10](https://github.com/elide-dev/bemo/issues/10)) ([d112e24](https://github.com/elide-dev/bemo/commit/d112e2448dfe10d197fd35b00009a72bde2a5fb3))
+* refresh benchmarks against native Netty and tcnative ([5062d97](https://github.com/elide-dev/bemo/commit/5062d97947b14a33f0296ec241f2ae7df496ba1e))
+* reuse dynamic gzip state and compare compression backends ([#7](https://github.com/elide-dev/bemo/issues/7)) ([b38bd5b](https://github.com/elide-dev/bemo/commit/b38bd5bcccc4adee8dd56b39b748413a1745deb4))
+* **tls:** stage retained parts only when coalescing saves records ([d42af3c](https://github.com/elide-dev/bemo/commit/d42af3c177eeea6e0ff1a186946d56237a4402c2))
+
 ## [0.2.0](https://github.com/elide-dev/bemo/compare/v0.1.0...v0.2.0) (2026-10-06)
 
 
