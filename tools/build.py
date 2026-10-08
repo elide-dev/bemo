@@ -58,13 +58,15 @@ def benchmark_netty():
   """Stock native transports are benchmark dependencies, never published dependencies."""
   system = platform.system()
   arch = {"arm64": "aarch_64", "aarch64": "aarch_64", "x86_64": "x86_64"}.get(platform.machine())
-  dependencies = netty() + [jar_dependency("io.netty", f"netty-transport-classes-{backend}", VERSIONS["netty"])
-                            for backend in ("epoll", "kqueue")]
+  dependencies = netty() + [jar_dependency("io.netty", "netty-tcnative-classes", VERSIONS["tcnative"])]
+  dependencies += [jar_dependency("io.netty", f"netty-transport-classes-{backend}", VERSIONS["netty"])
+                   for backend in ("epoll", "kqueue")]
   if system in ("Linux", "Darwin") and arch:
     backend = "epoll" if system == "Linux" else "kqueue"
     classifier = f"{'linux' if system == 'Linux' else 'osx'}-{arch}"
-    dependencies.append(jar_dependency("io.netty", f"netty-transport-native-{backend}",
-                                       VERSIONS["netty"], classifier))
+    dependencies += [
+        jar_dependency("io.netty", f"netty-transport-native-{backend}", VERSIONS["netty"], classifier),
+        jar_dependency("io.netty", "netty-tcnative-boringssl-static", VERSIONS["tcnative"], classifier)]
   return dependencies
 
 
@@ -287,6 +289,8 @@ def fmt(check=False):
 def check():
   run(sys.executable, ROOT / "tools/test_publish_packages.py")
   run(sys.executable, ROOT / "tools/test_publish_central.py")
+  run(sys.executable, ROOT / "tools/test_native_baseline.py")
+  run(sys.executable, ROOT / "tools/test_bench.py")
   run(sys.executable, ROOT / "tools/test_seam.py")
   run(sys.executable, ROOT / "tools/test_bitcode.py")
   run(sys.executable, ROOT / "tools/test_setup_llvm.py")
@@ -304,6 +308,7 @@ def check():
   run(deny, "--locked", "--workspace", "check")
   jvm()
   run(sys.executable, ROOT / "tools/check_java.py")
+  run(sys.executable, ROOT / "tools/verify_native_baseline.py")
 
 
 def classifier():

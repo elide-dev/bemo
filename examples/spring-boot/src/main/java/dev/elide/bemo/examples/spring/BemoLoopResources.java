@@ -1,6 +1,8 @@
 package dev.elide.bemo.examples.spring;
 
 import dev.elide.bemo.examples.BemoRuntime;
+import dev.elide.bemo.examples.BenchmarkPayload;
+import dev.elide.bemo.examples.NettyBaseline;
 import dev.elide.bemo.transport.NativeIoHandler;
 import dev.elide.bemo.transport.NativeServerSocketChannel;
 import dev.elide.bemo.transport.NativeSocketChannel;
@@ -14,7 +16,7 @@ import java.util.concurrent.TimeUnit;
 import reactor.core.publisher.Mono;
 import reactor.netty.resources.LoopResources;
 
-/** Reactor Netty's transport hook: Bemo owns the loops and TCP channels. */
+/** Reactor Netty's transport hook selects Bemo or the required native Netty baseline. */
 final class BemoLoopResources implements LoopResources {
   private final int threads;
   private volatile EventLoopGroup group;
@@ -28,7 +30,10 @@ final class BemoLoopResources implements LoopResources {
     if (group == null)
       group =
           new MultiThreadIoEventLoopGroup(
-              threads, NativeIoHandler.newFactory(BemoRuntime.create(), 0, 256, 64 * 1024 * 1024));
+              threads,
+              BenchmarkPayload.bemoEnabled()
+                  ? NativeIoHandler.newFactory(BemoRuntime.create(), 0, 256, 64 * 1024 * 1024)
+                  : NettyBaseline.factory());
     return group;
   }
 
@@ -39,6 +44,11 @@ final class BemoLoopResources implements LoopResources {
 
   @Override
   public <C extends Channel> C onChannel(Class<C> type, EventLoopGroup loops) {
+    if (!BenchmarkPayload.bemoEnabled()) {
+      Channel channel = NettyBaseline.channel(type);
+      NettyBaseline.verifyChannel(channel);
+      return type.cast(channel);
+    }
     if (type == ServerSocketChannel.class) return type.cast(new NativeServerSocketChannel());
     if (type == SocketChannel.class) return type.cast(new NativeSocketChannel());
     throw new UnsupportedOperationException("Bemo example supports TCP only: " + type);
@@ -47,6 +57,10 @@ final class BemoLoopResources implements LoopResources {
   @Override
   public <C extends Channel> Class<? extends C> onChannelClass(
       Class<C> type, EventLoopGroup loops) {
+    if (!BenchmarkPayload.bemoEnabled()) {
+      if (type == ServerSocketChannel.class) return NettyBaseline.serverClass().asSubclass(type);
+      if (type == SocketChannel.class) return NettyBaseline.socketClass().asSubclass(type);
+    }
     if (type == ServerSocketChannel.class) return NativeServerSocketChannel.class.asSubclass(type);
     if (type == SocketChannel.class) return NativeSocketChannel.class.asSubclass(type);
     throw new UnsupportedOperationException("Bemo example supports TCP only: " + type);

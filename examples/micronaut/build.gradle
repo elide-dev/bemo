@@ -30,6 +30,15 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 dependencies {
+  implementation "io.netty:netty-transport-classes-epoll:${pins.netty}"
+  implementation "io.netty:netty-transport-classes-kqueue:${pins.netty}"
+  implementation "io.netty:netty-tcnative-boringssl-static:${pins.tcnative}"
+  def nativeArch = arch == 'aarch64' ? 'aarch_64' : arch
+  runtimeOnly "io.netty:netty-tcnative-boringssl-static:${pins.tcnative}:${platformName}-${nativeArch}"
+  def nativeBackend = platformName == 'osx' ? 'kqueue' : 'epoll'
+  if (platformName in ['osx', 'linux']) {
+    runtimeOnly "io.netty:netty-transport-native-${nativeBackend}:${pins.netty}:${platformName}-${nativeArch}"
+  }
   implementation enforcedPlatform("io.netty:netty-bom:${pins.netty}")
   implementation("dev.elide.bemo:bemo-netty:${bemoVersion}") { changing = true }
   implementation("dev.elide.bemo:bemo-ffm:${bemoVersion}") { changing = true }

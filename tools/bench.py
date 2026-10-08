@@ -33,7 +33,7 @@ def comparisons(summary):
         raise RuntimeError("Refusing incompatible transport comparison")
       bemo_tls = bemo["samples"][0]["tls_provider"]
       comparator_tls = other["samples"][0]["tls_provider"]
-      if bemo_tls != comparator_tls and (bemo_tls, comparator_tls) != ("native", "jdk"):
+      if bemo_tls != comparator_tls and (bemo_tls, comparator_tls) != ("native", "openssl"):
         raise RuntimeError("Refusing incompatible transport comparison")
       ratios = [a["requests_per_second"] / z["requests_per_second"]
                 for a, z in zip(bemo["samples"], other["samples"], strict=True)]
@@ -107,10 +107,10 @@ def native_server_binary():
 
 
 def selected_tls_provider(transport, requested):
-  """Bemo uses its Rustls/aws-lc-rs stack; stock Netty uses JDK TLS."""
+  """Bemo uses its Rustls/aws-lc-rs stack; stock Netty uses tcnative OpenSSL."""
   if requested == "jdk":
     return "jdk"
-  return "native" if transport == "bemo" else "jdk"
+  return "native" if transport == "bemo" else "openssl"
 
 
 def read_json(stream, timeout):
@@ -159,6 +159,14 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
                               stdout=subprocess.PIPE, stderr=log, text=True)
     try:
       ready = read_json(server.stdout, 60)
+      if not native_http:
+        expected_tls = tls_provider if tls else "none"
+        if ready.get("tls_provider") != expected_tls or ready.get("driver") != transport or ready.get("auto_fallback"):
+          raise RuntimeError("Unexpected comparison transport/TLS provider")
+        if transport in ("epoll", "kqueue"):
+          expected_channel = "io.netty.channel." + transport + "." + ("Epoll" if transport == "epoll" else "KQueue") + "ServerSocketChannel"
+          if ready.get("server_channel") != expected_channel:
+            raise RuntimeError("Unexpected comparison server channel")
       log.write(json.dumps(ready) + "\n")
       log.flush()
       command = [*java_args, "TransportBenchmark", *inputs, str(rounds), str(warmup),
@@ -221,7 +229,8 @@ def measure(case, rounds, warmup, transport="bemo", clients=4, tls_provider="aut
     raise RuntimeError("Incomplete measurement")
   if platform.system() == "Linux" and not metrics["peak_rss_bytes"]:
     raise RuntimeError("Missing RSS measurement")
-  metrics.update(transport=transport, driver=ready["driver"], auto_fallback=ready["auto_fallback"],
+  metrics.update(tls_implementation=ready.get("tls_version"), server_channel=ready.get("server_channel"),
+                 transport=transport, driver=ready["driver"], auto_fallback=ready["auto_fallback"],
                  tls_provider=tls_provider if tls else "none", http_provider="native" if native_http else "netty",
                  runtime=actual_runtime, binding="capi" if native_http and runtime == "native-image" else "ffm" if transport == "bemo" else "netty",
                  load_generator_tls_protocol="TLSv1.3" if tls else "none",
@@ -250,7 +259,7 @@ def main():
                       help="Comma-separated bemo,netty-native,epoll,kqueue,nio; unavailable backends fail")
   parser.add_argument("--clients", type=int, default=4)
   parser.add_argument("--tls-provider", choices=("auto", "jdk", "native"), default="auto",
-                      help="Default: Bemo Rustls/aws-lc-rs vs Netty JDK; jdk isolates transport costs")
+                      help="Default: Bemo Rustls/aws-lc-rs vs Netty tcnative; jdk isolates transport costs")
   parser.add_argument("--http-provider", choices=("native", "netty"), default="native",
                       help="Bemo V2 native HTTP by default; netty is an explicit transport control")
   parser.add_argument("--runtime", choices=("native-image", "jvm"), default="native-image",

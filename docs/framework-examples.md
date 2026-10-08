@@ -11,7 +11,7 @@ All applications run on the JVM and as GraalVM Native Images. Bemo is enabled
 by default. JVM applications use FFM and the platform shared library; native
 executables use the C API and a statically linked Bemo archive. The shared
 `BemoRuntime` factory selects the binding without changing the HTTP handler.
-The stock Netty baseline is selected at runtime, including in the same native
+The native Netty baseline is selected at runtime, including in the same native
 executable, with `-Dbemo.enabled=false`.
 
 Spring Boot WebFlux retains Reactor Netty HTTP routing and codecs. Its
@@ -33,6 +33,31 @@ workload is released. HTTP/2 is disabled for parity with the existing examples.
 Ktor and Kotlin versions are pinned in `tools/versions.json`; the Gradle Kotlin
 plugin and Maven Kotlin compiler use the same Kotlin version as Elide.
 See [Ktor's Netty configuration](https://api.ktor.io/ktor-server-netty/io.ktor.server.netty/-netty-application-engine/-configuration/index.html).
+
+## Native Netty comparison baseline
+
+`-Dbemo.enabled=false` requires Netty epoll on Linux or kqueue on macOS and
+`SslProvider.OPENSSL_REFCNT` using pinned `netty-tcnative-boringssl-static`.
+Missing native libraries fail startup; the examples never fall back to NIO
+or JDK TLS. The framework benchmark runner checks the actual server channel
+class and tcnative context diagnostic before warmup, and records the driver,
+channel class, and native TLS implementation with each sample. Correctness
+checks also require the example's owned TLS context reference to be released;
+Micronaut releases its separately retained reference through its context holder.
+
+Elide, Maven, and Gradle include the native transport classifiers. Elide 1.5.4
+omits resolved classifiers from its runtime classpath, so preparation stages
+`build/examples/netty-native.jar` with the current platform's pinned JNI
+libraries. Native Image embeds these resources and uses the shared JNI metadata
+in `examples/shared/native`; Bemo remains statically linked. The metadata was
+recorded with the GraalVM agent against Netty 4.2.18 and tcnative 2.0.84, with
+Linux epoll JNI types and both platforms' TCP constructors included explicitly.
+Refresh and requalify it when changing these dependencies.
+
+The comparison's gzip helper remains the reusable JDK Deflater at the same
+level as Bemo. Historical framework reports used NIO/JDK TLS; their recorded
+numbers do not describe this corrected native baseline. No replacement timing
+results are available yet.
 
 ## Workload endpoints
 

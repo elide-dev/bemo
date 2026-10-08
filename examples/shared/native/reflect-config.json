@@ -1,4 +1,26 @@
 [
-  {"name": "dev.elide.bemo.transport.NativeServerSocketChannel", "allPublicConstructors": true},
-  {"name": "dev.elide.bemo.transport.NativeSocketChannel", "allPublicConstructors": true}
+  {
+    "name": "dev.elide.bemo.transport.NativeServerSocketChannel",
+    "allPublicConstructors": true
+  },
+  {
+    "name": "dev.elide.bemo.transport.NativeSocketChannel",
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.netty.channel.epoll.EpollServerSocketChannel",
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.netty.channel.epoll.EpollSocketChannel",
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.netty.channel.kqueue.KQueueServerSocketChannel",
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.netty.channel.kqueue.KQueueSocketChannel",
+    "allPublicConstructors": true
+  }
 ]

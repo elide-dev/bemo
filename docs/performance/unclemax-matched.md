@@ -1,5 +1,10 @@
 # Matched gzip-level benchmarks on Unclemax
 
+Baseline note: these archived framework measurements used Netty NIO and JDK
+TLS. The current harness requires native epoll/kqueue and tcnative/BoringSSL.
+These numbers must not be presented as results against that native baseline;
+no new benchmark cycle has been run for the correction.
+
 Measured with gzip level **1 on both sides**, using an isolated working-tree
 snapshot based on `a8bf91d49ea7719ab8a4460aa22f8d97bf93ae51`.
 The parent commit alone does not identify the measured source. Per-file hashes,

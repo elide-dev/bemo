@@ -87,8 +87,12 @@ The primary macro workload runs a V2 native HTTP server compiled as an optimized
 Native Image (`-O3`) and statically linked to Bemo through its C bindings. Rust
 owns request parsing, response encoding, socket I/O, and Rustls/aws-lc-rs TLS.
 The comparator is a stock OpenJDK Netty HTTP server with epoll on Linux or kqueue
-on macOS and JDK TLS. Explicit NIO comparison is also available. Neither server
-falls back silently when its requested backend is unavailable.
+on macOS and reference-counted tcnative/BoringSSL TLS. Explicit NIO comparison
+and `--tls-provider jdk` controls are also available. Neither server
+falls back silently when its requested backend is unavailable. `make check`
+also runs `tools/verify_native_baseline.py`: it verifies native HTTP/gzip,
+tcnative TLS 1.3 / AES-128-GCM, and refusal to start when either JNI library
+is absent. This uses the server-only path and performs no timing measurements.
 
 Both servers run in separate processes from the same stock OpenJDK Netty NIO load
 generator, with one server I/O thread and one client I/O thread. Four persistent

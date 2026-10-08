@@ -141,7 +141,9 @@ public final class TransportBenchmark {
     int backend = Integer.parseInt(args[11]);
     if (clientCount < 1 || clientCount > 1024)
       throw new IllegalArgumentException("Clients must be between 1 and 1024");
-    if (!tlsProvider.equals("jdk") && !tlsProvider.equals("native"))
+    if (!tlsProvider.equals("jdk")
+        && !tlsProvider.equals("native")
+        && !tlsProvider.equals("openssl"))
       throw new IllegalArgumentException("Unknown TLS provider: " + tlsProvider);
     if (tlsProvider.equals("native") && !transport.equals("bemo"))
       throw new IllegalArgumentException("Native Rust TLS requires Bemo");
@@ -154,6 +156,9 @@ public final class TransportBenchmark {
     for (int i = 0; i < size; i++) payload[i] = pattern[i % pattern.length];
     TransportNative api = transport.equals("bemo") ? new FfmTransportNative(library) : null;
     boolean nativeTls = tls && tlsProvider.equals("native");
+    if (tls && tlsProvider.equals("openssl")) OpenSsl.ensureAvailability();
+    SslProvider nettyTls =
+        tlsProvider.equals("openssl") ? SslProvider.OPENSSL_REFCNT : SslProvider.JDK;
     NativeTlsContext serverTls =
         nativeTls ? NativeTlsContext.server(api, cert, key, "http/1.1") : null;
     NativeTlsContext clientTls = nativeTls ? NativeTlsContext.client(api, cert, "http/1.1") : null;
@@ -161,7 +166,7 @@ public final class TransportBenchmark {
         tls && !nativeTls
             ? SslContextBuilder.forServer(
                     new ByteArrayInputStream(cert), new ByteArrayInputStream(key))
-                .sslProvider(SslProvider.JDK)
+                .sslProvider(nettyTls)
                 .protocols("TLSv1.3")
                 .ciphers(List.of("TLS_AES_128_GCM_SHA256"))
                 .build()
@@ -170,11 +175,15 @@ public final class TransportBenchmark {
         tls && !nativeTls
             ? SslContextBuilder.forClient()
                 .trustManager(new ByteArrayInputStream(cert))
-                .sslProvider(SslProvider.JDK)
+                .sslProvider(externalPort != 0 ? SslProvider.JDK : nettyTls)
                 .protocols("TLSv1.3")
                 .ciphers(List.of("TLS_AES_128_GCM_SHA256"))
                 .build()
             : null;
+    if (tls
+        && tlsProvider.equals("openssl")
+        && !(serverSsl instanceof ReferenceCountedOpenSslContext))
+      throw new IllegalStateException("Comparison TLS did not select tcnative OpenSSL");
     IoHandlerFactory factory;
     Class<? extends ServerChannel> serverClass;
     Class<? extends Channel> clientClass;
@@ -256,8 +265,13 @@ public final class TransportBenchmark {
                 .channel();
       if (serverOnly) {
         System.out.printf(
-            "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":false,\"gzip_level\":%d}%n",
-            ((InetSocketAddress) server.localAddress()).getPort(), transport, gzip ? gzipLevel : 0);
+            "{\"port\":%d,\"driver\":\"%s\",\"auto_fallback\":false,\"gzip_level\":%d,\"tls_provider\":\"%s\",\"tls_version\":\"%s\",\"server_channel\":\"%s\"}%n",
+            ((InetSocketAddress) server.localAddress()).getPort(),
+            transport,
+            gzip ? gzipLevel : 0,
+            tls ? tlsProvider : "none",
+            tls && tlsProvider.equals("openssl") ? OpenSsl.versionString() : "none",
+            server.getClass().getName());
         System.out.flush();
         var control = new java.io.BufferedReader(new java.io.InputStreamReader(System.in));
         String command;
@@ -396,6 +410,8 @@ public final class TransportBenchmark {
       group.shutdownGracefully(0, 5, TimeUnit.SECONDS).syncUninterruptibly();
       if (clientTls != null) clientTls.close();
       if (serverTls != null) serverTls.close();
+      io.netty.util.ReferenceCountUtil.release(clientSsl);
+      io.netty.util.ReferenceCountUtil.release(serverSsl);
       if (api != null) Workload.close(api, Workload.DEFAULT);
     }
   }

@@ -30,10 +30,13 @@ sources {
 dependencies {
   maven {
     runtimeOnly {
+      "../../build/examples/netty-native.jar"
       "../../build/examples/bemo-native.jar"
       "../../build/examples/bemo-example-resources.jar"
     }
     packages {
+      "io.netty:netty-tcnative-classes:\(versions.tcnative)"
+      "io.netty:netty-tcnative-boringssl-static:\(versions.tcnative)"
       "../../build/examples/bemo-api.jar"
       "../../build/examples/bemo-ffm.jar"
       "../../build/examples/bemo-netty.jar"

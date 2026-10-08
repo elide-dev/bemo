@@ -6,11 +6,13 @@ import gzip
 import http.client
 import os
 import platform
+import re
 import shutil
 import socket
 import ssl
 import subprocess
 import time
+import zipfile
 
 import build
 
@@ -52,6 +54,19 @@ def prepare():
   native_jar = STAGE / "bemo-native.jar"
   build.jar(native_jar, resources)
   build.jar(STAGE / "bemo-example-resources.jar", build.ROOT / "examples/shared/src/main/resources")
+  # Elide 1.5.4 resolves classifiers but omits them from its runtime classpath.
+  # Stage the current platform's Netty JNI resources as an explicit runtime JAR.
+  netty_resources = STAGE / "netty-native-resources"
+  shutil.rmtree(netty_resources, ignore_errors=True)
+  for dependency in build.benchmark_netty():
+    with zipfile.ZipFile(dependency) as archive:
+      for name in archive.namelist():
+        if name.startswith("META-INF/native/") and not name.endswith("/"):
+          destination = netty_resources / name
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          destination.write_bytes(archive.read(name))
+  build.jar(STAGE / "netty-native.jar", netty_resources)
+
   destination = STAGE / "maven" / build.MAVEN_PATH / "bemo-ffm" / build.VERSION
   shutil.copy2(native_jar, destination / f"bemo-ffm-{build.VERSION}-{build.classifier()}.jar")
 
@@ -160,11 +175,27 @@ def verify_response(connection, path, enabled, compress=False, secure=False, enc
   if "compression" in path and response.getheader("Vary") != "Accept-Encoding":
     raise RuntimeError(f"{path}: missing negotiation metadata")
   if secure:
-    provider = "bemo-rustls-aws-lc" if enabled else "jdk"
+    provider = "bemo-rustls-aws-lc" if enabled else "netty-tcnative"
     if response.getheader("X-TLS-Provider") != provider:
       raise RuntimeError(f"{path}: wrong TLS provider")
   if response.getheader("Content-Length") != str(len(wire_body)):
     raise RuntimeError(f"{path}: incorrect wire content length")
+
+
+def baseline_evidence(text, secure=False):
+  backend = {"Linux": "epoll", "Darwin": "kqueue"}.get(platform.system())
+  if backend is None:
+    raise RuntimeError("Native Netty baseline requires Linux or macOS")
+  if f"Netty native transport enabled ({backend})" not in text:
+    raise RuntimeError("Missing verified native Netty transport; NIO fallback is forbidden")
+  channel = "io.netty.channel." + backend + "." + ("Epoll" if backend == "epoll" else "KQueue") + "ServerSocketChannel"
+  if f"Netty native channel verified ({channel})" not in text:
+    raise RuntimeError("Missing actual native Netty server channel")
+  tls = re.search(r"Netty TLS enabled \(tcnative, ([^)]+)\)", text)
+  if secure and tls is None:
+    raise RuntimeError("Missing verified tcnative TLS context")
+  return {"driver": backend, "server_channel": channel,
+          "tls_implementation": tls.group(1) if tls else None}
 
 
 def verify_workloads(port, tls_port, enabled):
@@ -294,6 +325,10 @@ def smoke(builder="elide", native=False, projects=None):
             process.kill()
             process.wait()
             raise RuntimeError(f"{name}: shutdown timed out")
+      if not enabled:
+        baseline_evidence(log.read_text(), secure=True)
+        if "Netty TLS context reference released" not in log.read_text():
+          raise RuntimeError(f"{name}: owned tcnative context reference was not released")
       transport_enabled = "Bemo transport enabled" in log.read_text()
       if transport_enabled != enabled:
         raise RuntimeError(f"{name}: unexpected transport startup diagnostic")

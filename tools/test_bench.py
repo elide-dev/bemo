@@ -38,9 +38,9 @@ class ComparisonTests(unittest.TestCase):
     with self.assertRaisesRegex(RuntimeError, "incompatible"):
       bench.comparisons(rows)
 
-  def test_default_compares_native_bemo_with_jdk_netty(self):
+  def test_default_compares_native_bemo_with_tcnative_netty(self):
     self.assertEqual(bench.selected_tls_provider("bemo", "auto"), "native")
-    self.assertEqual(bench.selected_tls_provider("kqueue", "auto"), "jdk")
+    self.assertEqual(bench.selected_tls_provider("kqueue", "auto"), "openssl")
     self.assertEqual(bench.selected_tls_provider("bemo", "jdk"), "jdk")
     sample = {"clients": 4, "requests": 100, "warmup_rounds": 20,
               "java_version": "stock", "host": "same", "workload_sha256": "same",
@@ -48,11 +48,11 @@ class ComparisonTests(unittest.TestCase):
     rows = [{"case": "tls", "transport": transport, "tls_provider": provider,
              "median_requests_per_second": 100, "median_latency_p99_ns": 10,
              "samples": [dict(sample, tls_provider=provider)]}
-            for transport, provider in (("bemo", "native"), ("kqueue", "jdk"))]
+            for transport, provider in (("bemo", "native"), ("kqueue", "openssl"))]
     result = bench.comparisons(rows)[0]
     self.assertEqual(result["comparison_kind"], "full-stack")
     self.assertEqual(result["tls_provider"], "native")
-    self.assertEqual(result["comparator_tls_provider"], "jdk")
+    self.assertEqual(result["comparator_tls_provider"], "openssl")
     rows[1]["samples"][0]["requests"] += 1
     with self.assertRaisesRegex(RuntimeError, "incompatible"):
       bench.comparisons(rows)

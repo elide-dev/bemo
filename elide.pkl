@@ -37,6 +37,8 @@ dependencies {
       "io.netty:netty-transport-native-epoll:\(versions.netty):linux-aarch_64"
       "io.netty:netty-transport-native-kqueue:\(versions.netty):osx-x86_64"
       "io.netty:netty-transport-native-kqueue:\(versions.netty):osx-aarch_64"
+      "io.netty:netty-tcnative-classes:\(versions.tcnative)"
+      "io.netty:netty-tcnative-boringssl-static:\(versions.tcnative)"
       "org.graalvm.sdk:nativeimage:\(versions.graalvm_sdk)"
       "org.graalvm.sdk:word:\(versions.graalvm_sdk)"
       "org.jspecify:jspecify:\(versions.jspecify)"

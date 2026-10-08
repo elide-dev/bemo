@@ -1,7 +1,9 @@
 {
   "resources": {
     "includes": [
-      {"pattern": "benchmark-tls/.*"},
+      {
+        "pattern": "benchmark-tls/.*"
+      },
       {
         "pattern": "application\\.properties"
       },
@@ -13,6 +15,9 @@
       },
       {
         "pattern": "META-INF/micronaut/.*"
+      },
+      {
+        "pattern": "META-INF/native/.*netty.*"
       }
     ]
   }

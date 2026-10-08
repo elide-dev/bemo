@@ -81,7 +81,7 @@ def ready(process, port, args, enabled):
 def load(args, port, duration, log, transport="bemo"):
   path, tls, compress, size = WORKLOADS[args.workload]
   compression_provider = "bemo-zlib-rs" if transport == "bemo" else "jdk-zlib"
-  tls_provider = ("bemo-rustls-aws-lc" if transport == "bemo" else "jdk") if tls else "none"
+  tls_provider = ("bemo-rustls-aws-lc" if transport == "bemo" else "netty-tcnative") if tls else "none"
   command = ["taskset", "-c", args.client_cpus, "wrk", "-t", str(args.threads),
              "-c", str(args.connections), "-d", f"{duration}s", "--timeout", "2s",
              "--latency", "-s", str(build.ROOT / "benchmarks/framework.lua"),
@@ -141,6 +141,8 @@ def measure(args, case, repetition, output):
                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     try:
       security = ready(process, selected_port, args, transport == "bemo")
+      evidence = {} if transport == "bemo" else examples.baseline_evidence(server_log.read_text(), secure=tls)
+      security.update(evidence)
       startup_ms = (time.monotonic() - started) * 1000
       if args.probe:
         metrics = {"probe_only": True}
@@ -156,7 +158,7 @@ def measure(args, case, repetition, output):
                      workload=args.workload, payload_bytes=size, tls=tls, compression=compress,
                      gzip_level=args.gzip_level if compress else None,
                      compression_provider=("bemo-zlib-rs" if transport == "bemo" else "jdk-zlib") if compress else "none",
-                     tls_provider=("bemo-rustls-aws-lc" if transport == "bemo" else "jdk") if tls else "none",
+                     tls_provider=("bemo-rustls-aws-lc" if transport == "bemo" else "netty-tcnative") if tls else "none",
                      repetition=repetition, startup_to_verified_http_ms=startup_ms,
                      command=command, server_pid=process.pid)
     finally:
@@ -247,6 +249,10 @@ def main():
     for case in cases:
       selected = [s for s in samples if (s["framework"], s["runtime"], s["transport"]) == case]
       summary.append(dict(zip(("framework", "runtime", "transport"), case),
+                          driver=selected[0].get("driver"),
+                          server_channel=selected[0].get("server_channel"),
+                          tls_provider=selected[0]["tls_provider"],
+                          tls_implementation=selected[0].get("tls_implementation"),
                           samples=len(selected),
                           median_requests_per_second=statistics.median(s["requests_per_second"] for s in selected),
                           min_requests_per_second=min(s["requests_per_second"] for s in selected),

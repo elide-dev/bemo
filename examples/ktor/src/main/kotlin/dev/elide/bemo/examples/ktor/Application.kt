@@ -1,5 +1,6 @@
 package dev.elide.bemo.examples.ktor
 
+import dev.elide.bemo.examples.NettyBaseline
 import dev.elide.bemo.examples.BemoRuntime
 import dev.elide.bemo.examples.BenchmarkCompression
 import dev.elide.bemo.examples.BenchmarkPayload
@@ -39,6 +40,15 @@ object Application {
           val factory = NativeIoHandler.newFactory(binding, 0, 256, 64 * 1024 * 1024)
           group(MultiThreadIoEventLoopGroup(1, factory), MultiThreadIoEventLoopGroup(2, factory))
           channelFactory { NativeServerSocketChannel() }
+        } else {
+          group(
+            MultiThreadIoEventLoopGroup(1, NettyBaseline.factory()),
+            MultiThreadIoEventLoopGroup(2, NettyBaseline.factory())
+          )
+          channelFactory {
+            NettyBaseline.channel(io.netty.channel.socket.ServerSocketChannel::class.java)
+              .also { NettyBaseline.verifyChannel(it) }
+          }
         }
       }
       if (secure) {

@@ -6,7 +6,6 @@ import dev.elide.bemo.examples.BenchmarkTls;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ReactorResourceFactory;
 import org.springframework.http.server.reactive.HttpHandler;
@@ -14,7 +13,6 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.netty.resources.LoopResources;
 
 @SpringBootApplication
 @RestController
@@ -78,15 +76,11 @@ public class Application {
   }
 
   @Bean
-  ReactorResourceFactory reactorResources(BemoLoopResources loops, Environment environment) {
+  ReactorResourceFactory reactorResources(BemoLoopResources loops) {
     // AOT freezes bean conditions. Select resources at runtime for both transport modes.
     ReactorResourceFactory resources = new ReactorResourceFactory();
     resources.setUseGlobalResources(false);
-    resources.setLoopResourcesSupplier(
-        () ->
-            environment.getProperty("bemo.enabled", Boolean.class, true)
-                ? loops
-                : LoopResources.create("netty", 2, true));
+    resources.setLoopResourcesSupplier(() -> loops);
     return resources;
   }
 }

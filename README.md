@@ -77,7 +77,7 @@ per case, and verified response contents. All twelve basic HTTP/TLS workloads
 and all five framework endpoints are retained, including regressions. These are closed-loop loopback measurements
 on a shared Linux Threadripper PRO 9965WX host, not a universal speedup claim.
 
-The basic matrix compares Bemo Native Image `-O3` with native HTTP, io_uring and
+The archived basic matrix compares Bemo Native Image `-O3` with native HTTP, io_uring and
 Rustls/aws-lc-rs against OpenJDK Netty epoll with Netty HTTP and JDK TLS.
 It measures the complete stacks, including the different server runtimes.
 
@@ -90,7 +90,9 @@ It measures the complete stacks, including the different server runtimes.
 The Spring Boot and Micronaut comparisons hold the runtime fixed within each
 row. Native Images use `-O3` with the portable `x86-64-v3` default target.
 They keep framework HTTP codecs; Bemo supplies native transport, gzip and
-TLS, while stock mode uses Netty NIO, JDK gzip and JDK TLS. The table shows
+TLS, while stock mode in these archived measurements used Netty NIO, JDK gzip
+and JDK TLS. The corrected harness requires native epoll/kqueue and tcnative;
+these numbers do not describe that baseline. The table shows
 Bemo throughput changes versus stock mode; the report retains absolute rates
 and all sample ranges. Each endpoint uses 64 connections, with 20 seconds of
 warmup and 20 seconds measured per fresh-server sample. TLS clients are pinned

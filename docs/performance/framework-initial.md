@@ -1,5 +1,10 @@
 # Initial framework benchmarks on Unclemax
 
+Baseline note: these archived framework measurements used Netty NIO and JDK
+TLS. The current harness requires native epoll/kqueue and tcnative/BoringSSL.
+These numbers must not be presented as results against that native baseline;
+no new benchmark cycle has been run for the correction.
+
 Measured on October 7, 2026, using the Spring Boot and Micronaut examples in
 this working tree. The build snapshot is based on
 `a8bf91d49ea7719ab8a4460aa22f8d97bf93ae51` and includes uncommitted example

@@ -1,0 +1,582 @@
+{
+  "reflection": [
+    {
+      "type": "byte[]",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.bootstrap.ServerBootstrap$1"
+    },
+    {
+      "type": "io.netty.bootstrap.ServerBootstrap$ServerBootstrapAcceptor"
+    },
+    {
+      "type": "io.netty.buffer.AbstractByteBufAllocator"
+    },
+    {
+      "type": "io.netty.buffer.AdaptivePoolingAllocator$Magazine"
+    },
+    {
+      "type": "io.netty.buffer.AdaptivePoolingAllocator$SizeClassedChunk"
+    },
+    {
+      "type": "io.netty.channel.AbstractChannelHandlerContext"
+    },
+    {
+      "type": "io.netty.channel.ChannelException",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.ChannelOutboundBuffer"
+    },
+    {
+      "type": "io.netty.channel.DefaultChannelConfig"
+    },
+    {
+      "type": "io.netty.channel.DefaultChannelPipeline"
+    },
+    {
+      "type": "io.netty.channel.DefaultChannelPipeline$HeadContext"
+    },
+    {
+      "type": "io.netty.channel.DefaultChannelPipeline$TailContext"
+    },
+    {
+      "type": "io.netty.channel.DefaultFileRegion",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "file"
+        },
+        {
+          "name": "transferred"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.channel.kqueue.BsdSocket",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.kqueue.KQueueEventArray",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.kqueue.KQueueIoHandler"
+    },
+    {
+      "type": "io.netty.channel.kqueue.KQueueStaticallyReferencedJniMethods",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.kqueue.Native",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.unix.Buffer",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.unix.DatagramSocketAddress",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "byte[]",
+            "int",
+            "int",
+            "int",
+            "io.netty.channel.unix.DatagramSocketAddress"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.channel.unix.DomainDatagramSocketAddress",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "byte[]",
+            "int",
+            "io.netty.channel.unix.DomainDatagramSocketAddress"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.channel.unix.ErrorsStaticallyReferencedJniMethods",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.unix.FileDescriptor",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.unix.LimitsStaticallyReferencedJniMethods",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.channel.unix.PeerCredentials",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "int",
+            "int",
+            "int[]"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.channel.unix.Socket",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.handler.codec.http.HttpServerCodec"
+    },
+    {
+      "type": "io.netty.handler.codec.http.HttpServerExpectContinueHandler"
+    },
+    {
+      "type": "io.netty.handler.ssl.OpenSslSessionCache",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "getSession",
+          "parameterTypes": [
+            "long",
+            "byte[]"
+          ]
+        },
+        {
+          "name": "sessionCreated",
+          "parameterTypes": [
+            "long",
+            "long"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.handler.ssl.ReferenceCountedOpenSslContext$AbstractCertificateVerifier",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "verify",
+          "parameterTypes": [
+            "long",
+            "byte[][]",
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.handler.ssl.ReferenceCountedOpenSslServerContext$ExtendedTrustManagerVerifyCallback"
+    },
+    {
+      "type": "io.netty.handler.ssl.ReferenceCountedOpenSslServerContext$OpenSslServerCertificateCallback",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "handle",
+          "parameterTypes": [
+            "long",
+            "byte[]",
+            "byte[][]"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.handler.ssl.ReferenceCountedOpenSslServerContext$OpenSslSniHostnameMatcher",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "match",
+          "parameterTypes": [
+            "long",
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.handler.ssl.SslHandler"
+    },
+    {
+      "type": "io.netty.handler.timeout.WriteTimeoutHandler"
+    },
+    {
+      "type": "io.netty.internal.tcnative.Buffer",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.internal.tcnative.CertificateCallback"
+    },
+    {
+      "type": "io.netty.internal.tcnative.CertificateCallbackTask",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "long",
+            "byte[]",
+            "byte[][]",
+            "io.netty.internal.tcnative.CertificateCallback"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.internal.tcnative.CertificateVerifierTask",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "long",
+            "byte[][]",
+            "java.lang.String",
+            "io.netty.internal.tcnative.CertificateVerifier"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.internal.tcnative.Library",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.internal.tcnative.NativeStaticallyReferencedJniMethods",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSL",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSLContext",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSLCredential",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSLPrivateKeyMethodDecryptTask",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "long",
+            "byte[]",
+            "io.netty.internal.tcnative.AsyncSSLPrivateKeyMethod"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSLPrivateKeyMethodSignTask",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "long",
+            "int",
+            "byte[]",
+            "io.netty.internal.tcnative.AsyncSSLPrivateKeyMethod"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSLPrivateKeyMethodTask",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "resultBytes"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSLSession",
+      "jniAccessible": true
+    },
+    {
+      "type": "io.netty.internal.tcnative.SSLTask",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "complete"
+        },
+        {
+          "name": "returnValue"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.util.DefaultAttributeMap"
+    },
+    {
+      "type": "io.netty.util.Recycler$DefaultHandle"
+    },
+    {
+      "type": "io.netty.util.ReferenceCountUtil"
+    },
+    {
+      "type": "io.netty.util.ResourceLeakDetector$DefaultResourceLeak"
+    },
+    {
+      "type": "io.netty.util.concurrent.ConcurrentSkipListIntObjMultimap"
+    },
+    {
+      "type": "io.netty.util.concurrent.ConcurrentSkipListIntObjMultimap$Index"
+    },
+    {
+      "type": "io.netty.util.concurrent.ConcurrentSkipListIntObjMultimap$Node"
+    },
+    {
+      "type": "io.netty.util.concurrent.DefaultPromise"
+    },
+    {
+      "type": "io.netty.util.concurrent.MpscIntQueue$MpscAtomicIntegerArrayQueue"
+    },
+    {
+      "type": "io.netty.util.concurrent.SingleThreadEventExecutor"
+    },
+    {
+      "type": "io.netty.util.internal.NativeLibraryUtil",
+      "methods": [
+        {
+          "name": "loadLibrary",
+          "parameterTypes": [
+            "java.lang.String",
+            "boolean"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.netty.util.internal.shaded.org.jctools.queues.varhandle.BaseMpscLinkedVarHandleArrayQueueColdProducerFields",
+      "fields": [
+        {
+          "name": "producerLimit"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.util.internal.shaded.org.jctools.queues.varhandle.BaseMpscLinkedVarHandleArrayQueueConsumerFields",
+      "fields": [
+        {
+          "name": "consumerIndex"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.util.internal.shaded.org.jctools.queues.varhandle.BaseMpscLinkedVarHandleArrayQueueProducerFields",
+      "fields": [
+        {
+          "name": "producerIndex"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.util.internal.shaded.org.jctools.queues.varhandle.MpmcVarHandleArrayQueueConsumerIndexField",
+      "fields": [
+        {
+          "name": "consumerIndex"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.util.internal.shaded.org.jctools.queues.varhandle.MpmcVarHandleArrayQueueProducerIndexField",
+      "fields": [
+        {
+          "name": "producerIndex"
+        }
+      ]
+    },
+    {
+      "type": "java.io.FileDescriptor",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "fd"
+        }
+      ]
+    },
+    {
+      "type": "java.io.IOException",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.lang.Boolean",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "getBoolean",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Exception",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.lang.IllegalArgumentException",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.lang.NullPointerException",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.lang.OutOfMemoryError",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.lang.RuntimeException",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.lang.String",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "byte[]"
+          ]
+        },
+        {
+          "name": "getBytes",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.lang.UnsupportedOperationException",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.net.InetSocketAddress",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.String",
+            "int"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.net.PortUnreachableException",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.nio.Buffer",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "limit"
+        },
+        {
+          "name": "position"
+        }
+      ],
+      "methods": [
+        {
+          "name": "limit",
+          "parameterTypes": []
+        },
+        {
+          "name": "position",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.nio.channels.ClosedChannelException",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.management.VMManagementImpl",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "compTimeMonitoringSupport"
+        },
+        {
+          "name": "currentThreadCpuTimeSupport"
+        },
+        {
+          "name": "objectMonitorUsageSupport"
+        },
+        {
+          "name": "otherThreadCpuTimeSupport"
+        },
+        {
+          "name": "remoteDiagnosticCommandsSupport"
+        },
+        {
+          "name": "synchronizerUsageSupport"
+        },
+        {
+          "name": "threadAllocatedMemorySupport"
+        },
+        {
+          "name": "threadContentionMonitoringSupport"
+        }
+      ]
+    },
+    {
+      "type": "sun.nio.ch.FileChannelImpl",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "fd"
+        }
+      ]
+    },
+    {
+      "type": "io.netty.channel.epoll.Native",
+      "jniAccessible": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "io.netty.channel.epoll.NativeStaticallyReferencedJniMethods",
+      "jniAccessible": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "io.netty.channel.epoll.LinuxSocket",
+      "jniAccessible": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "io.netty.channel.epoll.NativeDatagramPacketArray$NativeDatagramPacket",
+      "jniAccessible": true,
+      "allDeclaredFields": true
+    }
+  ]
+}

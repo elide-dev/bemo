@@ -2,6 +2,8 @@ package dev.elide.bemo.examples;
 
 import dev.elide.bemo.transport.TransportNative;
 import dev.elide.bemo.transport.tls.NativeSslContextBuilder;
+import io.netty.handler.ssl.OpenSsl;
+import io.netty.handler.ssl.ReferenceCountedOpenSslContext;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
@@ -31,12 +33,16 @@ public final class BenchmarkTls implements AutoCloseable {
                 .build();
         System.out.println("Bemo TLS enabled (Rustls/aws-lc-rs)");
       } else {
+        OpenSsl.ensureAvailability();
         context =
             SslContextBuilder.forServer(
                     new ByteArrayInputStream(certificate), new ByteArrayInputStream(key))
-                .sslProvider(SslProvider.JDK)
+                .sslProvider(SslProvider.OPENSSL_REFCNT)
                 .protocols("TLSv1.2", "TLSv1.3")
                 .build();
+        if (!(context instanceof ReferenceCountedOpenSslContext))
+          throw new IllegalStateException("Netty comparison did not select tcnative OpenSSL");
+        System.out.println("Netty TLS enabled (tcnative, " + OpenSsl.versionString() + ")");
       }
       return context;
     } catch (IOException | RuntimeException | Error failure) {
@@ -46,7 +52,7 @@ public final class BenchmarkTls implements AutoCloseable {
   }
 
   public static String provider() {
-    return BenchmarkPayload.bemoEnabled() ? "bemo-rustls-aws-lc" : "jdk";
+    return BenchmarkPayload.bemoEnabled() ? "bemo-rustls-aws-lc" : "netty-tcnative";
   }
 
   private static byte[] resource(String name) throws IOException {
@@ -60,6 +66,8 @@ public final class BenchmarkTls implements AutoCloseable {
   public synchronized void close() {
     if (context != null) {
       ReferenceCountUtil.release(context);
+      if (context instanceof ReferenceCountedOpenSslContext)
+        System.out.println("Netty TLS context reference released");
       context = null;
     }
     if (owner != 0) {

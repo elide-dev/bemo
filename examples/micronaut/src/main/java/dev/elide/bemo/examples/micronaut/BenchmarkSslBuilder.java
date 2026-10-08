@@ -11,7 +11,7 @@ import jakarta.annotation.PreDestroy;
 import jakarta.inject.Singleton;
 import java.util.Optional;
 
-/** Supply Rustls or JDK TLS at runtime; Micronaut keeps its HTTPS pipeline and routing. */
+/** Supply Rustls or tcnative TLS at runtime; Micronaut keeps its HTTPS pipeline and routing. */
 @Singleton
 @Replaces(CertificateProvidedSslBuilder.class)
 public final class BenchmarkSslBuilder implements ServerSslBuilder {
