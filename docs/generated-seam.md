@@ -1,7 +1,7 @@
 # Generated Native Image imports and ThinLTO libraries
 
 Bemo uses a pinned [Myna](https://github.com/elide-dev/myna) revision to
-produce all 90 raw Native Image C imports. `seams/bemo.seam` includes both
+produce all raw Native Image C imports. `seams/bemo.seam` includes both
 callback signatures and references Bemo’s public function-pointer interfaces.
 Myna emits `@CContext` and `@CLibrary` directly from the descriptor, using
 Bemo’s header directives. Existing Java adapters retain handle ownership,
