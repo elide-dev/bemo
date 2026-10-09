@@ -86,8 +86,10 @@ def deps():
   run(ELIDE, "install", "--slim", "--direct")
 
 
-def rust(release=False):
+def rust(release=False, debug_info=False):
   env = dict(os.environ)
+  if debug_info:
+    env.update(CARGO_PROFILE_RELEASE_DEBUG="1", CARGO_PROFILE_RELEASE_STRIP="none")
   if platform.system() == "Darwin":
     env.setdefault("MACOSX_DEPLOYMENT_TARGET", "15.0")
   run("cargo", "build", "--workspace", "--locked", *(["--release"] if release else []), env=env)

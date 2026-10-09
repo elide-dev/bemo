@@ -79,7 +79,8 @@ def snapshot():
 
 
 def prepare(runtime="native-image"):
-  build.rust(release=True)
+  # Retain optimized Rust symbols for CodSpeed without changing publication builds.
+  build.rust(release=True, debug_info=True)
   build.jvm()
   if platform.system() == "Linux":
     (build.BUILD / "bench").mkdir(parents=True, exist_ok=True)
@@ -94,7 +95,9 @@ def prepare(runtime="native-image"):
     cp = [build.classes("api"), build.classes("native-image"), *build.sdk()]
     build.compile_java(output, [build.ROOT / "benchmarks/java" / name for name in names], cp)
     linker = ["-H:NativeLinkerOption=ntdll.lib"] if os.name == "nt" else []
-    build.run(build.java_tool("native-image"), "--no-fallback", "-O3",
+    # Linux CodSpeed profiles need Java method symbols as well as the linked Rust symbols.
+    symbols = ["-g", "-H:-DeleteLocalSymbols"] if platform.system() == "Linux" else []
+    build.run(build.java_tool("native-image"), "--no-fallback", "-O3", *symbols,
               "-cp", build.classpath([output, *cp]),
               f"-H:CLibraryPath={build.target_dir(True)}",
               f"--native-compiler-options=-I{build.ROOT / 'include'}", *linker,

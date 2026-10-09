@@ -8,13 +8,12 @@
 use std::io;
 use std::sync::Arc;
 
-use compio_buf::{IoBufMut, SetLen};
 use rustls::client::UnbufferedClientConnection;
 use rustls::pki_types::ServerName;
 use rustls::server::UnbufferedServerConnection;
 use rustls::unbuffered::{ConnectionState, EncodeError, EncryptError, UnbufferedStatus};
 
-use crate::buffer::{Budget, Buffer, FrozenBuffer};
+use crate::buffer::{Budget, Buffer, FrozenBuffer, TlsOutput};
 
 pub mod engine;
 
@@ -164,11 +163,9 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
           return Ok(step);
         }
       };
-      let mut buffer = Buffer::new(size, budget.clone())?;
-      let length = encode.encode(buffer.ensure_init()).map_err(tls_error)?;
-      // SAFETY: ensure_init initialized all capacity; encode returned its written length.
-      unsafe { buffer.set_len(length) };
-      step.output = Some(buffer.freeze());
+      let mut buffer = TlsOutput::new(size, budget.clone())?;
+      let length = encode.encode(buffer.as_mut()).map_err(tls_error)?;
+      step.output = Some(buffer.freeze(length));
       step.state = State::Encoded;
     }
     ConnectionState::TransmitTlsData(transmit) => {
@@ -197,10 +194,10 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
         _ => 0,
       };
       if matches!(action, Action::Write(bytes) if !bytes.is_empty()) || matches!(action, Action::Close) {
-        let mut buffer: Option<Buffer> = None;
+        let mut buffer: Option<TlsOutput> = None;
         let mut capacity = 0;
         loop {
-          let output = buffer.as_mut().map_or(&mut [][..], Buffer::ensure_init);
+          let output = buffer.as_mut().map_or(&mut [][..], TlsOutput::as_mut);
           let encrypted = match action {
             Action::Write(bytes) => traffic.encrypt(&bytes[..write_length], output),
             Action::Close => traffic.queue_close_notify(output),
@@ -208,10 +205,8 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
           };
           match encrypted {
             Ok(length) => {
-              if let Some(mut buffer) = buffer {
-                // SAFETY: Encryption received fully initialized capacity and returned the length written.
-                unsafe { buffer.set_len(length) };
-                step.output = Some(buffer.freeze());
+              if let Some(buffer) = buffer {
+                step.output = Some(buffer.freeze(length));
               }
               break;
             }
@@ -221,7 +216,7 @@ fn advance<Data>(status: UnbufferedStatus<'_, '_, Data>, action: Action<'_>, bud
               // A size probe does not encrypt payload, but may queue a key update before retry.
               capacity = size.required_size;
               drop(buffer.take());
-              match Buffer::new(capacity, budget.clone()) {
+              match TlsOutput::new(capacity, budget.clone()) {
                 Ok(storage) => buffer = Some(storage),
                 Err(error) if error.kind() == io::ErrorKind::OutOfMemory && write_length > 16384 => {
                   // Preserve the single-record path for owners whose remaining budget cannot
