@@ -1615,7 +1615,9 @@ fn borrowed_vectors_handle_partial_writes_backpressure_and_owned_fallback() {
   client.set_send_buffer_size(4096).unwrap();
   let (mut peer, _) = listener.accept().unwrap();
   peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-  let mut driver = driver(8);
+  // A polling backend can complete the owned fallback synchronously with a partial write.
+  // Keep its operation slot occupied until the completion is consumed in either case.
+  let mut driver = driver(1);
   let connection = driver.attach(client).unwrap();
   let left = vec![11; 65536];
   let right = vec![22; 65536];
@@ -1650,7 +1652,7 @@ fn borrowed_vectors_handle_partial_writes_backpressure_and_owned_fallback() {
   let mut id = driver.send(&connection, storage.freeze()).unwrap();
   assert!(
     driver.try_send_vectored(&connection, &regions).unwrap().is_none(),
-    "pending owned writes preserve order"
+    "owned writes reserve the operation slot until their completion is consumed"
   );
   expected.extend_from_slice(&tail);
   let length = expected.len();
