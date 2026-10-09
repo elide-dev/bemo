@@ -1,9 +1,13 @@
 # Maven and Cargo delivery
 
-`make package` stages `build/maven/dev/elide/bemo/` and a platform-specific unsigned
-ZIP. `python3 tools/verify_package.py` checks metadata, hashes, class version,
-runtime isolation, and loading the packaged native library. This is local
-staging; no task uploads or publishes anything.
+## Consume a release
+
+Use **0.3.0** from Maven Central with JDK 22+ and Netty 4.2. The
+[installation guide](installation.md) contains complete Maven and Gradle launch
+commands, expected responses, platform selection, and compatibility limits.
+Qualified classifiers are `linux-x86_64-gnu` (glibc 2.39/Linux x86-64) and
+`osx-aarch64` (macOS 15/ARM64). Netty TLS requires the classpath.
+The repository's JDK 25/Elide/Rust toolchain is for contributors.
 
 | Artifact | Contents |
 | --- | --- |
@@ -17,6 +21,9 @@ staging; no task uploads or publishes anything.
 Every Java artifact includes its POM, sources, and Javadoc. Native classifiers
 use `META-INF/native/<platform>/`. Add both the base FFM JAR and the shared-library
 classifier JAR to the runtime classpath. For example, on Linux glibc x86-64:
+
+Define `<bemo.version>0.3.0</bemo.version>` inside your project’s `<properties>`.
+Add these entries inside `<dependencies>`:
 
 ```xml
 <dependency>
@@ -54,11 +61,30 @@ There is no dependency on the FFM classifier for static consumers.
 
 Extract `META-INF/native/<platform>/` from that classifier JAR and give Native
 Image `-H:CLibraryPath=<directory>` and
-`--native-compiler-options=-I<directory>`. Use the base `bemo-native-image` and
+`--native-compiler-options=-I<directory>`. Resolve that directory to an absolute
+path (for example `native_dir="$PWD/archive/META-INF/native/osx-aarch64"`),
+because the C compiler runs from a temporary working directory. Use the base `bemo-native-image` and
 `bemo-api` JARs and the GraalVM SDK at build time. Its `@CLibrary(requireStatic =
 true)` binding selects the archive. The linked executable needs no Bemo shared
 library or runtime resource extraction. This statically links Bemo; it does not
 promise a fully static libc/JDK executable.
+
+A small [release archive probe](../examples/native-probe) downloads 0.3.0 from
+Central, compiles Java, links the published archive, checks the ABI, and exercises
+buffer and driver ownership. With GraalVM compatible with SDK 25.3.4.1,
+`javac`, `native-image`, `jar`, `curl`, and a C/linker toolchain on PATH:
+
+```sh
+cd examples/native-probe
+sh verify.sh linux-x86_64-gnu
+# On Apple Silicon instead:
+sh verify.sh osx-aarch64
+```
+
+Run only the command matching the current host. Expect `ownership probe passed`.
+No Rust, Elide, or Python is required. This is an archive/ownership check, not
+an HTTP server. [Launch validation](launch-validation.md) records the tested
+Native Image toolchain and platform results.
 
 For a C consumer on Linux, link the extracted archive explicitly, after the
 consumer object, and include `-ldl -lpthread -lm`. Platform system libraries are
@@ -75,7 +101,14 @@ Snapshots are available from GitHub Packages at
 Qualification targets glibc 2.39/Linux x86-64 and macOS 15/ARM64;
 packaging verifies binary requirements and CI runs consumers on those builders.
 
-## GitHub Packages
+## Maintainer staging
+
+`make package` stages `build/maven/dev/elide/bemo/` and a platform-specific unsigned
+ZIP. `python3 tools/verify_package.py` checks metadata, hashes, class version,
+runtime isolation, and loading the packaged native library. This is local
+staging; no task uploads or publishes anything.
+
+## GitHub Packages snapshots
 
 After a main push passes verification, `job.packages.yml` downloads the tested
 Linux and macOS bundles from that same run and verifies their build attestations.

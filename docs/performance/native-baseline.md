@@ -1,5 +1,7 @@
 # Native Netty baseline on Unclemax
 
+Archived measurements from the October 7–8, 2026 source snapshot below.
+
 This cycle compares Bemo with Netty's native **epoll** transport and
 **tcnative/BoringSSL** TLS. The previous [matched-level report](unclemax-matched.md)
 used JDK TLS and, for the frameworks, NIO. Its results remain archived;
@@ -255,7 +257,7 @@ working-tree changes were chart validation; application and timing code came
 from the parent commit. The reporting renderer was subsequently extended for
 this complete dataset.
 
-- [Basic raw samples](data/native-basic-20261007.json) and [chart provenance](data/provenance.json).
+- [Basic raw samples](data/native-basic-20261007.json) and [chart provenance](data/provenance-native-baseline.json).
 - [All framework raw samples, summaries and environments](data/native-frameworks-20261007.json).
 - [Prepared artifact fingerprints](data/native-build-20261007.json) and [environment, dependency hashes and post-cycle verification](data/native-environment-20261007.json).
 - [Untimed native backend probes and syscall traces](data/native-backend-probe-20261007.json).

@@ -1,0 +1,20 @@
+[
+  {
+    "fingerprint": "target/release/build/aws-lc-sys/ff41b2b7c7470716/fingerprint/run-build-script-build-script-main.json",
+    "rustflags": [
+      "-C",
+      "target-cpu=native"
+    ],
+    "CFLAGS": "-march=native",
+    "CXXFLAGS": null
+  },
+  {
+    "fingerprint": "target/release/build/aws-lc-sys/de8288b41aaae2c9/fingerprint/run-build-script-build-script-main.json",
+    "rustflags": [
+      "-C",
+      "target-cpu=native"
+    ],
+    "CFLAGS": "-march=native",
+    "CXXFLAGS": null
+  }
+]

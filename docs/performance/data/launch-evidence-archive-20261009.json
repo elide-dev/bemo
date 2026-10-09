@@ -1,0 +1,6 @@
+{
+  "archive": "build/launch/linux-native-evidence-20261009.tar.gz",
+  "bytes": 980749,
+  "sha256": "4bad8752288e47069ab1c065030f483f6d09b41c718c7b9cdf40303030d0afa2",
+  "scope": "Complete Linux benchmark/build/contract reports and launch runner; local archive retained without publication."
+}

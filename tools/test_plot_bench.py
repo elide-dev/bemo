@@ -162,6 +162,17 @@ class FrameworkChartTest(unittest.TestCase):
     self.assertEqual(len(groups), 40)
     self.assertEqual(sum(len(samples) for samples in groups.values()), 120)
 
+  def test_mixed_cpu_targets_are_rejected(self):
+    flags = self.evidence["workloads"]["tls"]["environment"]["build_flags"]
+    for name, native in (("RUSTFLAGS", "-C target-cpu=native"),
+                         ("CFLAGS", "-march=native"), ("BEMO_BENCH_NATIVE_MARCH", "native")):
+      with self.subTest(flag=name):
+        original = flags[name]
+        flags[name] = "" if original else native
+        with self.assertRaisesRegex(ValueError, "build flags"):
+          self.load()
+        flags[name] = original
+
   def test_all_frameworks_runtimes_and_endpoints_use_raw_samples(self):
     for run in self.evidence["workloads"].values():
       run["summary"] = []

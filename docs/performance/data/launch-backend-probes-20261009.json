@@ -1,0 +1,134 @@
+[
+  {
+    "framework": "spring-boot",
+    "runtime": "jvm",
+    "transport": "bemo",
+    "io_uring_setup_successes": 2,
+    "io_uring_enter_calls": 64,
+    "epoll_wait_calls": 0,
+    "tls_provider": "bemo-rustls-aws-lc",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "spring-boot",
+    "runtime": "jvm",
+    "transport": "netty",
+    "io_uring_setup_successes": 0,
+    "io_uring_enter_calls": 0,
+    "epoll_wait_calls": 53,
+    "tls_provider": "netty-tcnative",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "spring-boot",
+    "runtime": "native",
+    "transport": "bemo",
+    "io_uring_setup_successes": 2,
+    "io_uring_enter_calls": 65,
+    "epoll_wait_calls": 0,
+    "tls_provider": "bemo-rustls-aws-lc",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "spring-boot",
+    "runtime": "native",
+    "transport": "netty",
+    "io_uring_setup_successes": 0,
+    "io_uring_enter_calls": 0,
+    "epoll_wait_calls": 54,
+    "tls_provider": "netty-tcnative",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "micronaut",
+    "runtime": "jvm",
+    "transport": "bemo",
+    "io_uring_setup_successes": 3,
+    "io_uring_enter_calls": 24,
+    "epoll_wait_calls": 1,
+    "tls_provider": "bemo-rustls-aws-lc",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "micronaut",
+    "runtime": "jvm",
+    "transport": "netty",
+    "io_uring_setup_successes": 0,
+    "io_uring_enter_calls": 0,
+    "epoll_wait_calls": 15,
+    "tls_provider": "netty-tcnative",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "micronaut",
+    "runtime": "native",
+    "transport": "bemo",
+    "io_uring_setup_successes": 3,
+    "io_uring_enter_calls": 25,
+    "epoll_wait_calls": 1,
+    "tls_provider": "bemo-rustls-aws-lc",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "micronaut",
+    "runtime": "native",
+    "transport": "netty",
+    "io_uring_setup_successes": 0,
+    "io_uring_enter_calls": 0,
+    "epoll_wait_calls": 15,
+    "tls_provider": "netty-tcnative",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "ktor",
+    "runtime": "jvm",
+    "transport": "bemo",
+    "io_uring_setup_successes": 3,
+    "io_uring_enter_calls": 22,
+    "epoll_wait_calls": 0,
+    "tls_provider": "bemo-rustls-aws-lc",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "ktor",
+    "runtime": "jvm",
+    "transport": "netty",
+    "io_uring_setup_successes": 0,
+    "io_uring_enter_calls": 0,
+    "epoll_wait_calls": 48,
+    "tls_provider": "netty-tcnative",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "ktor",
+    "runtime": "native",
+    "transport": "bemo",
+    "io_uring_setup_successes": 3,
+    "io_uring_enter_calls": 34,
+    "epoll_wait_calls": 0,
+    "tls_provider": "bemo-rustls-aws-lc",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  },
+  {
+    "framework": "ktor",
+    "runtime": "native",
+    "transport": "netty",
+    "io_uring_setup_successes": 0,
+    "io_uring_enter_calls": 0,
+    "epoll_wait_calls": 48,
+    "tls_provider": "netty-tcnative",
+    "tls_protocol": "TLSv1.3",
+    "tls_cipher": "TLS_AES_128_GCM_SHA256"
+  }
+]

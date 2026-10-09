@@ -155,7 +155,9 @@ def render(meta, groups, output, png=False):
       ax.set_axisbelow(True)
     fig.text(.04, .075, f"{meta['date']} · {meta['runner']} · {'parent' if meta.get('working_tree') else 'commit'} {meta['commit'][:7]} · "
              f"{meta['samples']} paired samples" + (" · working tree" if meta.get("working_tree") else ""), fontsize=9, color=MUTED)
-    fig.text(.04, .043, f"Bemo: Native Image −O3 / native HTTP / Rustls + AWS-LC / {meta['backend']}   "
+    march = meta.get("build_flags", {}).get("BEMO_BENCH_NATIVE_MARCH")
+    cpu_target = f" −march={march}" if march else ""
+    fig.text(.04, .043, f"Bemo: Native Image −O3{cpu_target} / native HTTP / Rustls + AWS-LC / {meta['backend']}   "
              f"Netty: OpenJDK / native {meta['comparator']} / {'tcnative BoringSSL' if meta.get('native_netty_baseline') else 'JDK TLS'}", fontsize=9, color=MUTED)
     fig.text(.04, .013, f"Per-response application gzip: Bemo {meta['gzip_provider']} level {meta['gzip_level']} / Netty compressor level {meta['netty_gzip_level']}", fontsize=8, color=MUTED)
     return fig, axes[0]
@@ -240,7 +242,7 @@ def render(meta, groups, output, png=False):
   save(fig, "efficiency.svg", "Server CPU and whole-process memory for all measured workloads")
 
 
-FRAMEWORK_DATA = ROOT / "docs/performance/data/native-frameworks-20261007.json"
+FRAMEWORK_DATA = ROOT / "docs/performance/data/launch-frameworks-20261009.json"
 FRAMEWORK_WORKLOADS = ("plaintext", "payload", "compression", "tls", "tls-compression")
 FRAMEWORK_LABELS = ("HTTP · 13 B", "HTTP · 128 KiB", "Gzip · 128 KiB", "TLS · 128 KiB", "TLS+gzip · 128 KiB")
 
@@ -264,8 +266,11 @@ def load_frameworks(source):
         raise ValueError("Mixed framework measurement settings")
       settings = current
       current_host = tuple(environment.get(key) for key in ("host", "kernel", "java", "native_image", "wrk"))
-      if any(value is None for value in current_host) or (host is not None and current_host != host):
+      if any(value is None for value in current_host):
         raise ValueError("Mixed framework hosts or toolchains")
+      current_host = (*current_host, environment.get("build_flags"))
+      if host is not None and current_host != host:
+        raise ValueError("Mixed framework hosts, toolchains or build flags")
       host = current_host
     fingerprints = environment["artifact_sha256"]
     if artifacts is not None and fingerprints != artifacts:
@@ -350,9 +355,12 @@ def render_frameworks(source, output, png=False):
   stock = "Stock: Netty epoll / JDK gzip / tcnative BoringSSL" if evidence.get("native_netty_baseline") else "Stock: Netty NIO / JDK gzip / JDK TLS"
   fig.legend(handles, ("Bemo: io_uring / zlib-rs / Rustls", stock),
              loc="lower left", bbox_to_anchor=(.04, .115), frameon=False, ncol=2, fontsize=11)
-  fig.text(.04, .096, "Unclemax · Linux Threadripper PRO 9965WX · runtime fixed within each panel · shared framework HTTP codecs", fontsize=10, color=MUTED)
+  revision = f" · {evidence['date']} · parent {evidence['commit'][:7]}" if evidence.get("commit") else ""
+  fig.text(.04, .096, "Unclemax · Linux Threadripper PRO 9965WX · runtime fixed within each panel · shared framework HTTP codecs" + revision, fontsize=10, color=MUTED)
   fig.text(.04, .072, "Gzip level 1 on both sides · TLS 1.3 / AES-128-GCM · 64 connections · 20 s warmup + 20 s measured", fontsize=10, color=MUTED)
-  fig.text(.04, .048, "Native Image: portable x86-64-v3, no trained PGO · closed-loop loopback results · ranges are not confidence intervals", fontsize=10, color=MUTED)
+  march = evidence["workloads"]["plaintext"]["environment"].get("build_flags", {}).get("BEMO_BENCH_NATIVE_MARCH")
+  cpu_target = f"−march={march}" if march else "portable x86-64-v3"
+  fig.text(.04, .048, f"Native Image: {cpu_target}, no trained PGO · closed-loop loopback results · ranges are not confidence intervals", fontsize=10, color=MUTED)
   sizes = {stack: sorted({sample["wire_body_max_bytes"] for key, samples in groups.items() if key[2] == "compression" and key[3] == stack for sample in samples}) for stack in ("bemo", "netty")}
   wire = " / ".join(("Bemo" if stack == "bemo" else "stock") + " " + ", ".join(f"{size:,}" for size in sizes[stack]) + " B" for stack in ("bemo", "netty"))
   fig.text(.04, .024, "Different compression ratios: 128 KiB ASCII → " + wire + " · source " + sha[:12], fontsize=10, color=MUTED)

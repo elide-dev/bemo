@@ -119,6 +119,11 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(bench.snapshot(), baseline)
         report.write_text('{"mean": 456}')
         self.assertEqual(bench.snapshot(), baseline)
+        with patch.dict(bench.os.environ, RUSTFLAGS="-C target-cpu=benchmark-test"):
+          changed = bench.snapshot()
+          self.assertNotEqual(changed["build_flags"], baseline["build_flags"])
+          self.assertEqual(changed["sources_sha256"], baseline["sources_sha256"])
+          self.assertEqual(changed["library_sha256"], baseline["library_sha256"])
         for path, category in [(source, "sources_sha256"), (classes, "classes_sha256"),
                                (library, "library_sha256")]:
           path.write_bytes(b"changed")

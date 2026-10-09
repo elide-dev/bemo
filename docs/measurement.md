@@ -61,6 +61,16 @@ each run. Native and JVM XML have separate directories.
 The README's performance graphics are generated from checked-in raw samples
 with `make bench-graphs`. See [chart provenance and refresh instructions](performance/README.md).
 
+For a host-specific benchmark build, set `RUSTFLAGS='-C target-cpu=native'`,
+`CFLAGS='-march=native'`, `CXXFLAGS='-march=native'`, and
+`BEMO_BENCH_NATIVE_MARCH=native` before preparing the benchmark and framework
+examples. The last variable adds `-march=native` to the benchmark server and
+framework Native Image builds; it does not change release packaging or build
+defaults. Use an isolated checkout for these host-specific artifacts. The
+benchmark manifests record all four settings. Downloaded Netty JNI dependencies
+retain their published CPU targets, and JVM compilation retains its own runtime
+CPU selection. Record that distinction when interpreting results.
+
 `check.bench.yml` is called by the reusable `on.verify.yml` flow for PRs, main
 pushes, scheduled checks, and manual dispatch.
 It follows Bali's and Komodo's split between CPU simulation and wall time.

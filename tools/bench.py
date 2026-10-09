@@ -72,6 +72,8 @@ def snapshot():
              for p in directory.rglob("*") if p.is_file()]
   native = native_server_binary()
   return {"native_server_sha256": hashlib.sha256(native.read_bytes()).hexdigest() if native.is_file() else None,
+          "build_flags": {name: os.environ.get(name, "") for name in
+                          ("RUSTFLAGS", "CFLAGS", "CXXFLAGS", "BEMO_BENCH_NATIVE_MARCH")},
           "sources_sha256": digest(sources), "classes_sha256": digest(classes),
           "library_sha256": hashlib.sha256(build.library(True).read_bytes()).hexdigest(),
           "source_files": {str(p.relative_to(build.ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -97,7 +99,9 @@ def prepare(runtime="native-image"):
     linker = ["-H:NativeLinkerOption=ntdll.lib"] if os.name == "nt" else []
     # Linux CodSpeed profiles need Java method symbols as well as the linked Rust symbols.
     symbols = ["-g", "-H:-DeleteLocalSymbols"] if platform.system() == "Linux" else []
+    march = os.environ.get("BEMO_BENCH_NATIVE_MARCH")
     build.run(build.java_tool("native-image"), "--no-fallback", "-O3", *symbols,
+              *([f"-march={march}"] if march else []),
               "-cp", build.classpath([output, *cp]),
               f"-H:CLibraryPath={build.target_dir(True)}",
               f"--native-compiler-options=-I{build.ROOT / 'include'}", *linker,
@@ -300,7 +304,7 @@ def main():
     if expected.get("prepared_runtime") != "native-image":
       raise RuntimeError("Run make bench-prepare to build the optimized Native Image HTTP server")
   actual = snapshot()
-  changed = [name for name in ("sources_sha256", "classes_sha256", "library_sha256", "native_server_sha256")
+  changed = [name for name in ("sources_sha256", "classes_sha256", "library_sha256", "native_server_sha256", "build_flags")
              if expected.get(name) != actual[name]]
   if changed:
     OUTPUT.mkdir(parents=True, exist_ok=True)

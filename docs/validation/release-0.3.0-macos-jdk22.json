@@ -1,0 +1,81 @@
+{
+  "version": "0.3.0",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "classifier": "osx-aarch64",
+  "java": "openjdk version \"22.0.2\" 2024-07-16\nOpenJDK Runtime Environment (build 22.0.2+9-70)\nOpenJDK 64-Bit Server VM (build 22.0.2+9-70, mixed mode, sharing)",
+  "artifacts": [
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-api/0.3.0/bemo-api-0.3.0.pom",
+      "bytes": 1578,
+      "sha256": "6cc1abac22e3e1aa1a9b99eaa86c4452736723d1d827bdb868b27de99657dba4"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-api/0.3.0/bemo-api-0.3.0.jar",
+      "bytes": 13383,
+      "sha256": "039cb5b2b62c2609615eaae6041f3b3fc2b6d84d4a69e8aef2707ec0e46093cb"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-ffm/0.3.0/bemo-ffm-0.3.0.pom",
+      "bytes": 1580,
+      "sha256": "bba0cf56acdc1d01a90de018b81b603cef9503dfa6e69021ae8f173e496795f5"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-ffm/0.3.0/bemo-ffm-0.3.0.jar",
+      "bytes": 25698,
+      "sha256": "3f28808bd59f951a58ef43339b6c7873f8a3b77804d5e808e33803db5d9e91a0"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-ffm/0.3.0/bemo-ffm-0.3.0-linux-x86_64-gnu.jar",
+      "bytes": 2348169,
+      "sha256": "fd0ad1fd01df4bc10d17a2e35a300c06e9d7a5e3b31481fcfd07eaf59b9d2c33"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-ffm/0.3.0/bemo-ffm-0.3.0-osx-aarch64.jar",
+      "bytes": 1912985,
+      "sha256": "4337b8b84e8c80b08962cb801dc21ca987421d9ae5acaf186ffb2355bd80092b"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-netty/0.3.0/bemo-netty-0.3.0.pom",
+      "bytes": 2335,
+      "sha256": "6985172963ab56be8cbdaba4b913237ee8fea1db898a8d8112942cc161910bbe"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-netty/0.3.0/bemo-netty-0.3.0.jar",
+      "bytes": 96383,
+      "sha256": "3f4aa6ce4f86580aa3a5483ec75adb495b0a5dc66998e7cbaab20ae2054248dd"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-native-image/0.3.0/bemo-native-image-0.3.0.pom",
+      "bytes": 1957,
+      "sha256": "2ad5b22231ab6e6fddc71002ac19b21ff891589af099976e33810fd78577562b"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-native-image/0.3.0/bemo-native-image-0.3.0.jar",
+      "bytes": 26956,
+      "sha256": "314fd2f81b03007d6f7ffb9f3e6e7296ce9fbb1fa3e523bad0f05960cfc90644"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-native-image/0.3.0/bemo-native-image-0.3.0-linux-x86_64-gnu.jar",
+      "bytes": 15913966,
+      "sha256": "859f9e14dc9e30d434013ec7efcdb6b9a8b7e91b8e1096f3279c8cdc2086734e"
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/dev/elide/bemo/bemo-native-image/0.3.0/bemo-native-image-0.3.0-osx-aarch64.jar",
+      "bytes": 14711116,
+      "sha256": "77c685933083318f251550147f6415ec53c6f289a5cf47a2f257a2922a11ac54"
+    }
+  ],
+  "commands": [
+    [
+      "python3",
+      "tools/verify_release_consumer.py",
+      "--output",
+      "<new-evidence-directory>"
+    ]
+  ],
+  "results": {
+    "maven": "passed",
+    "gradle": "passed"
+  },
+  "cache_policy": "Fresh Maven/Gradle caches in a copied standalone project; empty Maven settings; credential environment variables removed."
+}

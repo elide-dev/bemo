@@ -228,6 +228,8 @@ def main():
               "native_image": capture(str(build.java_tool("native-image")), "--version"),
               "wrk": subprocess.run(["wrk", "--version"], capture_output=True, text=True).stdout.splitlines()[0],
               "background_processes": capture("ps", "-eo", "pid,pcpu,psr,comm", "--sort=-pcpu"),
+              "build_flags": {name: os.environ.get(name, "") for name in
+                              ("RUSTFLAGS", "CFLAGS", "CXXFLAGS", "BEMO_BENCH_NATIVE_MARCH")},
               "artifact_sha256": fingerprint(artifacts),
               "harness_sha256": fingerprint([Path(__file__), Path(examples.__file__), Path(build.__file__),
                                               build.ROOT / "benchmarks/framework.lua", TLS_CONFIG, build.ROOT / "benchmarks/tls-policy.c", build.ROOT / "tools/versions.json"])}

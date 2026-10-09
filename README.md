@@ -13,12 +13,16 @@ Bemo adds native I/O, [Rustls](https://github.com/rustls/rustls) TLS with
 [zlib-rs](https://github.com/trifectatechfoundation/zlib-rs) compression to
 [Netty](https://netty.io). It runs on the JVM through FFM or links statically
 into GraalVM Native Image. Your application keeps its Netty pipelines and handlers.
+Framework HTTP codecs stay in Java; the [native HTTP server path](docs/native-http-example.md)
+is a separate integration.
 
 ## Usage
 
 Bemo **0.3.0** is on Maven Central. For a Netty application on **JDK 22+**, add
 the dependencies below and run with `--enable-native-access=ALL-UNNAMED`.
-The examples use Linux x86-64 with glibc. On macOS ARM64, replace
+Qualified packages target **Linux x86-64 / glibc 2.39** and **macOS 15 / ARM64**.
+Netty TLS requires the classpath. Windows, musl/Alpine, Linux ARM64, and Intel
+macOS packages are not qualified. The snippets use Linux; on macOS ARM64, replace
 `linux-x86_64-gnu` with `osx-aarch64`.
 
 <details open>
@@ -102,12 +106,15 @@ store the module and version.
 
 Bemo loads the native library from the classifier JAR automatically. See the
 [package guide](docs/publishing.md) for platform requirements and Native Image
-linking. The [Spring Boot, Micronaut, and Ktor examples](docs/framework-examples.md)
-each include Elide, Maven, and Gradle builds.
+linking. Start the [complete Maven or Gradle quickstart](docs/installation.md#run-a-complete-server)
+without building Bemo. It returns `Hello, World!` at
+`http://127.0.0.1:8080/plaintext`. The [framework examples](docs/framework-examples.md)
+are separate source-build examples.
 
 ### Java and Netty
 
-Create an event-loop group and use Bemo's server channel:
+This integration fragment creates an event-loop group for a `ServerBootstrap`:
+[the quickstart](examples/quickstart) supplies the complete runnable server.
 
 ```java
 import dev.elide.bemo.transport.FfmTransportNative;
@@ -149,30 +156,40 @@ For C exports, add `bemo-ffi` at the same revision. Public headers live in
 
 ## Performance
 
-These charts compare Bemo with **Netty epoll and tcnative/BoringSSL** across
-HTTP, TLS, and gzip workloads. The [benchmark run](docs/performance/native-baseline.md)
-predates the transport optimizations in 0.3.0.
+[Fresh development benchmarks](docs/performance/launch-refresh.md) measure
+**`16805b3` plus the recorded benchmark harness patch**, 2026-10-09 UTC,
+on a Linux Threadripper PRO 9965WX. This revision follows release **0.3.0**;
+these are development results. Benchmark builds use Rust `target-cpu=native`
+and Native Image `-O3 -march=native`. Release build defaults remain portable;
+downloaded Netty JNI libraries retain their published CPU targets.
 
-The server comparison uses Bemo Native Image and Netty on OpenJDK. These results
-include both transport and runtime differences.
+The full-stack comparison uses Bemo Native Image / native HTTP / io_uring /
+Rustls against OpenJDK 25.0.2 / Netty HTTP / epoll / tcnative BoringSSL.
+It includes runtime and codec differences. Native Image is GraalVM
+25.3.4.1+1.1. Large uncompressed TLS throughput is near parity (−0.6% and −0.1%).
 
-![HTTP and TLS throughput across twelve workloads](docs/performance/graphs/throughput-0fe6f875e1f9.svg)
+![HTTP and TLS throughput across twelve workloads](docs/performance/graphs/throughput-f7f3d714ab0a.svg)
 
-The framework comparison keeps the runtime and framework HTTP codecs the
-same within each pair:
+The framework matrix measures the same **`16805b3` snapshot, 2026-10-09 UTC**,
+with Spring Boot, Micronaut, and Ktor on OpenJDK 25.0.2 and GraalVM Native Image
+`-O3 -march=native`. Runtime and framework HTTP codecs stay fixed within each
+pair. Compression compares reusable zlib-rs with the reusable **JDK Deflater**
+helper at level 1:
 
-![Spring Boot, Micronaut, and Ktor throughput on the JVM and Native Image](docs/performance/graphs/framework-throughput-4c1e3556f5cc.svg)
+![Spring Boot, Micronaut, and Ktor throughput on the JVM and Native Image](docs/performance/graphs/framework-throughput-ac327da99d4b.svg)
 
-In this run, gzip throughput was **2.4 to 2.8×** the stock JVM
-framework throughput and **4.1 to 7.6×** the stock Native Image throughput.
-Large uncompressed JVM responses were **15 to 20% slower**. Both sides used gzip
-level 1, but Bemo produced larger compressed bodies: **1,580 vs. 909 bytes**
-for the 128 KiB framework payload.
+Across gzip and TLS+gzip, throughput was **2.2–3.0×** the stock JVM framework
+throughput and **4.8–7.5×** the stock Native Image throughput. Large uncompressed
+plaintext JVM responses were **13–17% slower**; Native Image Micronaut was
+**10% slower** there. Both sides used gzip level 1, but Bemo produced larger
+compressed bodies: **1,580 vs. 909 bytes** for the 128 KiB framework payload.
+Gains cannot be attributed only to transport.
 
-These are loopback measurements on a shared Linux host, with three samples per
-workload; chart ranges show the observed minimum and maximum. The
-[benchmark reports](docs/performance/README.md) include the methodology,
-latency, CPU, memory, raw results, and subsequent measurements.
+These are closed-loop loopback measurements on a shared host, with three samples
+per workload; ranges show observed minima and maxima, not confidence intervals.
+The [report](docs/performance/launch-refresh.md) includes latency, CPU, memory,
+raw samples, source hashes, and reproduction commands. Earlier measurements
+remain [archived](docs/performance/README.md).
 
 ## Working on Bemo
 

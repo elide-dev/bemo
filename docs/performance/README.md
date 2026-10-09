@@ -13,7 +13,7 @@ make bench-graphs
 ```
 
 This creates an isolated environment under `build/chart-venv` and renders the
-six current SVGs: two focused optimization charts, three basic transport charts,
+six SVGs: two archived focused optimization charts, three current basic transport charts,
 and the Spring Boot/Micronaut/Ktor framework matrix. The framework chart derives medians and sample ranges from
 the declared framework evidence, with all five endpoints in JVM and Native
 Image modes. Archived two-framework evidence remains supported. Each filename includes the first 12 characters of the
@@ -35,12 +35,18 @@ samples. The loader checks paired repetitions, affinity, sampling controls,
 source consistency within each variant, runtime/codec identity and native
 transport/TLS evidence. Before and after source fingerprints can differ;
 the report records the readiness-reporting change alongside the optimization.
-Do not splice these samples into the older complete matrix. The README labels
-that matrix and the framework results as pre-optimization evidence.
+Do not splice these samples into another complete matrix. The README now uses
+the [fresh development matrix](launch-refresh.md) at `16805b3` with benchmark-only
+host-native CPU targeting. The [earlier native baseline](native-baseline.md) and
+the focused before/after measurements retain their original revisions and CPU targets.
 
 ## Refresh from a benchmark
 
 Prepare and run the existing complete matrix, with at least three samples:
+
+The commands below use the portable defaults when CPU flags are unset. To
+reproduce the current host-native cycle, use its [complete source/flag commands](launch-refresh.md#evidence-and-reproduction)
+in an isolated checkout. Benchmark CPU flags do not change publication defaults.
 
 ```sh
 make bench-prepare
@@ -135,7 +141,8 @@ this evidence and all twelve workloads;
 - Memory is the maximum sample sum of server/client lifetime `VmHWM`, including
   startup and warmup. It is not a simultaneous peak, server-only RSS, or heap size.
 
-The current snapshot uses Bemo Native Image `-O3`, native HTTP, Rustls/aws-lc-rs,
+The current snapshot uses Bemo Native Image `-O3 -march=native`, Rust
+`-C target-cpu=native`, native HTTP, Rustls/aws-lc-rs,
 and io_uring against stock OpenJDK Netty epoll/tcnative BoringSSL. Four persistent clients
 use the same external OpenJDK Netty NIO load generator. Each server has one I/O
 thread; server/client heaps are 256 MiB each. Each sample warms 5,000 rounds,

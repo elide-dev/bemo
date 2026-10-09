@@ -10,7 +10,7 @@
     <maven.compiler.release>22</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <graalvm-sdk.version>25.3.4.1</graalvm-sdk.version>
-    <bemo.version>0.2.0</bemo.version>
+    <bemo.version>0.3.0</bemo.version>
     <tcnative.version>2.0.84.Final</tcnative.version>
     <netty.version>4.2.18.Final</netty.version>
     <ktor.version>3.6.0</ktor.version>

@@ -135,7 +135,9 @@ def compile_native(project, builder, optimization="2"):
     "Darwin": [],
     "Windows": ["-H:NativeLinkerOption=ntdll.lib"],
   }[platform.system()]
+  march = os.environ.get("BEMO_BENCH_NATIVE_MARCH")
   build.run(build.java_tool("native-image"), "--no-fallback", f"-O{optimization}",
+            *([f"-march={march}"] if march else []),
             f"--parallelism={os.environ.get('BEMO_NATIVE_JOBS', min(8, os.cpu_count() or 1))}",
             "--enable-native-access=ALL-UNNAMED",
             "--initialize-at-run-time=io.netty",

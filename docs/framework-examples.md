@@ -1,5 +1,13 @@
 # Spring Boot, Micronaut, and Ktor examples
 
+These are **source-build examples** for contributors and controlled benchmarks.
+For a first run using published **0.3.0** with only a JDK and Maven/Gradle,
+use the [standalone release quickstart](installation.md). The source examples
+require JDK 25, Rust, Elide, and Python; their Native Image builds additionally
+require the pinned GraalVM and a C/linker toolchain. Published qualification
+covers Linux x86-64/glibc 2.39 and macOS 15/ARM64, with Netty 4.2. Netty TLS
+requires the classpath.
+
 `examples/spring-boot`, `examples/micronaut`, and `examples/ktor` each contain
 an `elide.pkl`, `pom.xml`, Gradle build, and pinned Gradle wrapper beside shared
 application sources (Java for Spring/Micronaut, Kotlin for Ktor).
@@ -56,8 +64,11 @@ Refresh and requalify it when changing these dependencies.
 
 The comparison's gzip helper remains the reusable JDK Deflater at the same
 level as Bemo. Historical framework reports used NIO/JDK TLS; their recorded
-numbers do not describe this corrected native baseline. No replacement timing
-results are available yet.
+numbers do not describe this corrected native baseline. The
+[fresh development report](performance/launch-refresh.md) measures `16805b3`
+with host-native benchmark builds and the corrected epoll/tcnative baseline.
+The [earlier native-baseline report](performance/native-baseline.md) remains
+archived with its original source snapshot, runtime controls, and limitations.
 
 ## Workload endpoints
 
@@ -110,7 +121,7 @@ them as `-P` properties. They are runtime choices, including in native images.
 
 ## Prerequisites and staging
 
-Use the repository's pinned Elide toolchain, Python 3.11+, Rust, and a JDK 22+.
+Use the repository's pinned Elide toolchain, Python 3.11+, Rust, and a JDK 25 contributor toolchain.
 Set `JAVA_HOME` to that JDK. Native builds also need GraalVM `native-image`
 compatible with the pinned GraalVM SDK, and a C toolchain. Maven is needed only
 for the Maven path; the Gradle wrapper downloads the pinned distribution.
@@ -164,6 +175,10 @@ cd examples/spring-boot # or examples/micronaut or examples/ktor
 ./gradlew -Pbemo.enabled=false run
 ```
 
+These Maven/Gradle commands consume staged development artifacts. Maven’s
+`bemo.version` properties track the repository version; the independent release
+quickstart pins its public version separately.
+
 Gradle also provides the application plugin's `installDist` task for a JVM
 application distribution. Use `gradlew.bat` on Windows.
 
@@ -201,7 +216,7 @@ mvn -Dmaven.repo.local=../../build/examples/m2 -Pnative package
 
 Executables are written to `build/examples/native/<builder>/<project>` relative
 to the repository root, where `<builder>` is `elide`, `maven`, or `gradle`, and
-`<project>` is `spring-boot` or `micronaut`. Windows adds `.exe`.
+`<project>` is `spring-boot` or `micronaut` or `ktor`. Windows source builds add `.exe`.
 
 From the repository root:
 
@@ -336,7 +351,7 @@ Elide and Gradle read the repository version files. The Spring and Micronaut
 versions are pinned in each build definition. The direct Spring AOT invocation
 is tied to the pinned Spring Boot version; verify it when upgrading Spring.
 
-The [native-baseline cycle](performance/native-baseline.md) covers Spring Boot,
+The [fresh development cycle](performance/launch-refresh.md) covers Spring Boot,
 Micronaut and Ktor across all five workloads in both runtimes, against native
 epoll and tcnative/BoringSSL. The [matched-level rerun](performance/unclemax-matched.md)
 retains the archived NIO/JDK TLS measurements. The client records the minimum and maximum HTTP body

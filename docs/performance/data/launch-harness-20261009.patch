@@ -1,0 +1,59 @@
+diff --git a/tools/bench.py b/tools/bench.py
+index dbc6d71..9031dd8 100644
+--- a/tools/bench.py
++++ b/tools/bench.py
+@@ -72,6 +72,8 @@ def snapshot():
+              for p in directory.rglob("*") if p.is_file()]
+   native = native_server_binary()
+   return {"native_server_sha256": hashlib.sha256(native.read_bytes()).hexdigest() if native.is_file() else None,
++          "build_flags": {name: os.environ.get(name, "") for name in
++                          ("RUSTFLAGS", "CFLAGS", "CXXFLAGS", "BEMO_BENCH_NATIVE_MARCH")},
+           "sources_sha256": digest(sources), "classes_sha256": digest(classes),
+           "library_sha256": hashlib.sha256(build.library(True).read_bytes()).hexdigest(),
+           "source_files": {str(p.relative_to(build.ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+@@ -97,7 +99,9 @@ def prepare(runtime="native-image"):
+     linker = ["-H:NativeLinkerOption=ntdll.lib"] if os.name == "nt" else []
+     # Linux CodSpeed profiles need Java method symbols as well as the linked Rust symbols.
+     symbols = ["-g", "-H:-DeleteLocalSymbols"] if platform.system() == "Linux" else []
++    march = os.environ.get("BEMO_BENCH_NATIVE_MARCH")
+     build.run(build.java_tool("native-image"), "--no-fallback", "-O3", *symbols,
++              *([f"-march={march}"] if march else []),
+               "-cp", build.classpath([output, *cp]),
+               f"-H:CLibraryPath={build.target_dir(True)}",
+               f"--native-compiler-options=-I{build.ROOT / 'include'}", *linker,
+@@ -300,7 +304,7 @@ def main():
+     if expected.get("prepared_runtime") != "native-image":
+       raise RuntimeError("Run make bench-prepare to build the optimized Native Image HTTP server")
+   actual = snapshot()
+-  changed = [name for name in ("sources_sha256", "classes_sha256", "library_sha256", "native_server_sha256")
++  changed = [name for name in ("sources_sha256", "classes_sha256", "library_sha256", "native_server_sha256", "build_flags")
+              if expected.get(name) != actual[name]]
+   if changed:
+     OUTPUT.mkdir(parents=True, exist_ok=True)
+diff --git a/tools/bench_frameworks.py b/tools/bench_frameworks.py
+index 3cb3605..ee6b8d5 100644
+--- a/tools/bench_frameworks.py
++++ b/tools/bench_frameworks.py
+@@ -228,6 +228,8 @@ def main():
+               "native_image": capture(str(build.java_tool("native-image")), "--version"),
+               "wrk": subprocess.run(["wrk", "--version"], capture_output=True, text=True).stdout.splitlines()[0],
+               "background_processes": capture("ps", "-eo", "pid,pcpu,psr,comm", "--sort=-pcpu"),
++              "build_flags": {name: os.environ.get(name, "") for name in
++                              ("RUSTFLAGS", "CFLAGS", "CXXFLAGS", "BEMO_BENCH_NATIVE_MARCH")},
+               "artifact_sha256": fingerprint(artifacts),
+               "harness_sha256": fingerprint([Path(__file__), Path(examples.__file__), Path(build.__file__),
+                                               build.ROOT / "benchmarks/framework.lua", TLS_CONFIG, build.ROOT / "benchmarks/tls-policy.c", build.ROOT / "tools/versions.json"])}
+diff --git a/tools/examples.py b/tools/examples.py
+index 321ff9e..8cbd7a7 100644
+--- a/tools/examples.py
++++ b/tools/examples.py
+@@ -135,7 +135,9 @@ def compile_native(project, builder, optimization="2"):
+     "Darwin": [],
+     "Windows": ["-H:NativeLinkerOption=ntdll.lib"],
+   }[platform.system()]
++  march = os.environ.get("BEMO_BENCH_NATIVE_MARCH")
+   build.run(build.java_tool("native-image"), "--no-fallback", f"-O{optimization}",
++            *([f"-march={march}"] if march else []),
+             f"--parallelism={os.environ.get('BEMO_NATIVE_JOBS', min(8, os.cpu_count() or 1))}",
+             "--enable-native-access=ALL-UNNAMED",
+             "--initialize-at-run-time=io.netty",

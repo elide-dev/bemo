@@ -1,13 +1,19 @@
 {
-  "date": "2026-10-08",
-  "commit": "1d3ca121bd44d456cdbdadda5a2d46e5328d8517",
+  "date": "2026-10-09",
+  "commit": "16805b3bbc01d1ae6bd5d79376a929392a27c483",
   "working_tree": true,
-  "source_manifest": "native-source-20261007.json",
-  "run_url": "docs/performance/native-baseline.md",
+  "source_manifest": "launch-source-20261009.json",
+  "run_url": "docs/performance/launch-refresh.md",
   "runner": "Unclemax \u00b7 Linux x86-64 \u00b7 Threadripper PRO 9965WX",
-  "summary": "native-basic-20261007.json",
+  "summary": "launch-basic-20261009.json",
   "matched_compression": true,
   "matched_tls": true,
-  "sha256": "0fe6f875e1f90485c49cd774fff6d795a72842412d043df61f83219a2fda07cb",
-  "native_netty_baseline": true
+  "native_netty_baseline": true,
+  "sha256": "f7f3d714ab0aa2851d214b867273ec3703bf6a51523560c45910246812343990",
+  "build_flags": {
+    "RUSTFLAGS": "-C target-cpu=native",
+    "CFLAGS": "-march=native",
+    "CXXFLAGS": "-march=native",
+    "BEMO_BENCH_NATIVE_MARCH": "native"
+  }
 }
