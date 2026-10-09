@@ -50,6 +50,44 @@ fn ordinary_storage_is_admitted_with_exact_geometry() {
 }
 
 #[test]
+fn exact_reuse_prefers_the_most_recent_matching_allocation() {
+  drain();
+  let budget = Budget::new(8192);
+  let older = Buffer::new(1024, budget.clone()).unwrap();
+  let recent = Buffer::new(1024, budget.clone()).unwrap();
+  let recent_pointer = address(&recent);
+  drop(older);
+  drop(recent);
+  let reused = Buffer::new(1024, budget.clone()).unwrap();
+  assert_eq!(address(&reused), recent_pointer);
+  assert_eq!(budget.used(), 1024);
+  assert_eq!(pool_retained(), 1024);
+  drop(reused);
+  drain();
+}
+
+#[test]
+fn receive_reuse_keeps_smallest_fit_and_owner_isolation() {
+  drain();
+  let budget = Budget::new(65536);
+  let other = Budget::new(65536);
+  let exact = Buffer::receive(1024, budget.clone()).unwrap();
+  let exact_pointer = address(&exact);
+  let larger = Buffer::receive(2048, budget.clone()).unwrap();
+  let foreign = Buffer::receive(512, other.clone()).unwrap();
+  drop(exact);
+  drop(larger);
+  drop(foreign);
+  let reused = Buffer::receive(512, budget.clone()).unwrap();
+  assert_eq!(address(&reused), exact_pointer);
+  assert_eq!(budget.used(), 1024);
+  assert_eq!(other.used(), 0);
+  assert_eq!(pool_retained(), 2560);
+  drop(reused);
+  drain();
+}
+
+#[test]
 fn retained_leases_prevent_admission() {
   drain();
   let budget = Budget::new(1024 * 1024);
