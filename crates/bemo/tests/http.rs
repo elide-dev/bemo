@@ -3023,6 +3023,10 @@ fn native_h2_free_on_flow_control_stalled_stream_force_resets_and_closes() {
   use std::sync::Arc;
   let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
   let peer = h.peer.try_clone().unwrap();
+  // The stall detector force-resets after `FLOW_CONTROL_STALL` (5s). The cloned peer inherits the
+  // harness's 5s read timeout, which races the detector and loses on slower platforms; allow the
+  // reset and TLS close to land before the client's read times out.
+  peer.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
   let (closed, observed) = std::sync::mpsc::channel();
   // Larger than the default per-stream flow-control window (65,535 bytes). The raw client never
   // sends a WINDOW_UPDATE, so the server can flush only the initial window before stalling.
