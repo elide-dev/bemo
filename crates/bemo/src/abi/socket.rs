@@ -660,6 +660,7 @@ pub fn elide_transport_socket_close(driver: u64, socket: u64) -> i32 {
       return INVALID;
     };
     state.workloads.remove(&socket);
+    super::serving::disconnected(state, socket);
     let _ = connection.shutdown(Shutdown::Both);
     for (operation, pending) in &state.operations {
       if pending.socket == socket {
