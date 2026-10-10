@@ -61,5 +61,5 @@ expectation and reason; cancellation alone never authorizes freeing storage.
 `cargo-deny --locked --workspace check` audits all features and the Linux,
 macOS, and Windows dependency graphs. It rejects vulnerabilities, yanked crates,
 multiple versions, wildcard requirements, unapproved licenses, and unknown Git
-or registry sources. The three approved Git forks must specify revisions. The
+or registry sources. All approved Git forks must specify revisions. The
 current graph needs no advisory or duplicate-version exceptions.
