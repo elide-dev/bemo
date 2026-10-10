@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.1](https://github.com/elide-dev/bemo/compare/v0.3.0...v0.3.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **h2:** force-reset freed streams stalled by withheld flow-control credit ([#31](https://github.com/elide-dev/bemo/issues/31)) ([9092110](https://github.com/elide-dev/bemo/commit/9092110b2fbb83c5ea269d3aae1439868053865f))
+* **http:** strip stale EVENT_BODY from overflow before exchange id reuse ([#34](https://github.com/elide-dev/bemo/issues/34)) ([501b38a](https://github.com/elide-dev/bemo/commit/501b38a28f1cc5821f774fbb3b4bfaba5802719c))
+* **release:** forward secrets through reusable Central publisher ([0eca65f](https://github.com/elide-dev/bemo/commit/0eca65f8be68d18b6e185678e9d6b32b792d7e60))
+* **serving:** drop stale shard.connections entry on individual socket close ([#30](https://github.com/elide-dev/bemo/issues/30)) ([f5176b3](https://github.com/elide-dev/bemo/commit/f5176b3b821e325890a00516b619ce3993a64da3))
+* **tls:** defer close-notify queue until WriteTraffic is reachable ([#35](https://github.com/elide-dev/bemo/issues/35)) ([59ac5b6](https://github.com/elide-dev/bemo/commit/59ac5b6d45aa31b595e8ed5374dd32f44e854c6d))
+* **tls:** materialize synthesized SNI in NativeSslEngine getSSLParameters ([#32](https://github.com/elide-dev/bemo/issues/32)) ([fa31d97](https://github.com/elide-dev/bemo/commit/fa31d97b5b73c4db981566925f2a7c62a0292364))
+* **tls:** model single-record staging in saves_record heuristic ([#36](https://github.com/elide-dev/bemo/issues/36)) ([d399fe9](https://github.com/elide-dev/bemo/commit/d399fe99cc3e9d6830fd5070beb4f443a5dfc86a))
+* **transport:** complete closePromise on async TLS error in NativeTlsSession.close() ([#33](https://github.com/elide-dev/bemo/issues/33)) ([0f3b666](https://github.com/elide-dev/bemo/commit/0f3b666254b99a140344a0fc7fa4dbc9f6c37296))
+
+
+### Performance Improvements
+
+* reuse initialized TLS output and retain benchmark symbols ([#17](https://github.com/elide-dev/bemo/issues/17)) ([a45d50b](https://github.com/elide-dev/bemo/commit/a45d50bf7548eed8798ece0f1023b65cd50fd751))
+* stop exact-capacity pool scans at recent matches ([#18](https://github.com/elide-dev/bemo/issues/18)) ([16805b3](https://github.com/elide-dev/bemo/commit/16805b3bbc01d1ae6bd5d79376a929392a27c483))
+
 ## [0.3.0](https://github.com/elide-dev/bemo/compare/v0.2.0...v0.3.0) (2026-10-08)
 
 
