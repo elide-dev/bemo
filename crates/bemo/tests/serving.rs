@@ -453,3 +453,96 @@ fn serving_entry_points_reject_unknown_handles_and_out_of_range_indices() {
   assert_eq!(elide_transport_serving_workers(application, 0), INVALID);
   assert_eq!(elide_transport_serving_context_enter(application, 0), INVALID);
 }
+
+fn accept_non_handoff_socket(driver: u64, batch: u64, listener: u64) -> u64 {
+  assert_eq!(elide_transport_serving_ready(driver), 0);
+  let deadline = Instant::now() + Duration::from_secs(3);
+  loop {
+    assert!(Instant::now() < deadline);
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
+    let count = unsafe { elide_transport_driver_poll(driver, 10_000_000, batch, 8) };
+    assert!(count >= 0);
+    let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
+    assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+    // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
+    let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
+    if let Some(event) = events.iter().find(|event| event.kind == 2) {
+      assert_eq!(event.socket, listener);
+      assert_eq!(event.result, 0);
+      return event.value;
+    }
+  }
+}
+
+fn collect_events(driver: u64, batch: u64) -> Vec<(u32, u64, u64, i64)> {
+  let mut collected = Vec::new();
+  let deadline = Instant::now() + Duration::from_secs(3);
+  loop {
+    assert!(Instant::now() < deadline);
+    // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
+    let count = unsafe { elide_transport_driver_poll(driver, 10_000_000, batch, 8) };
+    assert!(count >= 0);
+    let mut view = BufferView::default();
+    // SAFETY: The output points to a writable BufferView; handle validation occurs before buffer access.
+    assert_eq!(unsafe { elide_transport_buffer_view(batch, &mut view) }, 0);
+    // SAFETY: poll initialized this event range; the live batch allocation is aligned for NativeEvent.
+    let events = unsafe { std::slice::from_raw_parts(view.address.cast::<NativeEvent>(), count as usize) };
+    collected.extend(
+      events
+        .iter()
+        .map(|event| (event.kind, event.socket, event.value, event.result)),
+    );
+    if !collected.is_empty() {
+      return collected;
+    }
+  }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn socket_close_then_listener_close_emits_no_duplicate_closed_event() {
+  let application = elide_transport_serving_new(1);
+  assert_ne!(application, 0);
+  let driver = elide_transport_serving_driver(common::workload(), application, 0, common::backend() as u32, 32, 1);
+  assert_ne!(driver, 0);
+  let owner = elide_transport_owner_new(1024 * 1024);
+  let batch = elide_transport_buffer_new(owner, 8 * 40);
+  let (listener, port) = listen(driver, owner);
+  let peer = TcpStream::connect(("127.0.0.1", port)).unwrap();
+  // SAFETY: The fixture owns the driver and batch with space for the requested number of events.
+  assert_eq!(unsafe { elide_transport_driver_poll(driver, 0, batch, 8) }, 0);
+  let accepted = accept_non_handoff_socket(driver, batch, listener);
+  assert_eq!(
+    elide_transport_socket_discard(accepted),
+    INVALID,
+    "non-handoff attach stays local"
+  );
+  // The guest closes the accepted connection individually; this returns 0 and emits no event by design.
+  assert_eq!(elide_transport_socket_close(driver, accepted), 0);
+  // Closing the listener must not emit a phantom EVENT_CLOSED for the already-closed handle.
+  assert_eq!(elide_transport_serving_listener_close(driver, listener), 0);
+  drop(peer);
+  let events = collect_events(driver, batch);
+  let formatted: Vec<String> = events
+    .iter()
+    .map(|(kind, socket, value, result)| format!("kind={kind} socket={socket} value={value} result={result}"))
+    .collect();
+  assert!(
+    !events
+      .iter()
+      .any(|(kind, socket, ..)| *kind == EVENT_CLOSED && *socket == accepted),
+    "spurious EVENT_CLOSED for already-closed socket {}: events={:?}",
+    accepted,
+    formatted,
+  );
+  assert!(
+    events
+      .iter()
+      .any(|(kind, socket, ..)| *kind == EVENT_LISTENER_CLOSED && *socket == listener),
+    "missing EVENT_LISTENER_CLOSED: events={:?}",
+    formatted,
+  );
+  assert_eq!(elide_transport_serving_close(application), 0);
+  release(driver, owner, batch);
+}
