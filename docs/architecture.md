@@ -46,7 +46,7 @@ transport. `bemo-api` and `bemo-ffm` have no GraalVM or Elide runtime dependency
 5. On completion, the adapter advances the outbound buffers by the number of
    bytes written. A partial write leaves the remaining bytes queued.
 
-On the polling backend, an eligible write can finish during the call. The driver
+On Unix backends, an eligible write can finish during the call. The driver
 borrows direct memory only until the syscall returns. A pending send instead
 retains its own buffer lease until kernel access ends. See
 [I/O ownership and batching](transport-io.md) for the send and receive rules.

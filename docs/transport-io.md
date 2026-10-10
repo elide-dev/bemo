@@ -29,12 +29,12 @@ The adapter batches flushed buffers into sends of at most **128 KiB** and
 writes advance both the cached NIO views and Netty's outbound buffers by the
 completed byte count.
 
-The polling backend first tries a bounded nonblocking send. It can borrow
+Unix backends first try a bounded nonblocking send. They can borrow
 exclusively owned, unfrozen direct buffers until the syscall returns. Other
 buffers use one reusable staging allocation per I/O handler. An inline send
 creates no pending operation or send completion.
 
-Backpressure, an occupied write lane, and completion-based backends use the
+Backpressure, an occupied write lane, and IOCP use the
 asynchronous path. Before falling back, the handler releases reusable staging
 so its budget can cover the immutable send allocation. Frozen buffers use their
 native handles. Gathered sends retain a lease for each region.
@@ -72,8 +72,8 @@ write. Read submission waits until the TLS engine pump returns, so an inline
 receive cannot leave work behind the pump's reentry guard.
 
 The separate native HTTP/TLS path applies the same record-lifetime rule in Rust.
-It tries inline ciphertext sends on the polling backend and uses completion-based
-sends for backpressure, io_uring, and IOCP. Each drive yields after 128 KiB or its
+It tries inline ciphertext sends on Unix backends and uses completion-based
+sends for backpressure and IOCP. Each drive yields after 128 KiB or its
 transition limit and schedules any remaining work.
 
 ## Polling and wakeups
