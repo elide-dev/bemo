@@ -15,6 +15,15 @@ use std::sync::{
   atomic::{AtomicBool, Ordering},
 };
 use std::task::{Context, Wake, Waker};
+use std::time::{Duration, Instant};
+
+/// A freed stream whose response never reaches the wire is force-reset after this timeout so its
+/// exchange slot, budget reservation, and h2-library state can be retired. The guard in `free`
+/// skips RST_STREAM when the response is `final_queued`, letting a cooperative peer flush; a peer
+/// that withholds HTTP/2 flow-control credit forever would otherwise strand the stream until the
+/// connection's `max_concurrent_streams` cap is exhausted. This is a safety net, not a tight
+/// deadline: well-behaved peers open their windows promptly and retire well before it elapses.
+const FLOW_CONTROL_STALL: Duration = Duration::from_secs(5);
 
 #[derive(Default)]
 struct WakeFlag(AtomicBool);
@@ -52,6 +61,11 @@ struct Stream {
   freed: bool,
   reset: bool,
   interim: usize,
+  /// When `free` marked this stream freed without sending RST_STREAM (`final_queued` was true).
+  /// `None` until `freed` is set without an accompanying reset; the stall detector in `drive`
+  /// force-resets the stream once `elapsed` exceeds `FLOW_CONTROL_STALL` if the response has not
+  /// reached `wire_complete`. Cleared implicitly by retirement, which removes the stream.
+  freed_at: Option<Instant>,
 }
 
 impl H2Socket {
@@ -119,6 +133,7 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
           if response.progress(&mut h2.connection, id).is_err() {
             h2.connection.reset(id, ::h2::Reason::INTERNAL_ERROR);
             stream.reset = true;
+            stream.freed_at = None;
             let failures = response.cancel();
             if !stream.freed {
               if !stream.body_ended {
@@ -136,6 +151,31 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
             if !stream.freed {
               events.push_back(event(EVENT_PART_SENT, 0, socket, stream.exchange, sent));
             }
+          }
+        }
+        // Stall detector: a freed stream that skipped RST_STREAM (because the response was
+        // `final_queued`) but whose body can never reach the wire — the peer withholds HTTP/2
+        // flow-control credit and `wire_complete()` never becomes true — is force-reset once the
+        // bounded timeout elapses. This releases the exchange slot, budget reservation, and
+        // h2-library state, preventing a non-cooperative peer from stranding up to
+        // `max_concurrent_streams` stream slots and blocking automatic socket closure. A stream
+        // that reaches `wire_complete` retire()s normally before this fires; cooperative peers
+        // are unaffected. The freed exchange no longer reports to the application, so the
+        // cancelled response parts are dropped without emitting events.
+        if stream.freed
+          && stream
+            .freed_at
+            .is_some_and(|started| started.elapsed() >= FLOW_CONTROL_STALL)
+          && stream
+            .response
+            .as_ref()
+            .is_some_and(|response| !response.wire_complete())
+        {
+          h2.connection.reset(id, ::h2::Reason::CANCEL);
+          stream.reset = true;
+          stream.freed_at = None;
+          if let Some(response) = stream.response.as_mut() {
+            let _ = response.cancel();
           }
         }
       }
@@ -174,6 +214,7 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
                     freed: true,
                     reset: false,
                     interim: 0,
+                    freed_at: Some(Instant::now()),
                   },
                 );
                 continue;
@@ -192,6 +233,7 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
                 freed: false,
                 reset: false,
                 interim: usize::from(expect_continue),
+                freed_at: None,
               },
             );
             if expect_continue {
@@ -647,6 +689,12 @@ pub(super) fn free(state: &mut DriverState, exchange: u64) -> i32 {
   if stream.response.as_ref().is_none_or(|response| !response.final_queued()) {
     h2.connection.reset(stream_id, ::h2::Reason::CANCEL);
     stream.reset = true;
+    stream.freed_at = None;
+  } else {
+    // The response was fully queued but may not have reached the wire. If the peer withholds
+    // flow-control credit the DATA frames can never flush, `wire_complete()` never becomes true,
+    // and the stream could never retire. Arm the stall detector so `drive` force-resets it.
+    stream.freed_at = Some(Instant::now());
   }
   http.retired.insert(exchange, ());
   retire(http, &mut state.http.exchanges);

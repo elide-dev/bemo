@@ -3011,6 +3011,98 @@ fn native_h2_tls_half_close_preserves_a_delayed_response() {
   assert_eq!(elide_transport_owner_release(h.owner), 0);
 }
 
+/// A peer that withholds HTTP/2 flow-control credit (never sends WINDOW_UPDATE) strands a freed
+/// stream whose response was `final_queued` but cannot reach the wire: `free()` skips RST_STREAM
+/// and `wire_complete()` never becomes true, so the stream never retires. The stall detector in
+/// `drive` force-resets such a stream after a bounded timeout, releasing its slot so a
+/// peer-closed connection can finish shutdown and emit `EVENT_CLOSED`.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_free_on_flow_control_stalled_stream_force_resets_and_closes() {
+  use rustls::pki_types::ServerName;
+  use std::sync::Arc;
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let peer = h.peer.try_clone().unwrap();
+  let (closed, observed) = std::sync::mpsc::channel();
+  // Larger than the default per-stream flow-control window (65,535 bytes). The raw client never
+  // sends a WINDOW_UPDATE, so the server can flush only the initial window before stalling.
+  let body = vec![b'x'; 200 * 1024];
+  let body_len = body.len();
+  let client = std::thread::spawn(move || {
+    let client = rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+    let mut stream = rustls::StreamOwned::new(client, peer);
+    stream.write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").unwrap();
+    stream.write_all(&[0, 0, 0, 4, 0, 0, 0, 0, 0]).unwrap();
+    // Static HPACK entries GET, https, /; literal :authority localhost.
+    let mut head = vec![0x82, 0x87, 0x84, 0x01, 9];
+    head.extend_from_slice(b"localhost");
+    stream.write_all(&[0, 0, head.len() as u8, 1, 5, 0, 0, 0, 1]).unwrap();
+    stream.write_all(&head).unwrap();
+    // Half-close the client side so the server observes peer_closed; then withhold all
+    // flow-control credit by never sending a WINDOW_UPDATE and just drain the response.
+    stream.conn.send_close_notify();
+    stream.flush().unwrap();
+    closed.send(()).unwrap();
+    let mut reply = Vec::new();
+    stream.read_to_end(&mut reply).unwrap();
+    // The initial flow-control window flushes; the stall detector force-resets the remainder.
+    let mut data = 0usize;
+    let mut reset = false;
+    let mut offset = 0;
+    while offset < reply.len() {
+      assert!(reply.len() - offset >= 9, "trailing frame header");
+      let frame = &reply[offset..];
+      let length = ((frame[0] as usize) << 16) | ((frame[1] as usize) << 8) | frame[2] as usize;
+      assert!(frame.len() >= 9 + length);
+      match frame[3] {
+        0 if frame[5..9] == [0, 0, 0, 1] => data += length,
+        3 if frame[5..9] == [0, 0, 0, 1] => reset = true,
+        _ => {}
+      }
+      offset += 9 + length;
+    }
+    assert!(data > 0, "the initial flow-control window must flush");
+    assert!(data < body_len, "the body must not fully flush under a withheld window");
+    assert!(reset, "the stalled stream must be force-reset by the stall detector");
+    (data, reset)
+  });
+  let request = h.take(EVENT_REQUEST, 1)[0].value;
+  observed.recv_timeout(Duration::from_secs(5)).unwrap();
+  // Authenticate the half-close so the server observes peer_closed before the response stalls.
+  h.poll(100_000_000);
+  h.poll(100_000_000);
+  assert!(h.pending.iter().all(|event| event.kind != EVENT_CLOSED));
+  respond(h.driver, request, 200, &[], &body);
+  assert_eq!(elide_transport_http_free(h.driver, request), 0);
+  // Immediately after freeing, the stream is stalled and not yet retired: no close yet.
+  for _ in 0..4 {
+    h.poll(50_000_000);
+  }
+  assert!(
+    h.pending.iter().all(|event| event.kind != EVENT_CLOSED),
+    "a freshly-stalled stream must not close before the stall timeout"
+  );
+  // The stall detector force-resets the freed stream after the bounded timeout, retiring it so
+  // the peer-closed connection can finish shutdown and emit EVENT_CLOSED.
+  let deadline = Instant::now() + Duration::from_secs(15);
+  loop {
+    if h.pending.iter().any(|event| event.kind == EVENT_CLOSED) {
+      break;
+    }
+    assert!(
+      Instant::now() < deadline,
+      "EVENT_CLOSED never fired; stalled stream was not retired by the stall detector"
+    );
+    h.poll(200_000_000);
+  }
+  h.take(EVENT_CLOSED, 1);
+  client.join().unwrap();
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn parsed_header_metadata_is_advertised_and_preserves_first_host() {
