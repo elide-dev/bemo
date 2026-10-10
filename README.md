@@ -215,7 +215,11 @@ Use `make package` and `python3 tools/verify_package.py` to stage and check
 packages locally. Set `ELIDE` to choose the build executable, `JAVA_HOME` for
 JVM tools, or `BEMO_TEST_JAVA` to test with another JVM. Windows builds also
 need NASM or `AWS_LC_SYS_PREBUILT_NASM=1`; OpenSSL on `PATH` enables additional
-TLS interoperability checks.
+TLS interoperability checks. Both commands also stage or verify a ThinLTO
+bitcode classifier, which needs `LLVM_BIN` set to a pinned LLVM/Clang/LLD
+toolchain (`python3 tools/setup_llvm.py` installs it); see
+[generated seams](docs/generated-seam.md) for generation, extraction, and
+final-link requirements.
 
 Source and documentation:
 
