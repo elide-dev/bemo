@@ -3611,3 +3611,226 @@ fn retained_stream_parts_keep_handles_on_busy_invalid_and_length_failure() {
     h.finish();
   }
 }
+
+/// Outcome of one request issued by [`h2_client`].
+#[derive(Debug, PartialEq, Eq)]
+enum H2Reply {
+  Response(u16, Vec<u8>),
+  Reset(h2::Reason),
+}
+
+/// Issue bodiless HTTP/2 requests over verified TLS and collect each stream's outcome, then wait
+/// for the server to close the connection.
+fn h2_client(
+  peer: TcpStream,
+  config: rustls::ClientConfig,
+  paths: &'static [&'static str],
+) -> std::thread::JoinHandle<Vec<H2Reply>> {
+  use rustls::pki_types::ServerName;
+  use std::future::Future;
+  use std::sync::Arc;
+  use std::task::{Context, Poll, Waker};
+  std::thread::spawn(move || {
+    peer.set_nonblocking(true).unwrap();
+    let client = rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+    let io = H2TlsIo(rustls::StreamOwned::new(client, peer));
+    let mut handshake = Box::pin(h2::client::Builder::new().handshake::<_, bytes::Bytes>(io));
+    let mut cx = Context::from_waker(Waker::noop());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let (mut sender, connection) = loop {
+      if let Poll::Ready(result) = handshake.as_mut().poll(&mut cx) {
+        break result.unwrap();
+      }
+      assert!(Instant::now() < deadline, "H2 handshake timed out");
+      std::thread::yield_now();
+    };
+    let mut pending: Vec<_> = paths
+      .iter()
+      .map(|path| {
+        let request = http::Request::builder()
+          .uri(format!("https://localhost{path}"))
+          .body(())
+          .unwrap();
+        Box::pin(sender.send_request(request, true).unwrap().0)
+      })
+      .collect();
+    drop(sender);
+    let mut bodies: Vec<Option<(u16, h2::RecvStream)>> = paths.iter().map(|_| None).collect();
+    let mut data: Vec<Vec<u8>> = paths.iter().map(|_| Vec::new()).collect();
+    let mut replies: Vec<Option<H2Reply>> = paths.iter().map(|_| None).collect();
+    let mut connection = Box::pin(connection);
+    let mut closed = false;
+    while !closed || replies.iter().any(Option::is_none) {
+      if !closed && let Poll::Ready(result) = connection.as_mut().poll(&mut cx) {
+        result.unwrap();
+        closed = true;
+      }
+      for index in 0..paths.len() {
+        if replies[index].is_some() {
+          continue;
+        }
+        if bodies[index].is_none()
+          && let Poll::Ready(response) = pending[index].as_mut().poll(&mut cx)
+        {
+          match response {
+            Ok(response) => bodies[index] = Some((response.status().as_u16(), response.into_body())),
+            Err(error) => {
+              replies[index] = Some(H2Reply::Reset(error.reason().expect("stream reset reason")));
+              continue;
+            }
+          }
+        }
+        if let Some((status, body)) = &mut bodies[index] {
+          loop {
+            match body.poll_data(&mut cx) {
+              Poll::Ready(Some(Ok(bytes))) => {
+                data[index].extend_from_slice(&bytes);
+                body.flow_control().release_capacity(bytes.len()).unwrap();
+              }
+              Poll::Ready(None) => {
+                replies[index] = Some(H2Reply::Response(*status, std::mem::take(&mut data[index])));
+                break;
+              }
+              Poll::Ready(Some(Err(error))) => {
+                replies[index] = Some(H2Reply::Reset(error.reason().expect("stream reset reason")));
+                break;
+              }
+              Poll::Pending => break,
+            }
+          }
+        }
+      }
+      assert!(Instant::now() < deadline, "H2 replies timed out: {replies:?}");
+      std::thread::yield_now();
+    }
+    replies.into_iter().map(Option::unwrap).collect()
+  })
+}
+
+/// Requests by path from an `EVENT_REQUEST` batch.
+fn by_path(requests: &[Ev], path: &[u8]) -> u64 {
+  requests
+    .iter()
+    .find(|request| view(request.value, VIEW_PATH, 0) == path)
+    .unwrap_or_else(|| panic!("no request for {}", String::from_utf8_lossy(path)))
+    .value
+}
+
+/// A frozen buffer holding `data`, usable as a retained body part.
+fn frozen_part(owner: u64, data: &[u8]) -> u64 {
+  let handle = elide_transport_buffer_new(owner, data.len() as u64);
+  assert_ne!(handle, 0);
+  let mut view = BufferView::default();
+  // SAFETY: The output points to a writable BufferView; the new handle is valid.
+  assert_eq!(unsafe { elide_transport_buffer_view(handle, &mut view) }, 0);
+  // SAFETY: The fresh mutable buffer owns at least data.len() writable bytes.
+  unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), view.address.cast::<u8>(), data.len()) };
+  // SAFETY: The full requested length was initialized above.
+  assert_eq!(unsafe { elide_transport_buffer_freeze(handle, data.len() as u64) }, 0);
+  handle
+}
+
+fn close_h2_harness(mut h: Harness) {
+  elide_transport_http_drain(h.driver);
+  h.take(EVENT_CLOSED, 1);
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_streams_prepared_and_retained_parts_in_order() {
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let client = h2_client(h.peer.try_clone().unwrap(), config, &["/stream"]);
+  let exchange = h.take(EVENT_REQUEST, 1)[0].value;
+  assert_eq!(elide_transport_http_version(exchange), 2);
+  respond_stream(h.driver, exchange, 200, &[(b"x-part", b"mixed")], u64::MAX);
+  send_chunk(h.driver, exchange, b"alpha-", false);
+  let retained = frozen_part(h.owner, b"beta-");
+  assert_eq!(
+    elide_transport_http_chunk_send(h.driver, exchange, retained, 5, CHUNK_RETAIN),
+    0
+  );
+  send_chunk(h.driver, exchange, b"gamma", true);
+  // One event per queued part, head included, in queue order, each reporting wire bytes.
+  let sent = h.take(EVENT_PART_SENT, 4);
+  assert!(
+    sent.iter().all(|part| part.value == exchange && part.result >= 0),
+    "{sent:?}"
+  );
+  assert_eq!(sent[1..].iter().map(|part| part.result).collect::<Vec<_>>(), [6, 5, 5]);
+  // A part after the final one is refused without consuming the caller's retained handle.
+  assert_eq!(
+    elide_transport_http_chunk_send(h.driver, exchange, retained, 5, CHUNK_RETAIN),
+    INVALID
+  );
+  assert_eq!(elide_transport_buffer_release(retained), 0);
+  assert_eq!(elide_transport_http_free(h.driver, exchange), 0);
+  close_h2_harness(h);
+  assert_eq!(
+    client.join().unwrap(),
+    [H2Reply::Response(200, b"alpha-beta-gamma".to_vec())]
+  );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_release_mid_stream_resets_only_that_stream() {
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let client = h2_client(h.peer.try_clone().unwrap(), config, &["/keep", "/drop"]);
+  let requests = h.take(EVENT_REQUEST, 2);
+  let (keep, drop) = (by_path(&requests, b"/keep"), by_path(&requests, b"/drop"));
+  respond_stream(h.driver, keep, 200, &[], u64::MAX);
+  respond_stream(h.driver, drop, 200, &[], u64::MAX);
+  send_chunk(h.driver, drop, b"partial", false);
+  assert_eq!(elide_transport_http_release(h.driver, drop), 0);
+  // Releasing again is idempotent and reports nothing further.
+  assert_eq!(elide_transport_http_release(h.driver, drop), 0);
+  let reset = h.take(EVENT_RESET, 1);
+  assert_eq!(reset[0].value, drop);
+  assert!(reset[0].result < 0);
+  // A reset stream accepts no more parts, and a retained part stays with the caller.
+  let retained = frozen_part(h.owner, b"late");
+  assert_eq!(
+    elide_transport_http_chunk_send(h.driver, drop, retained, 4, CHUNK_RETAIN),
+    INVALID
+  );
+  assert_eq!(elide_transport_buffer_release(retained), 0);
+  // The sibling stream is unaffected.
+  send_chunk(h.driver, keep, b"kept", true);
+  assert_eq!(elide_transport_http_free(h.driver, drop), 0);
+  assert_eq!(elide_transport_http_free(h.driver, keep), 0);
+  close_h2_harness(h);
+  assert_eq!(
+    client.join().unwrap(),
+    [
+      H2Reply::Response(200, b"kept".to_vec()),
+      H2Reply::Reset(h2::Reason::CANCEL)
+    ]
+  );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_free_before_responding_cancels_the_stream() {
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let client = h2_client(h.peer.try_clone().unwrap(), config, &["/unanswered", "/answered"]);
+  let requests = h.take(EVENT_REQUEST, 2);
+  let (unanswered, answered) = (by_path(&requests, b"/unanswered"), by_path(&requests, b"/answered"));
+  assert_eq!(elide_transport_http_free(h.driver, unanswered), 0);
+  // The freed exchange handle is dead for every operation.
+  assert_eq!(elide_transport_http_free(h.driver, unanswered), INVALID);
+  assert_eq!(elide_transport_http_release(h.driver, unanswered), INVALID);
+  respond(h.driver, answered, 200, &[], b"ok");
+  assert_eq!(elide_transport_http_free(h.driver, answered), 0);
+  close_h2_harness(h);
+  assert_eq!(
+    client.join().unwrap(),
+    [
+      H2Reply::Reset(h2::Reason::CANCEL),
+      H2Reply::Response(200, b"ok".to_vec())
+    ]
+  );
+}
