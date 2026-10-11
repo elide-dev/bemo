@@ -190,7 +190,7 @@ def ffm_contracts(reports, native, agent=(), env=None, cc=None):
       env=env)
   if os.name != "nt":
     binary = BUILD / "tests/abi"
-    run(*cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+    run(*cc, "-std=c11", "-pthread", "-Wall", "-Wextra", "-Werror",
         "-I", ROOT / "include", ROOT / "tests/abi.c", native, "-o", binary)
     reports.run("CAbiContract", [binary], timeout=30, cwd=ROOT, env=env)
   test_transport(reports=reports, agent=agent, native=native, env=env)
@@ -254,7 +254,8 @@ def test_transport(native_image=False, reports=None, agent=(), native=None, env=
                      "NativeTlsChannelTest", "NativeTlsNegativeTest", "NativeTlsOrderingTest",
                      "NativeTlsClosePromiseTest", "NativeTransferTest", "NativeJfrTest",
                      "NativeReentrantCloseTest", "NativeReceiveAllocatorTest", "NativeSslEngineTest",
-                     "NativeSslInteropTest", "NativeSslPolicyTest", "StandaloneTransportCheck"):
+                     "NativeSslInteropTest", "NativeSslPolicyTest", "NativeDirectAllocatorTest",
+                     "StandaloneTransportCheck"):
       reports.run(contract, [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
           "--enable-native-access=ALL-UNNAMED", "-ea", "-cp", classpath([output, *cp]),
           contract, native or library(), cert, key], timeout=90, cwd=ROOT, env=env)
@@ -320,6 +321,7 @@ def fmt(check=False):
   deps()
   run("cargo", "fmt", "--package", "bemo", "--package", "bemo-ffi", *(["--check"] if check else []))
   run("cargo", "fmt", "--manifest-path", "fuzz/Cargo.toml", *(["--check"] if check else []))
+  run("cargo", "fmt", "--manifest-path", "tests/embedder/Cargo.toml", *(["--check"] if check else []))
   run("cargo", "fmt", "--manifest-path", "benchmarks/compression/Cargo.toml", *(["--check"] if check else []))
   formatter = jar_dependency("com.google.googlejavaformat", "google-java-format",
                              VERSIONS["java_format"], "all-deps")
@@ -340,6 +342,7 @@ def check():
   fmt(True)
   run("cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings")
   run("cargo", "clippy", "--manifest-path", "fuzz/Cargo.toml", "--all-targets", "--locked", "--", "-D", "warnings")
+  run("cargo", "clippy", "--manifest-path", "tests/embedder/Cargo.toml", "--all-targets", "--locked", "--", "-D", "warnings")
   run("cargo", "doc", "--workspace", "--no-deps", "--locked", env={**os.environ, "RUSTDOCFLAGS": "-D warnings"})
   cargo = tomllib.loads((ROOT / "Cargo.toml").read_text())
   if VERSION.removesuffix("-SNAPSHOT") != cargo["workspace"]["package"]["version"]:
