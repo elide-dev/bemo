@@ -355,15 +355,7 @@ impl Persistent {
       send: None,
       notifications: 0,
       zero_copy_disabled: false,
-      message: Box::new(libc::msghdr {
-        msg_name: std::ptr::null_mut(),
-        msg_namelen: 0,
-        msg_iov: std::ptr::null_mut(),
-        msg_iovlen: 0,
-        msg_control: std::ptr::null_mut(),
-        msg_controllen: 0,
-        msg_flags: 0,
-      }),
+      message: Box::new(super::empty_message()),
       vectors: Vec::with_capacity(8),
     });
     connection.persistent.set(Some(index));
@@ -635,7 +627,8 @@ impl Persistent {
         iov_len: buffer.as_ref().len(),
       }));
       state.message.msg_iov = state.vectors.as_mut_ptr();
-      state.message.msg_iovlen = state.vectors.len();
+      // glibc declares `msg_iovlen` as `size_t`, musl as `int`; vectors stay well under IOV_MAX.
+      state.message.msg_iovlen = state.vectors.len() as _;
       if zero_copy {
         opcode::SendMsgZc::new(types::Fixed(index as u32), &*state.message)
           .flags(libc::MSG_NOSIGNAL as u32)
