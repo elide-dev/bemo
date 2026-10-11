@@ -184,7 +184,7 @@ impl MemoryIo {
     Ok(())
   }
 
-  #[cfg(test)]
+  #[cfg(any(test, feature = "fuzzing"))]
   fn output(&self) -> Option<Bytes> {
     self.output_limit(usize::MAX)
   }
@@ -287,7 +287,7 @@ impl Connection {
   }
 
   /// Output ownership transfers to the driver, which must independently track physical sends.
-  #[cfg(test)]
+  #[cfg(any(test, feature = "fuzzing"))]
   pub(crate) fn take_output(&mut self) -> Option<Bytes> {
     self.io.output()
   }
@@ -308,7 +308,7 @@ impl Connection {
     marks
   }
 
-  #[cfg(test)]
+  #[cfg(any(test, feature = "fuzzing"))]
   pub(crate) fn eof(&mut self) {
     let wake = {
       let mut wire = self.io.0.borrow_mut();

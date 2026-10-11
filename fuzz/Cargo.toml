@@ -10,8 +10,12 @@ cargo-fuzz = true
 [workspace]
 
 [dependencies]
-bemo = { path = "../crates/bemo", default-features = false, features = ["rust-allocator"] }
+bemo = { path = "../crates/bemo", default-features = false, features = ["rust-allocator", "fuzzing"] }
 libfuzzer-sys = "=0.4.13"
+# Reference implementations used as differential oracles, never as code under test.
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+httparse = "=1.10.1"
+rustls = { version = "=0.23.45", default-features = false, features = ["std", "tls12", "aws-lc-rs"] }
 
 [[bin]]
 name = "http"
@@ -30,6 +34,34 @@ bench = false
 [[bin]]
 name = "abi"
 path = "fuzz_targets/abi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gzip"
+path = "fuzz_targets/gzip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "response"
+path = "fuzz_targets/response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tls"
+path = "fuzz_targets/tls.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "h2"
+path = "fuzz_targets/h2.rs"
 test = false
 doc = false
 bench = false

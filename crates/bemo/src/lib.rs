@@ -8,6 +8,9 @@ pub mod abi;
 pub mod buffer;
 pub mod compression;
 pub mod driver;
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 pub mod http;
 pub mod tls;
 

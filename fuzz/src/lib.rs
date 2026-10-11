@@ -1,3 +1,10 @@
+mod encode;
+mod tls;
+
+pub use bemo::fuzzing::h2_server as h2;
+pub use encode::{gzip, response};
+pub use tls::tls;
+
 use bemo::abi::*;
 use bemo::buffer::{Budget, Buffer};
 use bemo::http::{HttpConnection, Outcome};
@@ -158,4 +165,62 @@ pub fn abi(data: &[u8]) {
   assert_eq!(elide_transport_owner_used(owner), 0);
   assert_eq!(elide_transport_owner_release(owner), 0);
   assert_eq!(elide_transport_buffer_new(owner, 1), 0);
+}
+
+/// Every checked-in seed and minimized regression replays as an ordinary test, so
+/// findings stay fixed on every platform without a fuzzing toolchain.
+#[cfg(test)]
+mod replay {
+  use std::path::Path;
+
+  fn replay(target: &str, run: fn(&[u8])) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut count = 0;
+    for kind in ["seeds", "regressions"] {
+      let Ok(entries) = std::fs::read_dir(root.join(kind).join(target)) else {
+        continue;
+      };
+      for entry in entries {
+        let path = entry.expect("readable corpus entry").path();
+        run(&std::fs::read(&path).expect("readable corpus file"));
+        count += 1;
+      }
+    }
+    assert!(count > 0, "no seeds for {target}");
+  }
+
+  #[test]
+  fn http() {
+    replay("http", super::http);
+  }
+
+  #[test]
+  fn buffers() {
+    replay("buffers", super::buffers);
+  }
+
+  #[test]
+  fn abi() {
+    replay("abi", super::abi);
+  }
+
+  #[test]
+  fn gzip() {
+    replay("gzip", super::gzip);
+  }
+
+  #[test]
+  fn response() {
+    replay("response", super::response);
+  }
+
+  #[test]
+  fn tls() {
+    replay("tls", super::tls);
+  }
+
+  #[test]
+  fn h2() {
+    replay("h2", super::h2);
+  }
 }
