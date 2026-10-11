@@ -1,0 +1,24 @@
+# An embedder shaped like Elide: its own workspace, its own allocator, and Bemo's
+# C exports linked into its own static library. See docs/elide-integration.md.
+[package]
+name = "bemo-embedder-test"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[features]
+# The embedder provides mi_malloc/mi_free itself (Elide links mimalloc). On static
+# musl the Elide toolchain's libc already contains mimalloc, so nothing is added.
+embedder-mimalloc = ["dep:libmimalloc-sys"]
+# Route Bemo through the embedder's Rust #[global_allocator] instead.
+rust-allocator = ["bemo-ffi/rust-allocator"]
+
+[dependencies]
+bemo-ffi = { path = "../../crates/bemo-ffi", default-features = false }
+libmimalloc-sys = { version = "=0.1.49", optional = true }

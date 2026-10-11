@@ -113,12 +113,14 @@ def toolchain_target(triple):
   return 'arm64-apple-darwin' if triple == 'aarch64-apple-darwin' else triple
 
 
-def environment(root, triple, sanitizer=None):
-  """Return `elide-toolchain env` for a target, optionally with a sanitizer layer."""
+def environment(root, triple, sanitizer=None, static=False):
+  """Return `elide-toolchain env` for a target, optionally static or with a sanitizer layer."""
   command = [Path(root) / 'bin/elide-toolchain', 'env', '--target', toolchain_target(triple),
              '--format', 'json']
   if sanitizer:
     command += ['--sanitizer', sanitizer]
+  if static:
+    command.append('--static')
   return json.loads(subprocess.check_output(command, text=True))
 
 
