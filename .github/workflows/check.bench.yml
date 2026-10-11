@@ -22,13 +22,13 @@ jobs:
       - name: Build deterministic CPU benchmarks
         run: cargo codspeed build -p bemo --bench buffers --bench handles --bench http --locked -m simulation
       - name: Track CPU performance
-        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
+        uses: CodSpeedHQ/action@c4fd08a3a159bd0cc208da1e0edf32b8c47d75e5 # v5.4.0
         with:
           mode: simulation
           runner-version: '5.2.1'
           cache-instruments: false
           run: cargo codspeed run
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: criterion-evidence
@@ -77,7 +77,7 @@ jobs:
           if test -f build/bench-baseline/summary-all.json; then
             python3 tools/compare_bench.py build/reports/benchmarks/summary-all.json build/bench-baseline/summary-all.json
           fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: transport-evidence
@@ -106,7 +106,7 @@ jobs:
       - run: cargo codspeed build -p bemo --bench tls --locked -m walltime
       - run: make bench-prepare
       - name: Track TLS and end-to-end wall time
-        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
+        uses: CodSpeedHQ/action@c4fd08a3a159bd0cc208da1e0edf32b8c47d75e5 # v5.4.0
         with:
           mode: walltime
           runner-version: '5.2.1'
@@ -115,7 +115,7 @@ jobs:
             sudo -n prlimit --pid $$ --memlock=unlimited:unlimited
             cargo codspeed run
             codspeed run
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: walltime-evidence
