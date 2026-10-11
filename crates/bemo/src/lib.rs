@@ -5,6 +5,7 @@
 compile_error!("The transport ABI requires a 64-bit target");
 
 pub mod abi;
+pub mod alloc;
 pub mod buffer;
 pub mod compression;
 pub mod driver;
@@ -18,5 +19,7 @@ pub mod tls;
 pub const ABI_VERSION: u32 = 1;
 /// The complete Elide transport ABI 3 boundary is available.
 pub const CAP_TRANSPORT_V3: u64 = 1;
+/// `bemo_alloc`, `bemo_free`, and `bemo_alloc_live` allocate from the transport's allocator.
+pub const CAP_NATIVE_ALLOC: u64 = 2;
 /// Implemented data-plane capabilities.
-pub const CAPABILITIES: u64 = CAP_TRANSPORT_V3;
+pub const CAPABILITIES: u64 = CAP_TRANSPORT_V3 | CAP_NATIVE_ALLOC;

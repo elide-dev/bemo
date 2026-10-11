@@ -33,7 +33,7 @@ compile_error!("Select either bundled-mimalloc or rust-allocator, not both");
   not(miri),
   not(target_vendor = "apple")
 ))]
-use libmimalloc_sys::{mi_free, mi_malloc};
+pub(crate) use libmimalloc_sys::{mi_free, mi_malloc};
 
 #[cfg(all(
   not(feature = "bundled-mimalloc"),
@@ -42,12 +42,12 @@ use libmimalloc_sys::{mi_free, mi_malloc};
   not(target_vendor = "apple")
 ))]
 unsafe extern "C" {
-  fn mi_malloc(size: usize) -> *mut c_void;
-  fn mi_free(pointer: *mut c_void);
+  pub(crate) fn mi_malloc(size: usize) -> *mut c_void;
+  pub(crate) fn mi_free(pointer: *mut c_void);
 }
 
 #[cfg(any(miri, target_vendor = "apple", feature = "rust-allocator"))]
-use rust_alloc::{mi_free, mi_malloc};
+pub(crate) use rust_alloc::{mi_free, mi_malloc};
 
 // The bundled allocator is still linked under miri, just never called from here.
 #[cfg(all(feature = "bundled-mimalloc", miri, not(target_vendor = "apple")))]
@@ -70,7 +70,7 @@ mod rust_alloc {
     Layout::from_size_align(size + MI_ALIGN, MI_ALIGN).expect("allocation size out of range")
   }
 
-  pub(super) unsafe fn mi_malloc(size: usize) -> *mut c_void {
+  pub(crate) unsafe fn mi_malloc(size: usize) -> *mut c_void {
     // SAFETY: layout returns a nonzero valid layout, including header space and MI_ALIGN alignment.
     let base = unsafe { alloc(layout(size)) };
     if base.is_null() {
@@ -82,7 +82,7 @@ mod rust_alloc {
     unsafe { base.add(MI_ALIGN) }.cast::<c_void>()
   }
 
-  pub(super) unsafe fn mi_free(pointer: *mut c_void) {
+  pub(crate) unsafe fn mi_free(pointer: *mut c_void) {
     if pointer.is_null() {
       return;
     }

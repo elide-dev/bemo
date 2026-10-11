@@ -4,6 +4,31 @@ import java.nio.ByteBuffer;
 /** Enforces the requested backend on every driver in either binding's contract suite. */
 class BackendTransport implements TransportNative {
   @Override
+  public boolean supportsNativeAllocation() {
+    return delegate.supportsNativeAllocation();
+  }
+
+  @Override
+  public long nativeAllocate(int size) {
+    return delegate.nativeAllocate(size);
+  }
+
+  @Override
+  public void nativeFree(long address, int size) {
+    delegate.nativeFree(address, size);
+  }
+
+  @Override
+  public long nativeAllocatedBytes() {
+    return delegate.nativeAllocatedBytes();
+  }
+
+  @Override
+  public java.nio.ByteBuffer nativeView(long address, int size) {
+    return delegate.nativeView(address, size);
+  }
+
+  @Override
   public long gzipNew(long workload, int level) {
     return delegate.gzipNew(workload, level);
   }
