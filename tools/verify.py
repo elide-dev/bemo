@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded native fuzzing, sanitizer tests, and scoped Miri verification."""
+"""Bounded native fuzzing, end-to-end sanitizer tests, and scoped Miri verification."""
 import argparse
 import hashlib
 import json
@@ -7,10 +7,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import platform
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 ROOT = Path(__file__).resolve().parents[1]
-TARGETS = ("http", "buffers", "abi")
+TARGETS = ("http", "buffers", "abi", "gzip", "response", "tls", "h2")
 
 
 def run(command, env, directory, name, timeout):
@@ -20,11 +23,106 @@ def run(command, env, directory, name, timeout):
                    check=True, timeout=timeout)
 
 
+SANITIZER_FEATURES = ["--no-default-features", "--features", "bemo/rust-allocator,bemo-ffi/rust-allocator"]
+
+
+def sanitize(mode, host, env, directory, manifest, stages):
+  """Instrument Rust, Rust std, AWS-LC, and C consumers with one Elide toolchain runtime."""
+  import setup_llvm
+  home = setup_llvm.home((mode,))
+  toolchain = setup_llvm.environment(home, host, mode)
+  env.pop("RUSTFLAGS", None)
+  env.update(toolchain)
+  key = "CARGO_TARGET_" + host.upper().replace("-", "_") + "_RUSTFLAGS"
+  # The toolchain flags select clang's runtime (-Zexternal-clangrt), linked by its wrapper.
+  # rustc links with -nodefaultlibs, and the gnu libgcc_s script resolves only to libunwind;
+  # TSAN's unwinding cleanups need __gcc_personality_v0 from compiler-rt builtins.
+  builtins = subprocess.check_output([toolchain["CC"], "-print-libgcc-file-name"], text=True).strip()
+  env[key] = toolchain[key] + f" -Cdebuginfo=2 -Cforce-frame-pointers=yes -Clink-arg={builtins}"
+  env["ASAN_OPTIONS"] = "halt_on_error=1:abort_on_error=1:detect_leaks=" + ("1" if "linux" in host else "0")
+  env["TSAN_OPTIONS"] = "halt_on_error=1:exitcode=88:second_deadlock_stack=1"
+  addon = home / f"share/elide-toolchain/sanitizers/{mode}.addon.json"
+  manifest.update(toolchain=(home / "share/elide-toolchain/VERSION").read_text().strip(),
+                  addon=addon.is_file(), external_crypto_instrumented=True,
+                  instrumented=["rust", "rust-std", "aws-lc", "c-consumers"] + (["libc++"] if addon.is_file() else []),
+                  stages=stages)
+  (directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+  cargo = ["--locked", "--target", host, "-Zbuild-std", *SANITIZER_FEATURES]
+  if "rust" in stages:
+    # Explicit targets keep proc macros and build scripts out of target instrumentation.
+    run(["cargo", "nextest", "run", "--workspace", "--lib", "--tests", "--profile", "ci", *cargo],
+        env, directory, "tests", 1800)
+  if not {"native", "jvm"} & set(stages):
+    return
+  run(["cargo", "build", "-p", "bemo-ffi", *cargo], env, directory, "library", 1800)
+  output = Path(env["CARGO_TARGET_DIR"]) / host / "debug"
+  shared = output / {"Darwin": "libbemo_ffi.dylib"}.get(platform.system(), "libbemo_ffi.so")
+  # One shared runtime for the JVM, its preloaded library, and every C consumer.
+  runtime = Path(toolchain["ELIDE_SANITIZER_RUNTIME"])
+  cc = [env["CC"], "-shared-libsan", f"-Wl,-rpath,{runtime.parent}", "-g"]
+  if "native" in stages:
+    binary = directory / "static-contract"
+    # Debug build-std keeps unreachable f16 conversions that compiler-rt does not define.
+    libraries = ["-ldl", "-lpthread", "-lm", "-Wl,--gc-sections"] if "linux" in host else []
+    run([*cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", ROOT / "include",
+         ROOT / "tests/static.c", output / "libbemo_ffi.a", *libraries, "-o", binary],
+        env, directory, "static-build", 300)
+    run([binary], env, directory, "static-contract", 60)
+  if "jvm" in stages:
+    if "linux" not in host:
+      # macOS would need DYLD_INSERT_LIBRARIES into a hardened JDK; keep the Rust and C stages.
+      print("Skipping sanitized JVM contracts: Linux only", flush=True)
+      manifest["stages"] = [stage for stage in stages if stage != "jvm"]
+      return
+    import build
+    from reports import Reports
+    build.jvm()
+    jvm = dict(env)
+    jvm["LD_PRELOAD"] = str(runtime)
+    # HotSpot uses SIGSEGV for safepoints and implicit null checks, and never frees
+    # much of its own metadata: leave both to the JVM and keep reports fatal.
+    jvm["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=0:handle_segv=0:allow_user_segv_handler=1"
+    suppressions = ROOT / f"tools/sanitizers/{mode}-jvm.supp"
+    if mode == "tsan":
+      jvm["TSAN_OPTIONS"] = env["TSAN_OPTIONS"] + ":ignore_noninstrumented_modules=1" + (
+          f":suppressions={suppressions}" if suppressions.is_file() else "")
+    canary(mode, cc, env, jvm, directory)
+    reports = Reports(directory / "jvm")
+    build.ffm_contracts(reports, shared, env=jvm, cc=cc)
+    reports.finish()
+
+
+def canary(mode, cc, env, jvm, directory):
+  """Require the sanitized JVM launch to report deliberate defects before trusting it."""
+  import build
+  output = directory / "canary"
+  output.mkdir(exist_ok=True)
+  library = output / "libcanary.so"
+  run([*cc, "-shared", "-fPIC", "-O1", ROOT / "tests/sanitizer/canary.c", "-o", library],
+      env, directory, "canary-build", 120)
+  build.compile_java(output / "classes", [ROOT / "tests/sanitizer/SanitizerCanary.java"],
+                     lint="all,-restricted")
+  java = os.environ.get("BEMO_TEST_JAVA", build.java_tool("java"))
+  case, marker = {"asan": ("overflow", "AddressSanitizer: heap-buffer-overflow"),
+                  "tsan": ("race", "ThreadSanitizer: data race")}[mode]
+  log = directory / "canary.log"
+  with log.open("w") as output_log:
+    result = subprocess.run([java, "--enable-native-access=ALL-UNNAMED", "-cp", output / "classes",
+                             "SanitizerCanary", library, case], cwd=ROOT, env=jvm, stdout=output_log,
+                            stderr=subprocess.STDOUT, timeout=300)
+  text = log.read_text(errors="replace")
+  if result.returncode == 0 or marker not in text:
+    raise RuntimeError(f"{mode} canary was not reported in the JVM; inspect {log.relative_to(ROOT)}")
+  print(f"{mode} JVM canary reported: {marker}", flush=True)
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("mode", choices=("asan", "tsan", "miri", "fuzz"))
   parser.add_argument("--seconds", type=int, default=30, help="Per-fuzzer time budget")
   parser.add_argument("--runs", type=int, default=0, help="Optional fixed per-fuzzer execution budget")
+  parser.add_argument("--stages", default="rust,native,jvm",
+                      help="Sanitizer stages: rust (unit/integration), native (C consumers), jvm (FFM contracts)")
   args = parser.parse_args()
   if args.seconds < 1 or args.runs < 0:
     parser.error("seconds must be positive and runs nonnegative")
@@ -52,8 +150,9 @@ def main():
       for target in TARGETS:
         corpus = ROOT / "fuzz/corpus" / target
         corpus.mkdir(parents=True, exist_ok=True)
-        for seed in (ROOT / "fuzz/seeds" / target).iterdir():
-          shutil.copy2(seed, corpus / seed.name)
+        for kind in ("seeds", "regressions"):
+          for seed in sorted((ROOT / "fuzz" / kind / target).glob("*")):
+            shutil.copy2(seed, corpus / seed.name)
         artifacts = ROOT / "fuzz/artifacts" / target
         artifacts.mkdir(parents=True, exist_ok=True)
         command = ["cargo", "fuzz", "run", "--target", host, target, str(corpus), "--",
@@ -69,15 +168,10 @@ def main():
            "--features", "rust-allocator", "--lib", "--test", "buffers", "--test", "abi",
            "--test", "pool", "--test", "workload"], env, directory, "tests", 1800)
     else:
-      sanitizer = "address" if args.mode == "asan" else "thread"
-      env["RUSTFLAGS"] = f"-Zsanitizer={sanitizer} -Cdebuginfo=2 -Cforce-frame-pointers=yes"
-      env["ASAN_OPTIONS"] = "halt_on_error=1:abort_on_error=1:detect_leaks=" + ("1" if "linux" in host else "0")
-      env["TSAN_OPTIONS"] = "halt_on_error=1:exitcode=88"
-      # Explicit targets keep proc macros and build scripts out of target instrumentation.
-      run(["cargo", "nextest", "run", "--workspace", "--lib", "--tests", "--locked",
-           "--profile", "ci", "--target", host, "-Zbuild-std", "--no-default-features",
-           "--features", "bemo/rust-allocator,bemo-ffi/rust-allocator"],
-          env, directory, "tests", 1800)
+      stages = [stage for stage in args.stages.split(",") if stage]
+      if not set(stages) <= {"rust", "native", "jvm"}:
+        parser.error("stages must be drawn from rust, native, jvm")
+      sanitize(args.mode, host, env, directory, manifest, stages)
     manifest["status"] = "passed"
   except BaseException:
     manifest["status"] = "failed"

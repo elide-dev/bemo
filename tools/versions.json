@@ -28,6 +28,18 @@
         "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-darwin-arm64.tar.xz",
         "sha256": "e39b6430f36b3d3d20439a42e9047b6edb64d0c2a9277e69afd35e290dc93064"
       }
+    },
+    "sanitizers": {
+      "x86_64-unknown-linux-gnu": {
+        "asan": {
+          "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-linux-amd64-sanitizer-asan.tar.xz",
+          "sha256": "8309af8c55f0e009a898e2cb304c2629ed650272e0d510cc93266d81c8db20d7"
+        },
+        "tsan": {
+          "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-linux-amd64-sanitizer-tsan.tar.xz",
+          "sha256": "707abcdf926f00e1bffa66c42f80bd85c39f84af438788beda6aea3435d3f8df"
+        }
+      }
     }
   },
   "myna": {
