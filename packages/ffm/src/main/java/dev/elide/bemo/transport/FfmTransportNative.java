@@ -115,6 +115,9 @@ public final class FfmTransportNative implements TransportNative {
   private final MethodHandle tlsProtocol;
   private final MethodHandle tlsRelease;
   private final SymbolLookup symbols;
+  private final @Nullable MethodHandle nativeAlloc;
+  private final @Nullable MethodHandle nativeFree;
+  private final @Nullable MethodHandle nativeAllocLive;
   private volatile @Nullable EngineBindings engine;
 
   @Override
@@ -570,6 +573,46 @@ public final class FfmTransportNative implements TransportNative {
             ValueLayout.JAVA_LONG,
             ValueLayout.JAVA_LONG,
             ValueLayout.JAVA_LONG);
+    // Bind the allocator only when the library implements and advertises CAP_NATIVE_ALLOC.
+    MethodHandle alloc = null;
+    MethodHandle free = null;
+    MethodHandle live = null;
+    var capabilities = symbols.find("bemo_capabilities");
+    var allocSymbol = symbols.find("bemo_alloc");
+    var freeSymbol = symbols.find("bemo_free");
+    var liveSymbol = symbols.find("bemo_alloc_live");
+    if (capabilities.isPresent()
+        && allocSymbol.isPresent()
+        && freeSymbol.isPresent()
+        && liveSymbol.isPresent()) {
+      Linker linker = Linker.nativeLinker();
+      long bits;
+      try {
+        bits =
+            (long)
+                linker
+                    .downcallHandle(
+                        capabilities.get(), FunctionDescriptor.of(ValueLayout.JAVA_LONG))
+                    .invokeExact();
+      } catch (Throwable error) {
+        throw failure(error);
+      }
+      if ((bits & CAP_NATIVE_ALLOC) != 0) {
+        alloc =
+            linker.downcallHandle(
+                allocSymbol.get(),
+                FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
+        free =
+            linker.downcallHandle(
+                freeSymbol.get(),
+                FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
+        live =
+            linker.downcallHandle(liveSymbol.get(), FunctionDescriptor.of(ValueLayout.JAVA_LONG));
+      }
+    }
+    nativeAlloc = alloc;
+    nativeFree = free;
+    nativeAllocLive = live;
     socketSendInline =
         symbols
             .find("elide_transport_socket_send_inline")
@@ -1084,6 +1127,57 @@ public final class FfmTransportNative implements TransportNative {
     } catch (Throwable error) {
       throw failure(error);
     }
+  }
+
+  private static final long CAP_NATIVE_ALLOC = 2;
+
+  @Override
+  public boolean supportsNativeAllocation() {
+    return nativeAlloc != null;
+  }
+
+  @Override
+  public long nativeAllocate(int size) {
+    MethodHandle alloc = nativeAlloc;
+    if (alloc == null) throw new UnsupportedOperationException("Native allocation");
+    if (size <= 0) return 0;
+    try {
+      return (long) alloc.invokeExact((long) size);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public void nativeFree(long address, int size) {
+    MethodHandle free = nativeFree;
+    if (free == null) throw new UnsupportedOperationException("Native allocation");
+    if (address == 0) return;
+    try {
+      free.invokeExact(address, (long) size);
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public long nativeAllocatedBytes() {
+    MethodHandle live = nativeAllocLive;
+    if (live == null) throw new UnsupportedOperationException("Native allocation");
+    try {
+      return (long) live.invokeExact();
+    } catch (Throwable error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
+  public ByteBuffer nativeView(long address, int size) {
+    if (nativeAlloc == null) throw new UnsupportedOperationException("Native allocation");
+    return MemorySegment.ofAddress(address)
+        .reinterpret(size)
+        .asByteBuffer()
+        .order(java.nio.ByteOrder.BIG_ENDIAN);
   }
 
   @Override

@@ -497,6 +497,36 @@ public final class CapiTransportNative implements TransportNative {
         workload, driver, socket, WordFactory.pointer(source.rawValue()), length);
   }
 
+  private static final long CAP_NATIVE_ALLOC = 2;
+
+  @Override
+  public boolean supportsNativeAllocation() {
+    return (BemoNatives.bemo_capabilities() & CAP_NATIVE_ALLOC) != 0;
+  }
+
+  @Override
+  public long nativeAllocate(int size) {
+    if (size <= 0) return 0;
+    return BemoNatives.bemo_alloc(size).rawValue();
+  }
+
+  @Override
+  public void nativeFree(long address, int size) {
+    if (address != 0) BemoNatives.bemo_free(WordFactory.pointer(address), size);
+  }
+
+  @Override
+  public long nativeAllocatedBytes() {
+    return BemoNatives.bemo_alloc_live();
+  }
+
+  @Override
+  public ByteBuffer nativeView(long address, int size) {
+    // CTypeConversion does not promise Java's default big-endian order; the contract does.
+    return CTypeConversion.asByteBuffer(WordFactory.pointer(address), size)
+        .order(java.nio.ByteOrder.BIG_ENDIAN);
+  }
+
   @Override
   public boolean supportsInlineWrites() {
     return true;

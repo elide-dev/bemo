@@ -22,6 +22,18 @@ end
 import bemo_capabilities symbol=bemo_capabilities return=u64 error=no_failure
 end
 
+import bemo_alloc symbol=bemo_alloc return=ptr<void> error=no_failure
+  param size type=u64
+end
+
+import bemo_free symbol=bemo_free return=void error=no_failure
+  param pointer type=ptr<void> nullable=true ownership=transferred_to_callee access=read_write
+  param size type=u64
+end
+
+import bemo_alloc_live symbol=bemo_alloc_live return=u64 error=no_failure
+end
+
 import elide_transport_abi_version symbol=elide_transport_abi_version return=u32 error=no_failure
 end
 
