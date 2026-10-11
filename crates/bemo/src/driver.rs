@@ -960,15 +960,7 @@ impl Driver {
         vector.iov_base = region.as_ptr().cast_mut().cast();
         vector.iov_len = region.len();
       }
-      let mut message = libc::msghdr {
-        msg_name: std::ptr::null_mut(),
-        msg_namelen: 0,
-        msg_iov: std::ptr::null_mut(),
-        msg_iovlen: 0,
-        msg_control: std::ptr::null_mut(),
-        msg_controllen: 0,
-        msg_flags: 0,
-      };
+      let mut message = empty_message();
       message.msg_iov = vectors.as_mut_ptr();
       message.msg_iovlen = regions.len() as _;
       #[cfg(target_vendor = "apple")]
@@ -1338,6 +1330,23 @@ impl Drop for Driver {
       }
     }
   }
+}
+
+/// An empty `msghdr`. musl adds private padding fields, so the struct cannot be built with
+/// literal syntax portably; every public field is still set by name.
+#[cfg(unix)]
+pub(crate) fn empty_message() -> libc::msghdr {
+  // SAFETY: msghdr is a plain C struct of integers and raw pointers, for which all-zero bits are
+  // valid (null pointers and zero lengths); this only initializes the private padding portably.
+  let mut message = unsafe { std::mem::MaybeUninit::<libc::msghdr>::zeroed().assume_init() };
+  message.msg_name = std::ptr::null_mut();
+  message.msg_namelen = 0;
+  message.msg_iov = std::ptr::null_mut();
+  message.msg_iovlen = 0;
+  message.msg_control = std::ptr::null_mut();
+  message.msg_controllen = 0;
+  message.msg_flags = 0;
+  message
 }
 
 fn connected(id: u64, BufResult(result, operation): BufResult<usize, Connect>) -> Event {
