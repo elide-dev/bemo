@@ -36,6 +36,16 @@
           "type": "toml",
           "path": "fuzz/Cargo.lock",
           "jsonpath": "$.package[?(@.name.value==\"bemo\")].version"
+        },
+        {
+          "type": "toml",
+          "path": "tests/embedder/Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value==\"bemo\")].version"
+        },
+        {
+          "type": "toml",
+          "path": "tests/embedder/Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value==\"bemo-ffi\")].version"
         }
       ]
     }
