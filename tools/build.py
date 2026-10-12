@@ -353,6 +353,7 @@ def check():
   run(deny, "--locked", "--workspace", "check")
   jvm()
   run(sys.executable, ROOT / "tools/check_java.py")
+  run(sys.executable, ROOT / "tools/abi_reference.py", "--check")
   run(sys.executable, ROOT / "tools/verify_native_baseline.py")
 
 
