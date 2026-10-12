@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
@@ -62,7 +63,7 @@ def fetch(url, checksum, archive):
   archive = Path(archive)
   if archive.exists() and digest(archive) == checksum:
     return archive
-  print(f'Downloading {url}', flush=True)
+  print(f'Downloading {url}', file=sys.stderr, flush=True)
   temporary = archive.with_suffix('.download')
   try:
     with urllib.request.urlopen(url, timeout=600) as source, temporary.open('wb') as output:
@@ -97,7 +98,7 @@ def home(sanitizers=()):
     addon = pins.get('sanitizers', {}).get(triple, {}).get(sanitizer)
     if addon is None:
       # The bundle still ships the runtime; only libc++ and C components stay uninstrumented.
-      print(f'No pinned {sanitizer} add-on for {triple}; using the bundled runtime', flush=True)
+      print(f'No pinned {sanitizer} add-on for {triple}; using the bundled runtime', file=sys.stderr, flush=True)
       continue
     addon_marker = destination / f'.addon-{sanitizer}-sha256'
     if addon_marker.exists() and addon_marker.read_text().strip() == addon['sha256']:
