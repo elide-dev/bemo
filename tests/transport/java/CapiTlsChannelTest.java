@@ -10,6 +10,7 @@ public final class CapiTlsChannelTest {
     byte[] cert = Files.readAllBytes(Path.of(args[0])), key = Files.readAllBytes(Path.of(args[1]));
     TransportAbiTest.verify(api);
     NativeByteBufTest.verify(api);
+    NativeDirectAllocatorTest.verify(api);
     NativeChannelTest.verify(api);
     NativeLifecycleTest.verify(api);
     NativeReentrantCloseTest.verify(api, cert, key);

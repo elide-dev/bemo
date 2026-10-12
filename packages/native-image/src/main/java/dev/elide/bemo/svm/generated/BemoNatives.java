@@ -17,7 +17,7 @@ public final class BemoNatives {
   private BemoNatives() {}
 
   public static final String ABI_FINGERPRINT =
-      "97ee157f66707a3521a4e8e790547bbd44337f12bef4bea043eddd7b5fa1a8bf";
+      "0b39e670698b4289c7a82008ca3f05929882cb12b505d03209cbea0d8b3dc58e";
 
   public static final class elide_transport_buffer_view_t {
     private elide_transport_buffer_view_t() {}
@@ -100,8 +100,17 @@ public final class BemoNatives {
   @CFunction(value = "bemo_abi_version")
   public static native int bemo_abi_version();
 
+  @CFunction(value = "bemo_alloc")
+  public static native VoidPointer bemo_alloc(long size);
+
+  @CFunction(value = "bemo_alloc_live")
+  public static native long bemo_alloc_live();
+
   @CFunction(value = "bemo_capabilities")
   public static native long bemo_capabilities();
+
+  @CFunction(value = "bemo_free")
+  public static native void bemo_free(VoidPointer pointer, long size);
 
   @CFunction(value = "elide_transport_abi_version")
   public static native int elide_transport_abi_version();

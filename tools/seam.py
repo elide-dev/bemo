@@ -120,6 +120,14 @@ def validate_rust_signatures():
   aliases = {'BufferView': 'elide_transport_buffer_view_t', 'ReceiveResult': 'elide_transport_receive_result_t',
              'c_void': 'void'}
   found = {}
+
+  def carrier(typ):
+    pointer = re.match(r'\*(?:const|mut) (.+)', typ)
+    if not pointer:
+      return typ
+    pointee = pointer[1].split('::')[-1]
+    return 'ptr<' + aliases.get(pointee, pointee) + '>'
+
   text = '\n'.join((ROOT / 'crates/bemo-ffi/src' / name).read_text() for name in ('lib.rs', 'transport.rs'))
   for match in re.finditer(r'pub (?:unsafe )?extern "C" fn (\w+)\(', text):
     name = match[1]
@@ -133,7 +141,7 @@ def validate_rust_signatures():
         depth -= 1
       end += 1
     body = text[match.end():end - 1]
-    returns = text[end:text.index('{', end)].strip().removeprefix('->').strip() or 'void'
+    returns = carrier(text[end:text.index('{', end)].strip().removeprefix('->').strip() or 'void')
     types = []
     for parameter in arguments(body):
       typ = parameter.split(':', 1)[1].strip()
@@ -148,11 +156,7 @@ def validate_rust_signatures():
         if abi_types != expected_types:
           raise RuntimeError(f'Rust callback signature mismatch: {name}')
         typ = f'fn<{callback_name}>'
-      pointer = re.match(r'\*(?:const|mut) (.+)', typ)
-      if pointer:
-        pointee = pointer[1].split('::')[-1]
-        typ = 'ptr<' + aliases.get(pointee, pointee) + '>'
-      types.append(typ)
+      types.append(carrier(typ))
     found[name] = (returns, types)
   for name, (returns, parameters) in expected.items():
     signature = (returns, [typ for _, typ in parameters])

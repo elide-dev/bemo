@@ -20,6 +20,9 @@ use crate::buffer::{Budget, Buffer, FrozenBuffer};
 use crate::driver::{Backend, Driver};
 use compio_buf::{IoBuf, IoBufMut, SetLen};
 
+mod alloc;
+pub use alloc::*;
+
 mod handle_hash;
 use handle_hash::HandleMap;
 

@@ -242,6 +242,41 @@ public interface TransportNative {
   /** Lease a frozen byte range for an asynchronous send; the caller retains its original handle. */
   long socketSend(long workload, long driver, long socket, long buffer, long offset, long length);
 
+  /**
+   * Whether {@link #nativeAllocate} and {@link #nativeFree} allocate from the transport's own
+   * allocator: bundled mimalloc, or the embedder's mimalloc or Rust allocator.
+   */
+  default boolean supportsNativeAllocation() {
+    return false;
+  }
+
+  /**
+   * Allocate {@code size} (1 to {@link Integer#MAX_VALUE}) uninitialized bytes, aligned to at least
+   * 16, from the transport's allocator. Returns the address, or zero when allocation fails. Any
+   * thread may allocate; the caller frees exactly once with {@link #nativeFree}.
+   */
+  default long nativeAllocate(int size) {
+    throw new UnsupportedOperationException("Native allocation");
+  }
+
+  /** Free memory from {@link #nativeAllocate} with its allocation size. Zero is ignored. */
+  default void nativeFree(long address, int size) {
+    throw new UnsupportedOperationException("Native allocation");
+  }
+
+  /** Bytes allocated by {@link #nativeAllocate} and not yet freed, process-wide. */
+  default long nativeAllocatedBytes() {
+    throw new UnsupportedOperationException("Native allocation");
+  }
+
+  /**
+   * A big-endian direct buffer over {@code size} bytes at {@code address}. The view does not own
+   * the memory and must not be used after {@link #nativeFree}.
+   */
+  default ByteBuffer nativeView(long address, int size) {
+    throw new UnsupportedOperationException("Native allocation");
+  }
+
   /** Whether this binding exposes bounded nonblocking inline writes on Unix backends. */
   default boolean supportsInlineWrites() {
     return false;

@@ -98,3 +98,9 @@ test-examples-native: examples-prepare
 .PHONY: bench-tls-records
 bench-tls-records:
 	$(PYTHON) tools/tls_records.py
+
+.PHONY: test-musl test-embedder
+test-musl:
+	$(PYTHON) tools/test_toolchain.py musl
+test-embedder:
+	$(PYTHON) tools/test_toolchain.py embedder

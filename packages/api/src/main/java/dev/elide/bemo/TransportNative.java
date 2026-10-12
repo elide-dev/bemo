@@ -8,6 +8,9 @@ public interface TransportNative {
   /** The complete Elide transport ABI 3 boundary is available. */
   long CAP_TRANSPORT_V3 = 1;
 
+  /** {@code bemo_alloc} and {@code bemo_free} allocate from the transport's own allocator. */
+  long CAP_NATIVE_ALLOC = 2;
+
   /**
    * Queries the native ABI.
    *
@@ -18,7 +21,7 @@ public interface TransportNative {
   /**
    * Queries available data-plane operations.
    *
-   * @return implemented transport capabilities; bit 0 indicates Elide transport ABI 3
+   * @return implemented capabilities; unknown bits must be ignored
    */
   long capabilities();
 
