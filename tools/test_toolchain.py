@@ -103,7 +103,7 @@ def main():
   commands = parser.add_subparsers(dest="command", required=True)
   commands.add_parser("musl", help="Rust suite as static musl executables")
   embedder = commands.add_parser("embedder", help="Elide-shaped static library embedding")
-  embedder.add_argument("cases", nargs="*", default=list(CASES), choices=list(CASES))
+  embedder.add_argument("cases", nargs="*", choices=list(CASES))
   args = parser.parse_args()
   if seam.target_triple() != "x86_64-unknown-linux-gnu":
     print("Toolchain qualification runs on Linux x86-64 hosts; skipping")
@@ -113,9 +113,9 @@ def main():
   if args.command == "musl":
     musl(home, target_dir)
     return
-  for name in args.cases:
+  for name in args.cases or CASES:
     case(name, home, target_dir)
-  print("Embedder contract passed: " + ", ".join(args.cases))
+  print("Embedder contract passed: " + ", ".join(args.cases or CASES))
 
 
 if __name__ == "__main__":
