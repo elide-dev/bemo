@@ -15,6 +15,7 @@ cancelled dependencies. Configure branch protection to require the resulting
 | Coverage | Linux Rust LCOV (including C/FFM contracts against an instrumented library) + JVM JaCoCo XML; tests and coverage archived for Codecov |
 | Native safety | Linux; ASAN and TSAN through the Elide toolchain over Rust, AWS-LC, C consumers, and FFM contracts in a stock JVM, with canaries; Miri; bounded fuzzing of seven targets |
 | Build | Linux/macOS; release Cargo libraries, JVM/source/Javadoc JARs, POMs, checksums, native classifiers; packaged Netty TCP/TLS and FFM contracts |
+| Elide toolchain | Linux; Rust suite as fully static musl executables linked by the pinned toolchain, and an Elide-shaped embedder static library (glibc and static musl) checking each header export appears exactly once, no bundled mimalloc, and embedder-supplied buffers |
 
 Actions are SHA-pinned following Elide's existing pins. Linux jobs use runner
 hardening in audit mode, checkout does not persist credentials, and the default
