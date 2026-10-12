@@ -42,12 +42,19 @@ by C API tests but are **not** included in JVM coverage: JaCoCo cannot instrumen
 them while running a native executable. Rust LCOV excludes integration-test and
 benchmark sources. Coverage and tests remain separate upload types.
 
+`make coverage-rust` also builds an instrumented `libbemo_ffi` and runs the C ABI,
+FFM, and Netty transport contracts against it. Rust tests call `bemo::abi`
+directly, so without that stage the generated C exports and binding-only paths
+would be invisible. Those profiles merge into the same LCOV report; the contract
+logs land in `build/reports/tests/native-coverage/`.
+
 CI archives reports even on failures, on every PR and main verification. Uploads are enabled by default after connecting `elide-dev/bemo` in Codecov.
 Main-branch workflows forward `CODECOV_TOKEN`; PR and merge-queue workflows use
 Codecov OIDC trust and receive no secrets. Set repository variable
 `CODECOV_ENABLED=false` to disable external uploads while retaining artifacts. Uploads use explicit file paths, `rust`/`jvm` flags, and disabled file
-search. Codecov statuses start informational; establish measured coverage
-baselines before setting numeric merge requirements. The build and test jobs
+search. The Rust project status fails a change that lowers measured coverage by
+more than one point (baseline 91% of lines, October 2026); patch and JVM statuses
+remain informational until their baselines are established. The build and test jobs
 still fail on real failures. Reports are available as artifacts even when
 Codecov is disabled. `codecov.yml` maps JVM package-relative sources back to
 Elide's separate source roots.

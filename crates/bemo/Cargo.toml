@@ -13,6 +13,8 @@ workspace = true
 default = ["bundled-mimalloc"]
 bundled-mimalloc = ["dep:libmimalloc-sys"]
 rust-allocator = []
+# Unstable drivers for crate-private protocol state; only the fuzz workspace enables this.
+fuzzing = []
 
 [dependencies]
 zlib-rs = { workspace = true }

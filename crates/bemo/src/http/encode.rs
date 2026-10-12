@@ -235,7 +235,11 @@ impl Write for HeadStorage<'_> {
   }
 }
 
-fn validate_headers(headers: &[ResponseHeader<'_>]) -> io::Result<()> {
+fn validate_head(status: u16, headers: &[ResponseHeader<'_>]) -> io::Result<()> {
+  // The status line always carries exactly three digits.
+  if !(100..1000).contains(&status) {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid HTTP status"));
+  }
   for header in headers {
     if header.name.is_empty()
       || !header
@@ -332,7 +336,8 @@ fn write_head(
 /// `Framing::Length` still advertises the length.
 ///
 /// # Errors
-/// Returns an error for invalid headers or when response storage cannot be reserved.
+/// Returns an error for a status outside 100..=999, invalid headers, or when response
+/// storage cannot be reserved.
 #[allow(clippy::too_many_arguments)]
 pub fn encode_head(
   budget: &Budget,
@@ -344,7 +349,7 @@ pub fn encode_head(
   head_only: bool,
   keep_alive: bool,
 ) -> io::Result<FrozenBuffer> {
-  validate_headers(headers)?;
+  validate_head(status, headers)?;
   let date = date.line();
   let mut size = HeadSize::default();
   write_head(
@@ -374,7 +379,8 @@ pub fn encode_head(
 /// deviates from the version default.
 ///
 /// # Errors
-/// Returns an error for invalid headers or when response storage cannot be reserved.
+/// Returns an error for a status outside 100..=999, invalid headers, or when response
+/// storage cannot be reserved.
 #[allow(clippy::too_many_arguments)]
 pub fn encode_response(
   budget: &Budget,
@@ -386,7 +392,7 @@ pub fn encode_response(
   head_only: bool,
   keep_alive: bool,
 ) -> io::Result<FrozenBuffer> {
-  validate_headers(headers)?;
+  validate_head(status, headers)?;
   let date = date.line();
   let framing = Framing::Length(body.len() as u64);
   let mut size = HeadSize::default();
@@ -444,6 +450,42 @@ mod tests {
       .filter(|l| !l.starts_with("date: "))
       .collect::<Vec<_>>()
       .join("\r\n")
+  }
+
+  #[test]
+  fn statuses_outside_three_digits_are_rejected_before_allocation() {
+    let budget = Budget::new(1 << 20);
+    for status in [0, 99, 1000, 1200, u16::MAX] {
+      let head = encode_head(
+        &budget,
+        &mut DateCache::default(),
+        1,
+        status,
+        &[],
+        Framing::Length(0),
+        false,
+        true,
+      );
+      assert_eq!(head.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+      let full = encode_response(&budget, &mut DateCache::default(), 1, status, &[], b"body", false, true);
+      assert_eq!(full.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    }
+    assert_eq!(budget.used(), 0);
+    for status in [100, 999] {
+      assert!(
+        encode_head(
+          &budget,
+          &mut DateCache::default(),
+          1,
+          status,
+          &[],
+          Framing::Length(0),
+          false,
+          true
+        )
+        .is_ok()
+      );
+    }
   }
 
   #[test]

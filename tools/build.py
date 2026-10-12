@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -148,16 +149,6 @@ def java_tool(name):
 def test_jvm(coverage=False):
   rust()
   jvm()
-  test_root = ROOT / "tests/java/dev/elide/bemo"
-  output = BUILD / "tests/ffm"
-  cp = [classes("api"), classes("ffm")]
-  compile_java(output, [test_root / "Contract.java", test_root / "FfmContract.java"], cp)
-  extra = []
-  if os.name != "nt":
-    incompatible = BUILD / "tests" / library().name.replace("bemo_ffi", "incompatible")
-    kind = "-dynamiclib" if platform.system() == "Darwin" else "-shared"
-    run(os.environ.get("CC", "cc"), kind, "-fPIC", ROOT / "tests/incompatible.c", "-o", incompatible)
-    extra.append(incompatible)
   reports = Reports(BUILD / "reports/tests/jvm")
   test_bench_gzip(reports)
   agent = []
@@ -167,21 +158,42 @@ def test_jvm(coverage=False):
     destination.mkdir(parents=True)
     jar = jar_dependency("org.jacoco", "org.jacoco.agent", VERSIONS["jacoco"], "runtime")
     agent = [f"-javaagent:{jar}=destfile={destination / 'jacoco.exec'},append=true,includes=dev.elide.*:io.netty.handler.ssl.ApplicationProtocolSslEngine"]
-  # Deliberately launch stock java, with no Elide or GraalVM SDK in the classpath.
-  reports.run("FfmContract", [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
-      "--enable-native-access=ALL-UNNAMED", "-ea", "-cp",
-      classpath([output, *cp]), "dev.elide.bemo.FfmContract", library(), *extra], timeout=60, cwd=ROOT)
-  if os.name != "nt":
-    binary = BUILD / "tests/abi"
-    run(os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
-        "-I", ROOT / "include", ROOT / "tests/abi.c", library(), "-o", binary)
-    reports.run("CAbiContract", [binary], timeout=30, cwd=ROOT)
   try:
-    test_transport(reports=reports, agent=agent)
+    ffm_contracts(reports, library(), agent=agent)
   finally:
     if coverage:
       report_jvm_coverage()
   reports.finish()
+
+
+def ffm_contracts(reports, native, agent=(), env=None, cc=None):
+  """Run the FFM, C ABI, and Netty transport contracts against one shared library.
+
+  Sanitizer and coverage verification pass an instrumented library, a launcher
+  environment, and the matching C compiler; ordinary tests use the debug build.
+  """
+  cc = list(cc or [os.environ.get("CC", "cc")])
+  test_root = ROOT / "tests/java/dev/elide/bemo"
+  output = BUILD / "tests/ffm"
+  cp = [classes("api"), classes("ffm")]
+  compile_java(output, [test_root / "Contract.java", test_root / "FfmContract.java"], cp)
+  extra = []
+  if os.name != "nt":
+    incompatible = BUILD / "tests" / native.name.replace("bemo_ffi", "incompatible")
+    kind = "-dynamiclib" if platform.system() == "Darwin" else "-shared"
+    run(*cc, kind, "-fPIC", ROOT / "tests/incompatible.c", "-o", incompatible)
+    extra.append(incompatible)
+  # Deliberately launch stock java, with no Elide or GraalVM SDK in the classpath.
+  reports.run("FfmContract", [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
+      "--enable-native-access=ALL-UNNAMED", "-ea", "-cp",
+      classpath([output, *cp]), "dev.elide.bemo.FfmContract", native, *extra], timeout=60, cwd=ROOT,
+      env=env)
+  if os.name != "nt":
+    binary = BUILD / "tests/abi"
+    run(*cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+        "-I", ROOT / "include", ROOT / "tests/abi.c", native, "-o", binary)
+    reports.run("CAbiContract", [binary], timeout=30, cwd=ROOT, env=env)
+  test_transport(reports=reports, agent=agent, native=native, env=env)
 
 
 def test_native_image():
@@ -222,7 +234,7 @@ def test_bench_gzip(reports, native_image=False):
   reports.run("ReusableGzipTest", command, timeout=30, cwd=ROOT)
 
 
-def test_transport(native_image=False, reports=None, agent=()):
+def test_transport(native_image=False, reports=None, agent=(), native=None, env=None):
   output = BUILD / "tests/transport"
   cp = [classes("api"), classes("ffm"), classes("netty"), *netty()]
   compile_java(output, sorted((ROOT / "tests/transport/java").glob("*.java")),
@@ -245,7 +257,7 @@ def test_transport(native_image=False, reports=None, agent=()):
                      "NativeSslInteropTest", "NativeSslPolicyTest", "StandaloneTransportCheck"):
       reports.run(contract, [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
           "--enable-native-access=ALL-UNNAMED", "-ea", "-cp", classpath([output, *cp]),
-          contract, library(), cert, key], timeout=90, cwd=ROOT)
+          contract, native or library(), cert, key], timeout=90, cwd=ROOT, env=env)
 
 
 def report_jvm_coverage():
@@ -268,12 +280,40 @@ def test_rust(coverage=False):
     try:
       run("cargo", "llvm-cov", "nextest", "--workspace", "--lib", "--tests", "--locked",
           "--profile", "ci", "--no-report")
+      native_coverage()
     finally:
       run("cargo", "llvm-cov", "report", "--lcov", "--ignore-filename-regex", "/(tests|benches)/",
           "--output-path", destination / "lcov.info")
   else:
     run("cargo", "nextest", "run", "--workspace", "--lib", "--tests", "--locked", "--profile", "ci")
   run("cargo", "test", "--workspace", "--doc", "--locked")
+  # Replay checked-in fuzz seeds and minimized regressions without a fuzzing toolchain.
+  run("cargo", "test", "--manifest-path", ROOT / "fuzz/Cargo.toml", "--lib", "--locked")
+
+
+def native_coverage():
+  """Exercise the instrumented C exports through the C, FFM, and Netty contracts.
+
+  Rust tests call `bemo::abi` directly, so `bemo-ffi` and the paths reached only
+  through the bindings would otherwise be invisible to Rust coverage. Profiles
+  land beside the Nextest profiles and merge into the same LCOV report.
+  """
+  if os.name == "nt":
+    return
+  env = dict(os.environ, CARGO_TARGET_DIR=str(ROOT / "target/llvm-cov-target"))
+  exports = subprocess.check_output(["cargo", "llvm-cov", "show-env", "--sh"], cwd=ROOT, env=env, text=True)
+  for line in exports.splitlines():
+    if line.startswith("export "):
+      key, _, value = line[len("export "):].partition("=")
+      env[key] = shlex.split(value)[0] if value else ""
+  run("cargo", "build", "-p", "bemo-ffi", "--locked", env=env)
+  jvm()
+  reports = Reports(BUILD / "reports/tests/native-coverage")
+  native = Path(env["CARGO_TARGET_DIR"]) / "debug" / library().name
+  # Contract processes only need the profile destination, not the Rust wrapper settings.
+  contract_env = dict(os.environ, LLVM_PROFILE_FILE=env["LLVM_PROFILE_FILE"])
+  ffm_contracts(reports, native, env=contract_env)
+  reports.finish()
 
 
 def fmt(check=False):

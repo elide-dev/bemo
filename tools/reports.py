@@ -19,13 +19,13 @@ class Reports:
     (self.directory / "junit.xml").unlink(missing_ok=True)
     self.failures = []
 
-  def run(self, name, command, *, timeout, cwd):
+  def run(self, name, command, *, timeout, cwd, env=None):
     started = time.monotonic()
     error = None
     log = self.directory / f"{name}.log"
     with log.open("w") as output:
       try:
-        subprocess.run(list(map(str, command)), cwd=cwd, stdout=output,
+        subprocess.run(list(map(str, command)), cwd=cwd, env=env, stdout=output,
                        stderr=subprocess.STDOUT, check=True, timeout=timeout)
       except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as failure:
         error = str(failure)

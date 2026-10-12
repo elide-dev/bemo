@@ -3,6 +3,11 @@ coverage:
     project:
       default:
         informational: true
+      # Rust baseline: 91.0% of lines with native contract coverage (2026-10-11).
+      rust:
+        flags: [rust]
+        target: auto
+        threshold: 1%
     patch:
       default:
         informational: true

@@ -12,7 +12,8 @@ cancelled dependencies. Configure branch protection to require the resulting
 | Check Rust | Linux/macOS/Windows; format, Clippy, Nextest + JUnit XML, doctests, release build, external allocator check; forced polling and external Git consumer on Linux |
 | Check JVM | Linux/macOS; Temurin 22/25; format, Java warning checks, Rust docs, C ABI and complete Netty FFM contracts |
 | Check Native Image | Linux; GraalVM 25; compile, statically link, and execute complete Netty C API contracts |
-| Coverage | Linux Rust LCOV + JVM JaCoCo XML; tests and coverage archived for Codecov |
+| Coverage | Linux Rust LCOV (including C/FFM contracts against an instrumented library) + JVM JaCoCo XML; tests and coverage archived for Codecov |
+| Native safety | Linux; ASAN and TSAN through the Elide toolchain over Rust, AWS-LC, C consumers, and FFM contracts in a stock JVM, with canaries; Miri; bounded fuzzing of seven targets |
 | Build | Linux/macOS; release Cargo libraries, JVM/source/Javadoc JARs, POMs, checksums, native classifiers; packaged Netty TCP/TLS and FFM contracts |
 
 Actions are SHA-pinned following Elide's existing pins. Linux jobs use runner

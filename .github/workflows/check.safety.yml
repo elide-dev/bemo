@@ -5,8 +5,10 @@ permissions:
   contents: read
 jobs:
   sanitizer:
+    # Rust, Rust std, AWS-LC, C consumers, and the FFM contracts in a stock JVM,
+    # instrumented through the pinned Elide toolchain and its sanitizer add-on.
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -15,11 +17,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup
       - uses: ./.github/actions/setup-cargo-tools
         with:
           tools: nextest
       - run: rustup component add rust-src
-      - name: Run instrumented Rust and ownership tests
+      - name: Resolve JVM dependencies
+        run: make deps
+      - name: Install the pinned toolchain and ${{ matrix.mode }} add-on
+        run: |
+          home=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import setup_llvm; print(setup_llvm.home(("${{ matrix.mode }}",)))')
+          "$home/bin/elide-toolchain" sanitizers
+          "$home/bin/elide-toolchain" doctor --sanitizers
+      - name: Run instrumented Rust, C ABI, and JVM contracts
         run: make test-${{ matrix.mode }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
