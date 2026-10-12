@@ -221,7 +221,7 @@ toolchain (`python3 tools/setup_llvm.py` installs it); see
 [generated seams](docs/generated-seam.md) for generation, extraction, and
 final-link requirements.
 
-Source and documentation:
+Source and documentation (start with the [user guide](docs/guide/README.md) or the [docs index](docs/README.md)):
 
 - [`crates/bemo`](crates/bemo): Rust core.
 - [`crates/bemo-ffi`](crates/bemo-ffi) and [`include`](include): C interface.

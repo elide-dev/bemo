@@ -129,6 +129,10 @@ impl Session {
   /// Advance one transition. The caller must remove `Step::discard` bytes before the next call,
   /// preserve output order, and acknowledge transmission only after transport completion.
   ///
+  /// An acknowledgement is consumed only by a step that returns [`State::NeedTransmit`]. A step
+  /// that processes records or surfaces plaintext first leaves it pending, so keep passing
+  /// [`Action::Transmitted`] until a step reports `NeedTransmit`; dropping it stalls the session.
+  ///
   /// # Errors
   /// Returns TLS, allocation, or unsupported-state errors; any error makes the session terminal.
   pub fn step(&mut self, input: &mut [u8], action: Action<'_>) -> io::Result<Step> {
