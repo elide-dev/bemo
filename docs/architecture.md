@@ -207,7 +207,7 @@ There are two versioned interfaces:
 
 | Interface | Version | Purpose |
 | --- | --- | --- |
-| `bemo_*` | 1 | Metadata and capability discovery |
+| `bemo_*` | 1 | Metadata, capability discovery, and native allocation |
 | `elide_transport_*` | 3 | Buffers, drivers, sockets, TLS, and HTTP operations |
 
 The transport symbols keep their Elide names for compatibility. The transport
