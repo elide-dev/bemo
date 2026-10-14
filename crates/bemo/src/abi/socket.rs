@@ -8,7 +8,7 @@
 use socket2::Socket;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV6};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::*;
 use crate::driver::Event;
@@ -769,11 +769,23 @@ pub unsafe fn elide_transport_driver_poll(driver: u64, timeout_ns: u64, batch: u
       };
       out.push(event);
     }
+    // The earliest armed internal deadline (e.g. an h2 flow-control stall), if any. The driver
+    // clamps its blocking wait to this so lazy `Instant::now()` verdicts in `drive` are evaluated
+    // even under an indefinite (`u64::MAX`) host poll — without it, a silent peer that withholds
+    // flow-control credit strands a freed stream past its deadline for as long as the host blocks.
+    let deadline = super::http::next_deadline(state);
     let timeout = if out.is_empty() && !super::http::needs_poll(state) {
-      if timeout_ns == u64::MAX {
+      let timeout = if timeout_ns == u64::MAX {
         Duration::MAX
       } else {
         Duration::from_nanos(timeout_ns)
+      };
+      match deadline {
+        Some(deadline) => {
+          let remaining = deadline.saturating_duration_since(Instant::now());
+          timeout.min(remaining.max(Duration::from_millis(1)))
+        }
+        None => timeout,
       }
     } else {
       Duration::ZERO
@@ -789,6 +801,11 @@ pub unsafe fn elide_transport_driver_poll(driver: u64, timeout_ns: u64, batch: u
     // has drained completions above, so any slot freed by another socket's completion is now
     // available; a still-saturated driver re-defers without sending.
     super::http::retry_deferred(state, out);
+    // A blocking poll clamped to an internal deadline must re-drive the stalled socket so the
+    // lazy `Instant::now()` checks in `drive` fire, even when no I/O woke the driver.
+    if deadline.is_some() {
+      super::http::drive_armed_deadlines(state, out);
+    }
     let count = out.len().min(maximum);
     for (index, event) in out.drain(..count).enumerate() {
       // SAFETY: The buffer owns count event-sized slots; write_unaligned does not assume byte-buffer alignment.
@@ -1072,12 +1089,27 @@ fn poll_callback(
     }
     sweep(state);
     super::serving::prepare(state);
+    // Clamp the blocking wait to the earliest armed internal deadline (e.g. an h2 flow-control
+    // stall) so the lazy `Instant::now()` checks in `drive` fire even under an indefinite
+    // (`u64::MAX`) host poll. See `elide_transport_driver_poll` for the full rationale.
+    let deadline = super::http::next_deadline(state);
     let timeout = if !state.http.overflow.is_empty() || super::http::needs_poll(state) {
       Duration::ZERO
     } else if timeout_ns == u64::MAX {
-      Duration::MAX
+      match deadline {
+        Some(deadline) => deadline
+          .saturating_duration_since(Instant::now())
+          .max(Duration::from_millis(1)),
+        None => Duration::MAX,
+      }
     } else {
-      Duration::from_nanos(timeout_ns)
+      match deadline {
+        Some(deadline) => {
+          let remaining = deadline.saturating_duration_since(Instant::now());
+          Duration::from_nanos(timeout_ns).min(remaining.max(Duration::from_millis(1)))
+        }
+        None => Duration::from_nanos(timeout_ns),
+      }
     };
     let events = state.driver.poll_batch(timeout, maximum as usize).ok()?;
     let mut scratch = std::mem::take(&mut state.callback);
@@ -1195,6 +1227,7 @@ fn poll_callback(
       return false;
     };
     super::http::retry_deferred(state, &mut scratch.out);
+    super::http::drive_armed_deadlines(state, &mut scratch.out);
     state.http.overflow.extend(scratch.out.drain(..));
     true
   });
