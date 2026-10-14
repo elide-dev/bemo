@@ -77,6 +77,25 @@ impl H2Socket {
     self.connection.input_capacity()
   }
 
+  /// The earliest armed flow-control stall deadline (`freed_at + FLOW_CONTROL_STALL`) across all
+  /// streams, if any stream has the stall detector armed. The driver clamps its blocking poll to
+  /// this deadline so the lazy `Instant::now()` check in `drive` is evaluated even under an
+  /// indefinite (`u64::MAX`) host poll.
+  pub(super) fn stall_deadline(&self) -> Option<Instant> {
+    self
+      .streams
+      .values()
+      .filter_map(|stream| stream.freed_at)
+      .filter_map(|freed_at| freed_at.checked_add(FLOW_CONTROL_STALL))
+      .min()
+  }
+
+  /// Whether any stream has the flow-control stall detector armed (`freed_at` is set), used by the
+  /// driver to know which sockets to re-drive after a deadline-clamped poll returns.
+  pub(super) fn has_armed_stall(&self) -> bool {
+    self.streams.values().any(|stream| stream.freed_at.is_some())
+  }
+
   pub(super) fn new() -> Self {
     Self {
       connection: Connection::new(),

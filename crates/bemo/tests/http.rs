@@ -3107,6 +3107,217 @@ fn native_h2_free_on_flow_control_stalled_stream_force_resets_and_closes() {
   assert_eq!(elide_transport_owner_release(h.owner), 0);
 }
 
+/// A freed stream stalled by withheld flow-control credit must be force-reset within the bounded
+/// `FLOW_CONTROL_STALL` window even when the embedder polls with the documented indefinite timeout
+/// (`u64::MAX`). The driver clamps its internal wait to the earliest armed deadline so the lazy
+/// `Instant::now()` stall check in `drive` is evaluated without relying on host tick frequency or
+/// an external wake. Without the fix, the single `poll(u64::MAX)` blocks indefinitely (until I/O
+/// or an explicit `driverWake`) and the 5 s deadline is never evaluated — a regression watchdog
+/// `elide_transport_driver_wake` caps the test at 8 s so it fails fast instead of hanging.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_free_flow_control_stalled_stream_resets_under_indefinite_poll() {
+  use rustls::pki_types::ServerName;
+  use std::sync::Arc;
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let peer = h.peer.try_clone().unwrap();
+  // The stall detector force-resets after `FLOW_CONTROL_STALL` (5 s). The cloned peer inherits the
+  // harness's 5 s read timeout, which races the detector and loses on slower platforms; allow the
+  // reset and TLS close to land before the client's read times out.
+  peer.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+  let (closed, observed) = std::sync::mpsc::channel();
+  let body = vec![b'x'; 200 * 1024];
+  let body_len = body.len();
+  let client = std::thread::spawn(move || {
+    let client = rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+    let mut stream = rustls::StreamOwned::new(client, peer);
+    stream.write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").unwrap();
+    stream.write_all(&[0, 0, 0, 4, 0, 0, 0, 0, 0]).unwrap();
+    // Static HPACK entries GET, https, /; literal :authority localhost.
+    let mut head = vec![0x82, 0x87, 0x84, 0x01, 9];
+    head.extend_from_slice(b"localhost");
+    stream.write_all(&[0, 0, head.len() as u8, 1, 5, 0, 0, 0, 1]).unwrap();
+    stream.write_all(&head).unwrap();
+    // Half-close the client side so the server observes peer_closed; then withhold all
+    // flow-control credit by never sending a WINDOW_UPDATE and just drain the response.
+    stream.conn.send_close_notify();
+    stream.flush().unwrap();
+    closed.send(()).unwrap();
+    let mut reply = Vec::new();
+    stream.read_to_end(&mut reply).unwrap();
+    // The initial flow-control window flushes; the stall detector force-resets the remainder.
+    let mut data = 0usize;
+    let mut reset = false;
+    let mut offset = 0;
+    while offset < reply.len() {
+      assert!(reply.len() - offset >= 9, "trailing frame header");
+      let frame = &reply[offset..];
+      let length = ((frame[0] as usize) << 16) | ((frame[1] as usize) << 8) | frame[2] as usize;
+      assert!(frame.len() >= 9 + length);
+      match frame[3] {
+        0 if frame[5..9] == [0, 0, 0, 1] => data += length,
+        3 if frame[5..9] == [0, 0, 0, 1] => reset = true,
+        _ => {}
+      }
+      offset += 9 + length;
+    }
+    assert!(data > 0, "the initial flow-control window must flush");
+    assert!(data < body_len, "the body must not fully flush under a withheld window");
+    assert!(reset, "the stalled stream must be force-reset by the stall detector");
+  });
+  let request = h.take(EVENT_REQUEST, 1)[0].value;
+  observed.recv_timeout(Duration::from_secs(5)).unwrap();
+  // Authenticate the half-close so the server observes peer_closed before the response stalls.
+  h.poll(100_000_000);
+  h.poll(100_000_000);
+  assert!(h.pending.iter().all(|event| event.kind != EVENT_CLOSED));
+  respond(h.driver, request, 200, &[], &body);
+  assert_eq!(elide_transport_http_free(h.driver, request), 0);
+  // Immediately after freeing, poll with a short timeout to confirm no premature close.
+  h.poll(50_000_000);
+  assert!(
+    h.pending.iter().all(|event| event.kind != EVENT_CLOSED),
+    "a freshly-stalled stream must not close before the stall timeout"
+  );
+  // The regression watchdog: if the fix is broken, the indefinite poll blocks forever. Wake the
+  // driver after 8 s so the test fails with an assertion rather than a hang. A passing fix wakes
+  // the driver internally at the 5 s deadline, long before the watchdog fires.
+  let watchdog = {
+    let driver = h.driver;
+    std::thread::spawn(move || {
+      std::thread::sleep(Duration::from_secs(8));
+      elide_transport_driver_wake(driver);
+    })
+  };
+  // Poll indefinitely (u64::MAX). The fix clamps the internal wait to FLOW_CONTROL_STALL so
+  // the stall detector fires without any external wake.
+  let freed_at = Instant::now();
+  h.poll(u64::MAX);
+  let reset_elapsed = freed_at.elapsed();
+  // The stall deadline is 5 s; allow scheduling overhead. The watchdog at 8 s must not fire.
+  assert!(
+    reset_elapsed < Duration::from_secs(7),
+    "indefinite poll must wake at the ~5s stall deadline, not block indefinitely (elapsed {:?})",
+    reset_elapsed
+  );
+  // The stall detector resets the stream in the poll above, but the RST_STREAM/TLS close must
+  // drain through the wire before the peer-closed connection emits EVENT_CLOSED. A bounded loop
+  // completes that cleanup; the deadline proof is that the indefinite poll returned at ~5 s.
+  let deadline = Instant::now() + Duration::from_secs(10);
+  loop {
+    if h.pending.iter().any(|event| event.kind == EVENT_CLOSED) {
+      break;
+    }
+    assert!(
+      Instant::now() < deadline,
+      "EVENT_CLOSED never fired; stalled stream was not retired by the stall detector"
+    );
+    h.poll(200_000_000);
+  }
+  watchdog.join().unwrap();
+  h.take(EVENT_CLOSED, 1);
+  client.join().unwrap();
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
+/// A cooperative h2 peer (one that sends WINDOW_UPDATE and lets the response reach the wire)
+/// retires normally under an indefinite poll — the stall detector is NOT armed and the deadline
+/// clamp does not cause a busy-loop. The connection returns to idle blocking after retirement.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_cooperative_peer_retires_normally_under_indefinite_poll() {
+  use rustls::pki_types::ServerName;
+  use std::sync::Arc;
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let peer = h.peer.try_clone().unwrap();
+  peer.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+  let (closed, observed) = std::sync::mpsc::channel();
+  let client = std::thread::spawn(move || {
+    let client = rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+    let mut stream = rustls::StreamOwned::new(client, peer);
+    stream.write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").unwrap();
+    stream.write_all(&[0, 0, 0, 4, 0, 0, 0, 0, 0]).unwrap();
+    // Static HPACK entries GET, https, /; literal :authority localhost.
+    let mut head = vec![0x82, 0x87, 0x84, 0x01, 9];
+    head.extend_from_slice(b"localhost");
+    stream.write_all(&[0, 0, head.len() as u8, 1, 5, 0, 0, 0, 1]).unwrap();
+    stream.write_all(&head).unwrap();
+    // Half-close the client side so the server observes peer_closed; the small body
+    // fits the initial flow-control window so the response reaches the wire cooperatively.
+    stream.conn.send_close_notify();
+    stream.flush().unwrap();
+    closed.send(()).unwrap();
+    let mut reply = Vec::new();
+    stream.read_to_end(&mut reply).unwrap();
+    // Verify we got a DATA frame with the body and a RST_STREAM is NOT present (cooperative).
+    let mut data = 0usize;
+    let mut reset = false;
+    let mut offset = 0;
+    while offset < reply.len() {
+      assert!(reply.len() - offset >= 9, "trailing frame header");
+      let frame = &reply[offset..];
+      let length = ((frame[0] as usize) << 16) | ((frame[1] as usize) << 8) | frame[2] as usize;
+      assert!(frame.len() >= 9 + length);
+      match frame[3] {
+        0 if frame[5..9] == [0, 0, 0, 1] => data += length,
+        3 if frame[5..9] == [0, 0, 0, 1] => reset = true,
+        _ => {}
+      }
+      offset += 9 + length;
+    }
+    assert!(data > 0, "the cooperative body must flush");
+    assert!(!reset, "a cooperative peer must not see a RST_STREAM");
+  });
+  let request = h.take(EVENT_REQUEST, 1)[0].value;
+  observed.recv_timeout(Duration::from_secs(5)).unwrap();
+  h.poll(100_000_000);
+  // Respond with a small body that fits the initial flow-control window.
+  respond(h.driver, request, 200, &[], b"cooperative");
+  assert_eq!(elide_transport_http_free(h.driver, request), 0);
+  // Poll with bounded timeouts to let the response flush and the stream retire normally.
+  for _ in 0..10 {
+    h.poll(100_000_000);
+  }
+  // The stream has retired normally — no stall detector armed. An indefinite poll with no
+  // armed deadline and no pending I/O must block indefinitely (G6: no busy-loop). A watchdog
+  // wakes the driver after 3 s to prove the poll was truly blocking, not spinning.
+  let watchdog = {
+    let driver = h.driver;
+    std::thread::spawn(move || {
+      std::thread::sleep(Duration::from_secs(3));
+      elide_transport_driver_wake(driver);
+    })
+  };
+  let poll_start = Instant::now();
+  let _count = h.poll(u64::MAX);
+  let poll_elapsed = poll_start.elapsed();
+  // The poll must have blocked for ~3 s (until the watchdog woke it), proving no busy-loop.
+  assert!(
+    poll_elapsed >= Duration::from_secs(2),
+    "indefinite poll without armed deadline must block, not busy-loop (elapsed {:?})",
+    poll_elapsed
+  );
+  watchdog.join().unwrap();
+  // Drain any remaining events and close.
+  let deadline = Instant::now() + Duration::from_secs(10);
+  loop {
+    if h.pending.iter().any(|event| event.kind == EVENT_CLOSED) {
+      break;
+    }
+    assert!(Instant::now() < deadline, "EVENT_CLOSED never fired");
+    h.poll(200_000_000);
+  }
+  h.take(EVENT_CLOSED, 1);
+  client.join().unwrap();
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn parsed_header_metadata_is_advertised_and_preserves_first_host() {
