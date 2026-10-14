@@ -23,7 +23,7 @@ BUILD = ROOT / "build"
 VERSIONS = json.loads((ROOT / "tools/versions.json").read_text())
 VERSION = (ROOT / ".version").read_text().strip()
 ELIDE = os.environ.get("ELIDE", "elide")
-MODULES = ("api", "ffm", "native-image", "netty")
+MODULES = ("api", "ffm", "native-image", "netty", "bali")
 MAVEN_GROUP = "dev.elide.bemo"
 MAVEN_PATH = MAVEN_GROUP.replace(".", "/")
 REPOSITORY = "https://github.com/elide-dev/bemo"
@@ -118,6 +118,37 @@ def compile_java(output, inputs, dependencies=(), lint="all"):
       "-cp", classpath([*dependencies, jspecify()]), "-d", output, *inputs)
 
 
+def bali_api_classpath():
+  """Compile-only contract; never package a duplicate of the image-owned guest API."""
+  provided = os.environ.get("BALI_API_CLASSPATH")
+  if provided:
+    return [Path(value) for value in provided.split(os.pathsep)]
+  destination = BUILD / "bali-api-stubs"
+  source = BUILD / "bali-api-contract/bali/api/BemoNative.java"
+  source.parent.mkdir(parents=True, exist_ok=True)
+  methods = ["package bali.api;", "public final class BemoNative {",
+             "private BemoNative() {}", "public static boolean available() { return false; }"]
+  for name, (returns, params) in seam.descriptor_functions(seam.DESCRIPTOR.read_text()).items():
+    if "callback" in name: continue
+    carrier = "int" if returns in ("i32", "u32") else "long"
+    arguments = ", ".join(("int" if typ in ("i32", "u32") else "long") + " " + param
+                          for param, typ in params)
+    methods.append(f"public static {carrier} {name}({arguments}) {{ throw new UnsupportedOperationException(); }}")
+  helpers = [("long", "abiVersion", ""), ("java.nio.ByteBuffer", "bufferView", "long buffer"),
+             ("java.nio.ByteBuffer", "directBuffer", "long address, int length"),
+             ("long", "bufferAddress", "long buffer"), ("int", "bufferCapacity", "long buffer"),
+             ("long", "getLong", "long address"), ("int", "getInt", "long address"),
+             ("byte", "getByte", "long address"),
+             ("void", "copyBytes", "long address, byte[] target, int offset, int length"),
+             ("void", "writeBytes", "long address, byte[] source, int offset, int length")]
+  for returns, name, params in helpers:
+    methods.append(f"public static {returns} {name}({params}) {{ throw new UnsupportedOperationException(); }}")
+  methods.append("}")
+  source.write_text("\n".join(methods) + "\n")
+  compile_java(destination, [source], [])
+  return [destination]
+
+
 def jvm():
   deps()
   seam.generate(check=True)
@@ -127,6 +158,8 @@ def jvm():
       cp += sdk()
     if module == "netty":
       cp += netty()
+    if module == "bali":
+      cp += bali_api_classpath()
     compile_java(classes(module), sources(module), cp)
     resources = ROOT / "packages" / module / "src/main/resources"
     if resources.is_dir():
@@ -175,8 +208,14 @@ def ffm_contracts(reports, native, agent=(), env=None, cc=None):
   cc = list(cc or [os.environ.get("CC", "cc")])
   test_root = ROOT / "tests/java/dev/elide/bemo"
   output = BUILD / "tests/ffm"
-  cp = [classes("api"), classes("ffm")]
+  cp = [classes("api"), classes("ffm"), classes("bali")]
   compile_java(output, [test_root / "Contract.java", test_root / "FfmContract.java"], cp)
+  selection = BUILD / "tests/selection"
+  compile_java(selection, [test_root / "transport/TransportNativeSelectionTest.java"],
+               [classes("api"), jspecify()])
+  reports.run("TransportNativeSelectionTest", [java_tool("java"), "-ea", "-cp",
+      classpath([selection, classes("api"), jspecify()]),
+      "dev.elide.bemo.transport.TransportNativeSelectionTest"], timeout=30, cwd=ROOT)
   extra = []
   if os.name != "nt":
     incompatible = BUILD / "tests" / native.name.replace("bemo_ffi", "incompatible")
@@ -438,6 +477,8 @@ def package():
       cp += sdk()
     if module == "netty":
       cp += netty()
+    if module == "bali":
+      cp += bali_api_classpath()
     # Javadoc is run by Elide's JVM toolchain, not a second build system.
     run(ELIDE, "java", "--", "-m", "jdk.javadoc/jdk.javadoc.internal.tool.Main", "-quiet",
         "-notimestamp", "-Werror", "-Xdoclint:all,-missing", "--release", VERSIONS["jvm_release"], "-d", docs,

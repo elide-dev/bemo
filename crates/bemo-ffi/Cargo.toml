@@ -1,4 +1,6 @@
 [package]
+# Path-based embedders must inherit Bemo's workspace, not the consumer's.
+workspace = "../.."
 name = "bemo-ffi"
 description = "Shared C ABI for Bemo FFM and Native Image bindings"
 version.workspace = true

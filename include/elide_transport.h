@@ -2,6 +2,13 @@
 #ifndef ELIDE_TRANSPORT_H
 #define ELIDE_TRANSPORT_H
 
+/* C boundary failures: signed results return PANIC once on the failing call,
+ * then POISONED on subsequent admission; unsigned handle/count results return 0.
+ * Calls already in flight may finish. Borrowed outputs are unspecified on failure. */
+#define ELIDE_TRANSPORT_PANIC (-900)
+#define ELIDE_TRANSPORT_POISONED (-901)
+
+
 #include <stdint.h>
 
 #ifdef __cplusplus

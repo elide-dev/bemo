@@ -57,7 +57,7 @@ large_stack_arrays = "deny"
 [profile.release]
 lto = "thin"
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
 overflow-checks = true
 strip = "debuginfo"
 
