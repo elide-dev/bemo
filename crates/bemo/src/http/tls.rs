@@ -143,18 +143,29 @@ impl Lane {
           let length = parts[self.part + 1..].iter().fold(first.len(), |length, part| {
             length.saturating_add(part.as_ref().len()).min(RECORD_PLAINTEXT)
           });
-          let mut record = Buffer::new(length, self.budget.clone())?;
-          record.write(0, first)?;
-          let mut written = first.len();
-          for part in &parts[self.part + 1..] {
-            let count = part.as_ref().len().min(length - written);
-            record.write(written, &part.as_ref()[..count])?;
-            written += count;
-            if written == length {
-              break;
+          // Staging is a best-effort optimization: if the shared owner budget cannot afford the
+          // coalesced record at this instant, fall back to the unstaged per-part `Action::Write`
+          // below, which still delivers every byte with smaller allocations. Mirrors the
+          // degrade-not-die handling for batch output in `advance`.
+          match Buffer::new(length, self.budget.clone()) {
+            Ok(mut record) => {
+              record.write(0, first)?;
+              let mut written = first.len();
+              for part in &parts[self.part + 1..] {
+                let count = part.as_ref().len().min(length - written);
+                record.write(written, &part.as_ref()[..count])?;
+                written += count;
+                if written == length {
+                  break;
+                }
+              }
+              staged = Some(record);
             }
+            Err(error) if error.kind() == io::ErrorKind::OutOfMemory => {
+              // Budget cannot afford coalescing right now; the plain per-part path still delivers.
+            }
+            Err(error) => return Err(error),
           }
-          staged = Some(record);
         }
       }
       let action = if ack {
@@ -517,5 +528,89 @@ mod tests {
     assert_eq!(&received[..100], &[b'a'; 100]);
     assert_eq!(&received[100..32868], &vec![b'b'; 32768]);
     assert_eq!(&received[32868..], &[b'c'; 100]);
+  }
+
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn staging_oom_falls_back_to_unstaged_writes_without_closing_connection() {
+    // Regression for the record-coalescing optimization in `Lane::progress`: a `saves_record`-true
+    // part shape under a shared owner budget that cannot afford the coalesced staging allocation
+    // must fall back to the unstaged per-part write rather than propagating `OutOfMemory`. The
+    // three 1000-byte parts keep `saves_record(1000, &[1000, 1000])` true; the 4500-byte shared
+    // budget holds all parts (3000) with only 1000 bytes of headroom, too little for any staged
+    // record (smallest is 2000 bytes) but enough for one per-part ciphertext output (~1 KiB).
+    assert!(saves_record(1000, &[frozen(1000), frozen(1000)]));
+    let budget = Budget::new(4500);
+    let (mut lane, mut client) = pair_with_budget(budget.clone());
+    for _ in 0..100 {
+      let mut wire = Vec::new();
+      client.write_tls(&mut wire).unwrap();
+      if !wire.is_empty() {
+        lane.feed(bytes(&wire)).unwrap();
+      }
+      match lane.progress().unwrap() {
+        Progress::Output(output) => {
+          let mut wire = Cursor::new(output.as_ref());
+          while wire.position() < output.as_ref().len() as u64 {
+            client.read_tls(&mut wire).unwrap();
+            client.process_new_packets().unwrap();
+          }
+          lane.transmitted();
+        }
+        Progress::Blocked if !client.is_handshaking() && !lane.is_handshaking() => break,
+        Progress::Blocked => {}
+        _ => panic!("unexpected handshake progress"),
+      }
+    }
+    assert!(!lane.is_handshaking());
+    let mut p1 = Buffer::new(1000, budget.clone()).unwrap();
+    p1.write(0, &[b'a'; 1000]).unwrap();
+    let mut p2 = Buffer::new(1000, budget.clone()).unwrap();
+    p2.write(0, &[b'b'; 1000]).unwrap();
+    let mut p3 = Buffer::new(1000, budget.clone()).unwrap();
+    p3.write(0, &[b'c'; 1000]).unwrap();
+    // All three parts share the owner budget: 3000 charged, 1000 of headroom left. Every staging
+    // attempt needs at least 2000 bytes and must fail with `OutOfMemory`, which used to be fatal.
+    assert_eq!(budget.used(), 3000);
+    lane.enqueue(vec![p1.freeze(), p2.freeze(), p3.freeze()]);
+    let mut outputs = 0;
+    let mut received = Vec::new();
+    loop {
+      // A buggy build propagates `Err(OutOfMemory)` from the first staged allocation here.
+      match lane.progress().unwrap() {
+        Progress::Output(output) => {
+          outputs += 1;
+          // The lane is waiting on a physical transmit acknowledgement before further progress.
+          assert!(matches!(lane.progress().unwrap(), Progress::Blocked));
+          let mut wire = Cursor::new(output.as_ref());
+          while wire.position() < output.as_ref().len() as u64 {
+            client.read_tls(&mut wire).unwrap();
+            client.process_new_packets().unwrap();
+            let mut chunk = [0; RECORD_PLAINTEXT];
+            while let Ok(length) = client.reader().read(&mut chunk) {
+              if length == 0 {
+                break;
+              }
+              received.extend_from_slice(&chunk[..length]);
+            }
+          }
+          lane.transmitted();
+        }
+        Progress::Complete(parts) => {
+          assert_eq!(parts.len(), 3);
+          drop(parts);
+          assert_eq!(budget.used(), 0);
+          break;
+        }
+        _ => panic!("unexpected application progress"),
+      }
+    }
+    // Each part is delivered as its own ciphertext record via the unstaged fallback path; no
+    // coalesced staging record was ever affordable under the contended budget.
+    assert_eq!(outputs, 3);
+    assert_eq!(received.len(), 3000);
+    assert_eq!(&received[..1000], &[b'a'; 1000]);
+    assert_eq!(&received[1000..2000], &[b'b'; 1000]);
+    assert_eq!(&received[2000..], &[b'c'; 1000]);
   }
 }
