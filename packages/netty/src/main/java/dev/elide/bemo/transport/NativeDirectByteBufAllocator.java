@@ -15,6 +15,7 @@ import io.netty.util.internal.PlatformDependent;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicLong;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Direct buffers whose memory comes from Bemo's native allocator, the same allocator the transport
@@ -129,24 +130,93 @@ public final class NativeDirectByteBufAllocator extends AbstractByteBufAllocator
   }
 
   private static final class UnsafeBuffer extends UnpooledUnsafeDirectByteBuf {
+    // The superclass treats the initial externally supplied buffer as borrowed and frees it here.
+    private @Nullable CleanableDirectBuffer initial;
+
     UnsafeBuffer(NativeDirectByteBufAllocator allocator, int initialCapacity, int maxCapacity) {
-      super(allocator, initialCapacity, maxCapacity);
+      this(allocator, allocator.allocate(initialCapacity), maxCapacity);
+    }
+
+    private UnsafeBuffer(
+        NativeDirectByteBufAllocator allocator, CleanableDirectBuffer allocation, int maxCapacity) {
+      super(allocator, allocation.buffer(), maxCapacity);
+      this.initial = allocation;
+      setIndex(0, 0);
     }
 
     @Override
     protected CleanableDirectBuffer allocateDirectBuffer(int capacity) {
       return ((NativeDirectByteBufAllocator) alloc()).allocate(capacity);
+    }
+
+    @Override
+    public ByteBuf capacity(int capacity) {
+      ensureAccessible();
+      if (capacity == capacity()) return this;
+      super.capacity(capacity);
+      releaseInitial();
+      return this;
+    }
+
+    @Override
+    protected void deallocate() {
+      try {
+        super.deallocate();
+      } finally {
+        releaseInitial();
+      }
+    }
+
+    private void releaseInitial() {
+      if (initial != null) {
+        initial.clean();
+        initial = null;
+      }
     }
   }
 
   private static final class SafeBuffer extends UnpooledDirectByteBuf {
+    private @Nullable CleanableDirectBuffer initial;
+
     SafeBuffer(NativeDirectByteBufAllocator allocator, int initialCapacity, int maxCapacity) {
-      super(allocator, initialCapacity, maxCapacity);
+      this(allocator, allocator.allocate(initialCapacity), maxCapacity);
+    }
+
+    private SafeBuffer(
+        NativeDirectByteBufAllocator allocator, CleanableDirectBuffer allocation, int maxCapacity) {
+      super(allocator, allocation.buffer(), maxCapacity);
+      this.initial = allocation;
+      setIndex(0, 0);
     }
 
     @Override
     protected CleanableDirectBuffer allocateDirectBuffer(int capacity) {
       return ((NativeDirectByteBufAllocator) alloc()).allocate(capacity);
+    }
+
+    @Override
+    public ByteBuf capacity(int capacity) {
+      ensureAccessible();
+      if (capacity == capacity()) return this;
+      super.capacity(capacity);
+      releaseInitial();
+      return this;
+    }
+
+    @Override
+    protected void deallocate() {
+      try {
+        super.deallocate();
+      } finally {
+        releaseInitial();
+      }
+    }
+
+    private void releaseInitial() {
+      if (initial != null) {
+        initial.clean();
+        initial = null;
+      }
     }
   }
 }
