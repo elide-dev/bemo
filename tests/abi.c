@@ -39,7 +39,7 @@ static void run(void *(*body)(void *)) {
 
 int main(void) {
   assert(bemo_abi_version() == BEMO_ABI_VERSION);
-  assert(bemo_capabilities() == (BEMO_CAP_TRANSPORT_V3 | BEMO_CAP_NATIVE_ALLOC));
+  assert(bemo_capabilities() == (BEMO_CAP_TRANSPORT_V3 | BEMO_CAP_NATIVE_ALLOC | BEMO_CAP_HTTP1_COMPLETE_CREDIT));
   uint64_t live = bemo_alloc_live();
   run(allocate);
   assert(bemo_alloc_live() == live + (uint64_t)THREADS * BLOCKS * SIZE);

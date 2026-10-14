@@ -168,8 +168,11 @@ int32_t elide_transport_http_header_count(uint64_t exchange);
 int32_t elide_transport_http_keep_alive(uint64_t exchange);
 /* kind: 0 method, 1 path, 2 header name, 3 header value, 4 body, 5 whole head; output receives address, length. */
 int32_t elide_transport_http_view(uint64_t exchange, uint32_t kind, uint32_t index, uint64_t *output);
-/* headers: count records of {name address, name length, value address, value length}. flags bit 1
- * (RESPOND_STREAM) sends the head only and ignores body: bodyLength then declares content-length,
+/* headers: count records of {name address, name length, value address, value length}.
+ * Flag 4 (RESPOND_COMPLETE_CREDIT), advertised by Bemo capability 2, requests one
+ * PART_SENT after physical completion of a complete HTTP/1 response. It rejects
+ * streaming and HTTP/2 combinations. Freeing suppresses reports while retaining wire leases.
+ * Flag 2 (RESPOND_STREAM) sends the head only and ignores body: bodyLength then declares content-length,
  * or UINT64_MAX for chunked. Parts follow through http_chunk_send. */
 int32_t elide_transport_http_respond(uint64_t driver, uint64_t exchange, uint32_t status, const uint64_t *headers, uint32_t count, const uint8_t *body, uint64_t bodyLength, uint32_t flags);
 /* u32 pairs within the head: method, path, then name/value per header; returns slots needed. */
