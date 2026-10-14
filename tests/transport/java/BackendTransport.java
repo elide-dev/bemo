@@ -29,6 +29,11 @@ class BackendTransport implements TransportNative {
   }
 
   @Override
+  public boolean supportsCompleteHttp1Responses() {
+    return delegate.supportsCompleteHttp1Responses();
+  }
+
+  @Override
   public long gzipNew(long workload, int level) {
     return delegate.gzipNew(workload, level);
   }

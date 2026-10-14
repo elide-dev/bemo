@@ -7,7 +7,8 @@ public final class Contract {
   public static void verify(TransportNative transport) {
     transport.requireCompatible();
     if (transport.abiVersion() != 1
-        || transport.capabilities()
+        || (transport.capabilities()
+                & (TransportNative.CAP_TRANSPORT_V3 | TransportNative.CAP_NATIVE_ALLOC))
             != (TransportNative.CAP_TRANSPORT_V3 | TransportNative.CAP_NATIVE_ALLOC)) {
       throw new AssertionError("Unexpected metadata ABI or transport capabilities");
     }

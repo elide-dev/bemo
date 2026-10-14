@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import contextlib
 
-from build import BUILD, ELIDE, MODULES, ROOT, VERSIONS, classpath, deps, jar_dependency, netty, run, sdk, sources
+from build import BUILD, ELIDE, MODULES, ROOT, VERSIONS, bali_api_classpath, classpath, deps, jar_dependency, netty, run, sdk, sources, spring
 
 
 def compiler():
@@ -26,7 +26,7 @@ def analyze(kind, inputs, output, **kwargs):
                 if kind == "error-prone" else
                 [jar_dependency("org.checkerframework", "checker", VERSIONS["checker"]),
                  jar_dependency("org.checkerframework", "checker-util", VERSIONS["checker"])])
-  cp = [*sdk(), *netty(), jar_dependency("org.jspecify", "jspecify", VERSIONS["jspecify"]),
+  cp = [*sdk(), *netty(), *spring(), *bali_api_classpath(), jar_dependency("org.jspecify", "jspecify", VERSIONS["jspecify"]),
         jar_dependency("org.checkerframework", "checker-qual", VERSIONS["checker"])]
   processors += [jar_dependency("org.checkerframework", "checker-qual", VERSIONS["checker"])]
   flags = (["-proc:none", "-XDcompilePolicy=simple", "--should-stop=ifError=FLOW",

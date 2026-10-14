@@ -23,7 +23,7 @@ BUILD = ROOT / "build"
 VERSIONS = json.loads((ROOT / "tools/versions.json").read_text())
 VERSION = (ROOT / ".version").read_text().strip()
 ELIDE = os.environ.get("ELIDE", "elide")
-MODULES = ("api", "ffm", "native-image", "netty")
+MODULES = ("api", "ffm", "native-image", "netty", "bali", "spring", "ktor")
 MAVEN_GROUP = "dev.elide.bemo"
 MAVEN_PATH = MAVEN_GROUP.replace(".", "/")
 REPOSITORY = "https://github.com/elide-dev/bemo"
@@ -53,6 +53,15 @@ def netty():
       "netty-common", "netty-buffer", "netty-transport", "netty-resolver", "netty-handler",
       "netty-codec-base", "netty-codec-compression", "netty-codec-http", "netty-codec-http2",
       "netty-transport-native-unix-common")]
+
+
+def spring():
+  return [jar_dependency("org.springframework", name, VERSIONS["spring"])
+          for name in ("spring-web", "spring-core", "spring-beans")] + [
+      jar_dependency("io.projectreactor", "reactor-core", VERSIONS["reactor"]),
+      jar_dependency("org.reactivestreams", "reactive-streams", "1.0.4"),
+      jar_dependency("org.springframework.boot", "spring-boot", VERSIONS["spring_boot"]),
+      jar_dependency("org.springframework.boot", "spring-boot-web-server", VERSIONS["spring_boot"])]
 
 
 def benchmark_netty():
@@ -118,6 +127,46 @@ def compile_java(output, inputs, dependencies=(), lint="all"):
       "-cp", classpath([*dependencies, jspecify()]), "-d", output, *inputs)
 
 
+def compile_kotlin(output, inputs):
+  shutil.rmtree(output, ignore_errors=True)
+  output.mkdir(parents=True)
+  resolved = subprocess.check_output([ELIDE, "classpath", "runtime"], cwd=ROOT, text=True).strip()
+  runtime = os.pathsep.join(path for path in resolved.split(os.pathsep) if Path(path).is_file())
+  run(ELIDE, "kotlinc", "--", "-jvm-target", VERSIONS["jvm_release"], "-no-stdlib", "-no-reflect",
+      "-classpath", runtime + os.pathsep + str(classes("api")), "-d", output, *inputs)
+
+
+def bali_api_classpath():
+  """Compile-only contract; never package a duplicate of the image-owned guest API."""
+  provided = os.environ.get("BALI_API_CLASSPATH")
+  if provided:
+    return [Path(value) for value in provided.split(os.pathsep)]
+  destination = BUILD / "bali-api-stubs"
+  source = BUILD / "bali-api-contract/bali/api/BemoNative.java"
+  source.parent.mkdir(parents=True, exist_ok=True)
+  methods = ["package bali.api;", "public final class BemoNative {",
+             "private BemoNative() {}", "public static boolean available() { return false; }"]
+  for name, (returns, params) in seam.descriptor_functions(seam.DESCRIPTOR.read_text()).items():
+    if "callback" in name: continue
+    carrier = "int" if returns in ("i32", "u32") else "long"
+    arguments = ", ".join(("int" if typ in ("i32", "u32") else "long") + " " + param
+                          for param, typ in params)
+    methods.append(f"public static {carrier} {name}({arguments}) {{ throw new UnsupportedOperationException(); }}")
+  helpers = [("long", "abiVersion", ""), ("java.nio.ByteBuffer", "bufferView", "long buffer"),
+             ("java.nio.ByteBuffer", "directBuffer", "long address, int length"),
+             ("long", "bufferAddress", "long buffer"), ("int", "bufferCapacity", "long buffer"),
+             ("long", "getLong", "long address"), ("int", "getInt", "long address"),
+             ("byte", "getByte", "long address"),
+             ("void", "copyBytes", "long address, byte[] target, int offset, int length"),
+             ("void", "writeBytes", "long address, byte[] source, int offset, int length")]
+  for returns, name, params in helpers:
+    methods.append(f"public static {returns} {name}({params}) {{ throw new UnsupportedOperationException(); }}")
+  methods.append("}")
+  source.write_text("\n".join(methods) + "\n")
+  compile_java(destination, [source], [])
+  return [destination]
+
+
 def jvm():
   deps()
   seam.generate(check=True)
@@ -127,7 +176,14 @@ def jvm():
       cp += sdk()
     if module == "netty":
       cp += netty()
-    compile_java(classes(module), sources(module), cp)
+    if module == "bali":
+      cp += bali_api_classpath()
+    if module == "spring":
+      cp += spring()
+    if module == "ktor":
+      compile_kotlin(classes(module), sorted((ROOT / "packages/ktor/src/main/kotlin").rglob("*.kt")))
+    else:
+      compile_java(classes(module), sources(module), cp)
     resources = ROOT / "packages" / module / "src/main/resources"
     if resources.is_dir():
       shutil.copytree(resources, classes(module), dirs_exist_ok=True)
@@ -175,8 +231,14 @@ def ffm_contracts(reports, native, agent=(), env=None, cc=None):
   cc = list(cc or [os.environ.get("CC", "cc")])
   test_root = ROOT / "tests/java/dev/elide/bemo"
   output = BUILD / "tests/ffm"
-  cp = [classes("api"), classes("ffm")]
+  cp = [classes("api"), classes("ffm"), classes("bali")]
   compile_java(output, [test_root / "Contract.java", test_root / "FfmContract.java"], cp)
+  selection = BUILD / "tests/selection"
+  compile_java(selection, [test_root / "transport/TransportNativeSelectionTest.java"],
+               [classes("api"), jspecify()])
+  reports.run("TransportNativeSelectionTest", [java_tool("java"), "-ea", "-cp",
+      classpath([selection, classes("api"), jspecify()]),
+      "dev.elide.bemo.transport.TransportNativeSelectionTest"], timeout=30, cwd=ROOT)
   extra = []
   if os.name != "nt":
     incompatible = BUILD / "tests" / native.name.replace("bemo_ffi", "incompatible")
@@ -255,7 +317,7 @@ def test_transport(native_image=False, reports=None, agent=(), native=None, env=
                      "NativeTlsClosePromiseTest", "NativeTransferTest", "NativeJfrTest",
                      "NativeReentrantCloseTest", "NativeReceiveAllocatorTest", "NativeSslEngineTest",
                      "NativeSslInteropTest", "NativeSslPolicyTest", "NativeDirectAllocatorTest",
-                     "StandaloneTransportCheck"):
+                     "StandaloneTransportCheck", "NativeHttpServerTest", "NativeHttpWorkersTest"):
       reports.run(contract, [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
           "--enable-native-access=ALL-UNNAMED", "-ea", "-cp", classpath([output, *cp]),
           contract, native or library(), cert, key], timeout=90, cwd=ROOT, env=env)
@@ -328,6 +390,8 @@ def fmt(check=False):
   java_files = [p for module in MODULES for p in sources(module)] + sorted((ROOT / "tests").rglob("*.java")) + sorted((ROOT / "benchmarks").rglob("*.java")) + sorted((ROOT / "examples").glob("*/src/**/*.java"))
   flags = ["--dry-run", "--set-exit-if-changed"] if check else ["--replace"]
   run(ELIDE, "java", "--", "-jar", formatter, *flags, *java_files)
+  kotlin_files = sorted((ROOT / "packages/ktor/src/main/kotlin").rglob("*.kt"))
+  run(ELIDE, "ktfmt", "--", *(["--dry-run", "--set-exit-if-changed"] if check else []), *kotlin_files)
 
 
 def check():
@@ -430,7 +494,7 @@ def package():
     for name in ("LICENSE", "NOTICE"):
       shutil.copy2(ROOT / name, metadata / name)
     jar(f"{prefix}.jar", classes(module))
-    jar(f"{prefix}-sources.jar", ROOT / "packages" / module / "src/main/java")
+    jar(f"{prefix}-sources.jar", ROOT / "packages" / module / ("src/main/kotlin" if module == "ktor" else "src/main/java"))
     docs = BUILD / "javadoc" / module
     shutil.rmtree(docs, ignore_errors=True)
     cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
@@ -438,8 +502,16 @@ def package():
       cp += sdk()
     if module == "netty":
       cp += netty()
+    if module == "bali":
+      cp += bali_api_classpath()
+    if module == "spring":
+      cp += spring()
     # Javadoc is run by Elide's JVM toolchain, not a second build system.
-    run(ELIDE, "java", "--", "-m", "jdk.javadoc/jdk.javadoc.internal.tool.Main", "-quiet",
+    if module == "ktor":
+      docs.mkdir(parents=True, exist_ok=True)
+      (docs / "README.txt").write_text("Ktor engine API documentation is included in the source artifact.\n")
+    else:
+      run(ELIDE, "java", "--", "-m", "jdk.javadoc/jdk.javadoc.internal.tool.Main", "-quiet",
         "-notimestamp", "-Werror", "-Xdoclint:all,-missing", "--release", VERSIONS["jvm_release"], "-d", docs,
         "-classpath", classpath(cp) or str(classes(module)), *sources(module))
     jar(f"{prefix}-javadoc.jar", docs)
@@ -450,6 +522,12 @@ def package():
     if module == "netty":
       dependencies += [("io.netty", name, VERSIONS["netty"], "compile") for name in (
           "netty-transport", "netty-handler", "netty-codec-http2", "netty-transport-native-unix-common")]
+    if module == "spring":
+      dependencies += [("org.springframework", "spring-web", VERSIONS["spring"], "compile"),
+                       ("org.springframework.boot", "spring-boot-web-server", VERSIONS["spring_boot"], "compile"),
+                       ("io.projectreactor", "reactor-core", VERSIONS["reactor"], "compile")]
+    if module == "ktor":
+      dependencies += [("io.ktor", "ktor-server-core-jvm", VERSIONS["ktor"], "compile")]
     pom(f"{prefix}.pom", artifact, dependencies)
   # Attach separate dynamic and static native classifiers; keep base JARs portable.
   static_name = "bemo_ffi.lib" if os.name == "nt" else "libbemo_ffi.a"

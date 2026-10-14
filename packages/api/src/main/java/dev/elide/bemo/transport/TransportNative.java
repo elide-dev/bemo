@@ -21,8 +21,25 @@ import org.jspecify.annotations.Nullable;
  * it, and closing a workload cancels only its own operations.
  */
 public interface TransportNative {
+  /**
+   * Selects a compatible registered backend, preferring the embedding's direct implementation. A
+   * null result lets framework adapters retain their stock transport. Native handles remain owned
+   * by the caller; discovery creates no workload or driver.
+   */
+  static @Nullable TransportNative load() {
+    return TransportNativeDiscovery.load();
+  }
+
   /** Preserved transport ABI version, independent of Bemo metadata ABI 1. */
   int ABI_VERSION = 3;
+
+  /** Optional metadata capability for one physical completion of a complete HTTP/1 response. */
+  long CAP_HTTP1_COMPLETE_CREDIT = 4;
+
+  /** Legacy backends keep the streaming response protocol. */
+  default boolean supportsCompleteHttp1Responses() {
+    return false;
+  }
 
   /** Return the preserved Elide transport ABI version; it must equal {@link #ABI_VERSION}. */
   int version();
@@ -451,6 +468,9 @@ public interface TransportNative {
 
   /** Flag for {@link #httpRespond}: send the head only; the body follows as parts. */
   int RESPOND_STREAM = 2;
+
+  /** Requires {@link #supportsCompleteHttp1Responses}; incompatible with streaming and HTTP/2. */
+  int RESPOND_COMPLETE_CREDIT = 4;
 
   /**
    * Respond to an exchange; its memory stays readable until {@link #httpFree}. {@code headers}
