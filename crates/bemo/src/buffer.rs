@@ -33,7 +33,7 @@ compile_error!("Select either bundled-mimalloc or rust-allocator, not both");
   not(miri),
   not(target_vendor = "apple")
 ))]
-pub(crate) use libmimalloc_sys::{mi_free, mi_malloc};
+pub(crate) use libmimalloc_sys::{mi_free, mi_malloc, mi_malloc_aligned};
 
 #[cfg(all(
   not(feature = "bundled-mimalloc"),
@@ -43,11 +43,14 @@ pub(crate) use libmimalloc_sys::{mi_free, mi_malloc};
 ))]
 unsafe extern "C" {
   pub(crate) fn mi_malloc(size: usize) -> *mut c_void;
+  /// Aligned counterpart to [`mi_malloc`]; freed with the same [`mi_free`]. The embedder's
+  /// mimalloc supplies this alongside `mi_malloc`/`mi_free` (see `docs/elide-integration.md`).
+  pub(crate) fn mi_malloc_aligned(size: usize, alignment: usize) -> *mut c_void;
   pub(crate) fn mi_free(pointer: *mut c_void);
 }
 
 #[cfg(any(miri, target_vendor = "apple", feature = "rust-allocator"))]
-pub(crate) use rust_alloc::{mi_free, mi_malloc};
+pub(crate) use rust_alloc::{mi_free, mi_malloc, mi_malloc_aligned};
 
 // The bundled allocator is still linked under miri, just never called from here.
 #[cfg(all(feature = "bundled-mimalloc", miri, not(target_vendor = "apple")))]
@@ -80,6 +83,24 @@ mod rust_alloc {
     unsafe { base.cast::<usize>().write_unaligned(size) };
     // SAFETY: The allocation includes MI_ALIGN header bytes before its payload.
     unsafe { base.add(MI_ALIGN) }.cast::<c_void>()
+  }
+
+  /// Aligned counterpart to [`mi_malloc`], pairing with the same [`mi_free`]. [`mi_malloc`] already
+  /// lays out every payload at exactly `MI_ALIGN`, so any requested alignment up to `MI_ALIGN` is
+  /// satisfied by the same header-backed allocation. The transport only ever requests `MI_ALIGN`,
+  /// which is all the fixed `MI_ALIGN` header and [`mi_free`] can reconstruct; a larger alignment
+  /// would need a wider offset that [`mi_free`] does not read.
+  pub(crate) unsafe fn mi_malloc_aligned(size: usize, alignment: usize) -> *mut c_void {
+    // SAFETY: alignment is a power of two no greater than MI_ALIGN, so mi_malloc's MI_ALIGN-aligned
+    // payload satisfies it and the fixed header keeps pairing with mi_free.
+    debug_assert!(
+      alignment.is_power_of_two() && alignment <= MI_ALIGN,
+      "unsupported alignment {alignment}"
+    );
+    // SAFETY: mi_malloc returns an MI_ALIGN-aligned payload (satisfying any
+    // power-of-two alignment up to MI_ALIGN) with the fixed MI_ALIGN header
+    // mi_free reconstructs, or null on allocation failure.
+    unsafe { mi_malloc(size) }
   }
 
   pub(crate) unsafe fn mi_free(pointer: *mut c_void) {

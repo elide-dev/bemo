@@ -25,5 +25,16 @@ int main(void) {
   assert(bemo_alloc(UINT64_C(1) << 31) == 0);
   bemo_free(0, 4096);
   assert(bemo_alloc_live() == live);
+  for (uint64_t size = 1; size <= 16; size++) {
+    unsigned char *small = bemo_alloc(size);
+    assert(small != 0 && ((uintptr_t)small & 15) == 0);
+    assert(bemo_alloc_live() == live + size);
+    for (uint64_t i = 0; i < size; i++)
+      small[i] = (unsigned char)(size + i);
+    assert(small[0] == (unsigned char)size);
+    assert(small[size - 1] == (unsigned char)(size + (size - 1)));
+    bemo_free(small, size);
+    assert(bemo_alloc_live() == live);
+  }
   return 0;
 }
