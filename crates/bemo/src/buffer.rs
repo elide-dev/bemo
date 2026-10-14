@@ -318,6 +318,11 @@ impl Pool {
   }
 
   fn take(capacity: usize, budget: &Budget, reuse: Reuse) -> Option<Arc<Allocation>> {
+    // A closed owner can never reserve; skip the scan so a failed take cannot disturb the
+    // pool. Mirrors the closed checks in `Buffer::response` and `Pool::admit`.
+    if budget.is_closed() {
+      return None;
+    }
     POOL
       .try_with(|pool| {
         let mut pool = pool.borrow_mut();
@@ -348,13 +353,29 @@ impl Pool {
       .ok()
       .flatten()
       .and_then(|mut entry| {
-        let allocation = Arc::get_mut(&mut entry.allocation).unwrap();
-        budget.reserve(allocation.capacity).ok()?;
-        if !Arc::ptr_eq(&allocation.budget.0, &budget.0) {
-          allocation.budget = budget.clone();
+        let capacity = entry.allocation.capacity;
+        match budget.reserve(capacity) {
+          Err(_) => {
+            // A failed take must leave the pool intact. Cross-owner `Reuse::Exact`/
+            // `Reuse::TlsOutput` selection can match another live owner's entry, so
+            // letting this removed entry drop would permanently free its storage via
+            // `mi_free`, silently draining the shared thread-local pool.
+            let _ = POOL.try_with(|pool| {
+              let mut pool = pool.borrow_mut();
+              pool.retained += capacity;
+              pool.entries.push(entry);
+            });
+            None
+          }
+          Ok(()) => {
+            let allocation = Arc::get_mut(&mut entry.allocation).unwrap();
+            if !Arc::ptr_eq(&allocation.budget.0, &budget.0) {
+              allocation.budget = budget.clone();
+            }
+            allocation.charged = true;
+            Some(entry.allocation)
+          }
         }
-        allocation.charged = true;
-        Some(entry.allocation)
       })
   }
 }
@@ -826,6 +847,54 @@ mod tests {
     drop(next);
     let mut foreign = Buffer::new(32, budget).unwrap();
     assert_eq!(foreign.ensure_init(), &[0; 32]);
+  }
+
+  #[test]
+  fn tls_output_failed_take_preserves_live_owner_pooled_storage() {
+    while pool_retained() > 0 {
+      pool_trim();
+    }
+    let live = Budget::new(8192);
+    let output = TlsOutput::new(4096, live.clone()).unwrap();
+    drop(output);
+    assert_eq!(pool_retained(), 4096);
+    assert_eq!(live.used(), 0);
+    // An open but exhausted budget scans cross-owner and selects the live owner's
+    // TlsOutput entry; the failed reserve must restore it instead of freeing it.
+    let b = Budget::new(8192);
+    let hold = Buffer::new(5000, b.clone()).unwrap();
+    assert_eq!(b.used(), 5000);
+    assert_eq!(
+      TlsOutput::new(4096, b.clone()).unwrap_err().kind(),
+      io::ErrorKind::OutOfMemory
+    );
+    assert_eq!(b.used(), 5000);
+    assert_eq!(pool_retained(), 4096);
+    assert_eq!(live.used(), 0);
+    let reused = TlsOutput::new(4096, live.clone()).unwrap();
+    assert_eq!(live.used(), 4096);
+    assert_eq!(pool_retained(), 0);
+    drop(reused);
+    // A closed budget must also leave the pool intact.
+    let closed = Budget::new(8192);
+    closed.close();
+    drop(TlsOutput::new(4096, live.clone()).unwrap());
+    assert_eq!(pool_retained(), 4096);
+    assert_eq!(
+      TlsOutput::new(4096, closed).unwrap_err().kind(),
+      io::ErrorKind::BrokenPipe
+    );
+    assert_eq!(pool_retained(), 4096);
+    let reused = TlsOutput::new(4096, live.clone()).unwrap();
+    assert_eq!(live.used(), 4096);
+    assert_eq!(pool_retained(), 0);
+    drop(reused);
+    drop(hold);
+    while pool_retained() > 0 {
+      pool_trim();
+    }
+    assert_eq!(live.used(), 0);
+    assert_eq!(b.used(), 0);
   }
 
   #[test]

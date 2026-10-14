@@ -131,7 +131,7 @@ fn split_beyond_capacity_returns_the_original_buffer() {
 
 #[test]
 fn pooled_storage_of_a_closed_owner_is_discarded_instead_of_reused() {
-  use bemo::buffer::pool_retained;
+  use bemo::buffer::{pool_retained, pool_trim};
   let budget = Budget::new(64 * 1024);
   let before = pool_retained();
   drop(Buffer::receive(4096, budget.clone()).unwrap());
@@ -139,6 +139,15 @@ fn pooled_storage_of_a_closed_owner_is_discarded_instead_of_reused() {
   assert_eq!(budget.used(), 0, "pooled storage is not charged");
   budget.close();
   assert!(Buffer::receive(4096, budget.clone()).is_err());
-  assert_eq!(pool_retained(), before, "a closed owner's pooled storage is freed");
+  // A closed owner's failed take must leave the pool intact rather than freeing its own entry.
+  assert_eq!(pool_retained(), before + 4096, "a failed take does not drain the pool");
+  assert_eq!(budget.used(), 0);
+  // Trimming reclaims the closed owner's idle storage, since it can never take it back.
+  pool_trim();
+  assert_eq!(
+    pool_retained(),
+    before,
+    "trimming frees a closed owner's pooled storage"
+  );
   assert_eq!(budget.used(), 0);
 }

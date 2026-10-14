@@ -1,3 +1,5 @@
+use std::io;
+
 use bemo::buffer::{Budget, Buffer, FrozenBuffer, pool_retained, pool_trim};
 use compio_buf::{IoBuf, IoBufMut};
 
@@ -231,14 +233,25 @@ fn ordinary_storage_changes_owner_only_after_last_lease_and_reserves_again() {
 fn ordinary_reuse_obeys_new_owner_limits_and_closure() {
   drain();
   drop(Buffer::new(4096, Budget::new(8192)).unwrap());
+  assert_eq!(pool_retained(), 4096);
   let small = Budget::new(4095);
   assert!(Buffer::new(4096, small.clone()).is_err());
   assert_eq!(small.used(), 0);
+  assert_eq!(pool_retained(), 4096, "a failed allocation must not touch the pool");
   let closed = Budget::new(8192);
   closed.close();
-  assert!(Buffer::new(4096, closed.clone()).is_err());
+  assert_eq!(
+    Buffer::new(4096, closed.clone()).unwrap_err().kind(),
+    io::ErrorKind::BrokenPipe
+  );
   assert_eq!(closed.used(), 0);
+  assert_eq!(
+    pool_retained(),
+    4096,
+    "a closed owner's failed take must not free a live owner's pooled entry"
+  );
   drain();
+  assert_eq!(pool_retained(), 0);
 }
 
 #[test]
@@ -276,4 +289,93 @@ fn ordinary_retention_remains_bounded_and_does_not_take_receive_entries() {
   budget.close();
   drain();
   assert_eq!(budget.used(), 0);
+}
+
+#[test]
+fn failed_take_by_closed_owner_preserves_live_owner_pooled_storage() {
+  drain();
+  let live = Budget::new(8192);
+  drop(Buffer::new(4096, live.clone()).unwrap());
+  assert_eq!(pool_retained(), 4096);
+  assert_eq!(live.used(), 0);
+  let closed = Budget::new(8192);
+  closed.close();
+  assert_eq!(
+    Buffer::new(4096, closed.clone()).unwrap_err().kind(),
+    io::ErrorKind::BrokenPipe
+  );
+  assert_eq!(closed.used(), 0);
+  assert_eq!(pool_retained(), 4096, "a closed take must leave the pool intact");
+  assert_eq!(live.used(), 0);
+  let reused = Buffer::new(4096, live.clone()).unwrap();
+  assert_eq!(live.used(), 4096);
+  assert_eq!(pool_retained(), 0);
+  drop(reused);
+  drain();
+  assert_eq!(pool_retained(), 0);
+  assert_eq!(live.used(), 0);
+}
+
+#[test]
+fn failed_take_by_exhausted_owner_preserves_live_owner_pooled_storage() {
+  drain();
+  let live = Budget::new(8192);
+  drop(Buffer::new(4096, live.clone()).unwrap());
+  assert_eq!(pool_retained(), 4096);
+  assert_eq!(live.used(), 0);
+  // Budget B is open but too full for a 4096-byte reservation. Its take scans
+  // cross-owner and selects the live owner's exact entry, fails the reserve, and
+  // must restore the entry instead of freeing it.
+  let b = Budget::new(8192);
+  let hold = Buffer::new(5000, b.clone()).unwrap();
+  assert_eq!(b.used(), 5000);
+  assert_eq!(
+    Buffer::new(4096, b.clone()).unwrap_err().kind(),
+    io::ErrorKind::OutOfMemory
+  );
+  assert_eq!(b.used(), 5000);
+  assert_eq!(pool_retained(), 4096, "an exhausted take must leave the pool intact");
+  assert_eq!(live.used(), 0);
+  let reused = Buffer::new(4096, live.clone()).unwrap();
+  assert_eq!(live.used(), 4096);
+  assert_eq!(pool_retained(), 0);
+  drop(reused);
+  drop(hold);
+  drain();
+  assert_eq!(pool_retained(), 0);
+  assert_eq!(live.used(), 0);
+  assert_eq!(b.used(), 0);
+}
+
+#[test]
+fn repeated_failed_takes_do_not_drain_the_shared_pool() {
+  drain();
+  let live = Budget::new(8192);
+  drop(Buffer::new(4096, live.clone()).unwrap());
+  assert_eq!(pool_retained(), 4096);
+  let b = Budget::new(8192);
+  let hold = Buffer::new(5000, b.clone()).unwrap();
+  let closed = Budget::new(8192);
+  closed.close();
+  for _ in 0..32 {
+    assert_eq!(
+      Buffer::new(4096, b.clone()).unwrap_err().kind(),
+      io::ErrorKind::OutOfMemory
+    );
+    assert_eq!(
+      Buffer::new(4096, closed.clone()).unwrap_err().kind(),
+      io::ErrorKind::BrokenPipe
+    );
+    assert_eq!(pool_retained(), 4096, "each failed take must restore the entry");
+  }
+  assert_eq!(live.used(), 0);
+  let reused = Buffer::new(4096, live.clone()).unwrap();
+  assert_eq!(live.used(), 4096);
+  assert_eq!(pool_retained(), 0);
+  drop(reused);
+  drop(hold);
+  drain();
+  assert_eq!(pool_retained(), 0);
+  assert_eq!(live.used(), 0);
+  assert_eq!(b.used(), 0);
 }
