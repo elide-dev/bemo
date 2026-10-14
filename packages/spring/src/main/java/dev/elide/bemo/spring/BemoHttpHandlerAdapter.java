@@ -52,23 +52,24 @@ public final class BemoHttpHandlerAdapter implements NativeHttpServer.Handler {
     CompletableFuture<NativeHttpServer.Response> ready = new CompletableFuture<>();
     AtomicReference<Disposable> application = new AtomicReference<>();
     Response response = new Response(ready);
-    ready.whenComplete(
-        (nativeResponse, failure) -> {
-          if (failure != null) {
-            Disposable task = application.get();
-            if (task != null) task.dispose();
-          } else {
-            nativeResponse
-                .sent()
-                .whenComplete(
-                    (ignored, writeFailure) -> {
-                      if (writeFailure != null) {
-                        Disposable task = application.get();
-                        if (task != null) task.dispose();
-                      }
-                    });
-          }
-        });
+    var unusedCancellationObserver =
+        ready.whenComplete(
+            (nativeResponse, failure) -> {
+              if (failure != null) {
+                Disposable task = application.get();
+                if (task != null) task.dispose();
+              } else {
+                nativeResponse
+                    .sent()
+                    .whenComplete(
+                        (ignored, writeFailure) -> {
+                          if (writeFailure != null) {
+                            Disposable task = application.get();
+                            if (task != null) task.dispose();
+                          }
+                        });
+              }
+            });
     try {
       Request input = new Request(request, origin);
       Disposable task =
@@ -122,7 +123,7 @@ public final class BemoHttpHandlerAdapter implements NativeHttpServer.Handler {
       List<String> fields = getHeaders().get(HttpHeaders.COOKIE);
       if (fields == null) return cookies;
       for (String field : fields) {
-        for (String token : field.split(";")) {
+        for (String token : field.split(";", -1)) {
           int equals = token.indexOf('=');
           if (equals <= 0) continue;
           String name = token.substring(0, equals).trim();
@@ -152,7 +153,10 @@ public final class BemoHttpHandlerAdapter implements NativeHttpServer.Handler {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({
+      "unchecked",
+      "TypeParameterUnusedInFormals"
+    }) // Spring native-access contract.
     public <T> T getNativeRequest() {
       return (T) nativeRequest;
     }
@@ -168,7 +172,10 @@ public final class BemoHttpHandlerAdapter implements NativeHttpServer.Handler {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({
+      "unchecked",
+      "TypeParameterUnusedInFormals"
+    }) // Spring native-access contract.
     public <T> T getNativeResponse() {
       return (T) this;
     }

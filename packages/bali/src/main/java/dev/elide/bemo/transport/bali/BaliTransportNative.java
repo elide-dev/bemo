@@ -706,50 +706,12 @@ public final class BaliTransportNative implements TransportNative {
     return tlsRelease0(session);
   }
 
-  private static long engineContextNew0(
-      long workload,
-      int flags,
-      long certificates,
-      long certificatesLength,
-      long key,
-      long keyLength,
-      long alpn,
-      long alpnLength) {
-    return BemoNative.elide_transport_engine_context_new(
-        workload, flags, certificates, certificatesLength, key, keyLength, alpn, alpnLength);
-  }
-
   private static int engineContextRelease0(long context) {
     return BemoNative.elide_transport_engine_context_release(context);
   }
 
-  private static long engineNew0(long workload, long context, long name, long nameLength) {
-    return BemoNative.elide_transport_engine_new(workload, context, name, nameLength);
-  }
-
-  private static long engineWrap0(
-      long engine, long source, long sourceLength, long destination, long destinationLength) {
-    return BemoNative.elide_transport_engine_wrap(
-        engine, source, sourceLength, destination, destinationLength);
-  }
-
-  private static long engineUnwrap0(
-      long engine,
-      long source,
-      long sourceLength,
-      long destination,
-      long destinationLength,
-      int flags) {
-    return BemoNative.elide_transport_engine_unwrap(
-        engine, source, sourceLength, destination, destinationLength, flags);
-  }
-
   private static long engineControl0(long engine, int operation) {
     return BemoNative.elide_transport_engine_control(engine, operation);
-  }
-
-  private static int engineInfo0(long engine, int kind, int index, long output, long capacity) {
-    return BemoNative.elide_transport_engine_info(engine, kind, index, output, capacity);
   }
 
   private static int engineRelease0(long engine) {
