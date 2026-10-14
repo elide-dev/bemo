@@ -2851,6 +2851,7 @@ mod tests {
   /// earliest `freed_at + FLOW_CONTROL_STALL` when one or more do. Multiple sockets with armed
   /// deadlines yield the minimum (G9), and an idle connection yields `None` (G6).
   #[test]
+  #[cfg_attr(miri, ignore = "native driver is unavailable under miri")]
   fn next_deadline_returns_none_without_armed_stalls_and_earliest_with_many() {
     // Test H2Socket::stall_deadline and has_armed_stall directly, since next_deadline
     // composes them across all sockets.
