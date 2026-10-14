@@ -97,6 +97,9 @@ mod rust_alloc {
       alignment.is_power_of_two() && alignment <= MI_ALIGN,
       "unsupported alignment {alignment}"
     );
+    // SAFETY: mi_malloc returns an MI_ALIGN-aligned payload (satisfying any
+    // power-of-two alignment up to MI_ALIGN) with the fixed MI_ALIGN header
+    // mi_free reconstructs, or null on allocation failure.
     unsafe { mi_malloc(size) }
   }
 
