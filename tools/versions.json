@@ -48,5 +48,8 @@
   },
   "ktor": "3.6.0",
   "kotlin": "2.4.20",
-  "tcnative": "2.0.84.Final"
+  "tcnative": "2.0.84.Final",
+  "spring": "7.0.9",
+  "reactor": "3.8.7",
+  "spring_boot": "4.1.1"
 }

@@ -23,5 +23,7 @@ public final class CapiTlsChannelTest {
     NativeSslEngineTest.verify(api, cert, key);
     NativeSslPolicyTest.verify(api, cert, key);
     NativeSslInteropTest.verify(api, Path.of(args[0]), Path.of(args[1]));
+    NativeHttpServerTest.verify(api, Path.of(args[0]), Path.of(args[1]));
+    NativeHttpWorkersTest.verify(api, Path.of(args[0]), Path.of(args[1]));
   }
 }
