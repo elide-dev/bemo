@@ -60,7 +60,13 @@ public final class NativeHttpServer implements AutoCloseable {
     return new FixedBody(java.util.Objects.requireNonNull(bytes));
   }
 
-  private record FixedBody(byte[] bytes) implements Flow.Publisher<byte[]> {
+  private static final class FixedBody implements Flow.Publisher<byte[]> {
+    private final byte[] bytes;
+
+    FixedBody(byte[] bytes) {
+      this.bytes = bytes;
+    }
+
     @Override
     public void subscribe(Flow.Subscriber<? super byte[]> subscriber) {
       subscriber.onSubscribe(
@@ -166,7 +172,8 @@ public final class NativeHttpServer implements AutoCloseable {
                 this,
                 i);
         workers.add(worker);
-        worker.stopped.whenComplete((ignored, error) -> workerStopped(error));
+        var unusedStopObserver =
+            worker.stopped.whenComplete((ignored, error) -> workerStopped(error));
       }
     }
 
@@ -176,15 +183,18 @@ public final class NativeHttpServer implements AutoCloseable {
       try {
         owner = parent.api.ownerNew(parent.memoryLimit);
         require(owner != 0, "shared owner admission");
-        CompletableFuture.allOf(
-                workers.stream().map(worker -> worker.bound).toArray(CompletableFuture<?>[]::new))
-            .whenComplete(
-                (ignored, error) -> {
-                  if (!closing) {
-                    if (error != null) fail(error);
-                    else parent.bound.complete(workers.get(0).bound.join());
-                  }
-                });
+        var unusedStartObserver =
+            CompletableFuture.allOf(
+                    workers.stream()
+                        .map(worker -> worker.bound)
+                        .toArray(CompletableFuture<?>[]::new))
+                .whenComplete(
+                    (ignored, error) -> {
+                      if (!closing) {
+                        if (error != null) fail(error);
+                        else parent.bound.complete(workers.get(0).bound.join());
+                      }
+                    });
         for (NativeHttpServer worker : workers) worker.start();
       } catch (Throwable error) {
         fail(error);
@@ -456,6 +466,8 @@ public final class NativeHttpServer implements AutoCloseable {
     return stopped;
   }
 
+  // Wake only when the caller is a different owner thread.
+  @SuppressWarnings("ReferenceEquality")
   private boolean submit(Runnable task) {
     if (!running.get()) return false;
     tasks.add(task);
@@ -696,28 +708,29 @@ public final class NativeHttpServer implements AutoCloseable {
               head.version());
       try {
         exchange.reply = handler.handle(request).toCompletableFuture();
-        exchange.reply.whenComplete(
-            (response, failure) -> {
-              exchange.selectedResponse = response;
-              if (!exchange.live || !running.get()) {
-                if (response != null) response.cancel(new IOException("HTTP exchange closed"));
-                return;
-              }
-              boolean accepted =
-                  submit(
-                      () -> {
-                        if (!exchange.live) {
-                          if (response != null)
-                            response.sent.completeExceptionally(
-                                new IOException("HTTP exchange closed"));
-                        } else if (failure != null) exchange.abort(failure);
-                        else if (response == null)
-                          exchange.abort(new IOException("HTTP handler returned null"));
-                        else exchange.respond(response);
-                      });
-              if (!accepted && response != null)
-                response.cancel(new IOException("HTTP server stopped"));
-            });
+        var unusedReplyObserver =
+            exchange.reply.whenComplete(
+                (response, failure) -> {
+                  exchange.selectedResponse = response;
+                  if (!exchange.live || !running.get()) {
+                    if (response != null) response.cancel(new IOException("HTTP exchange closed"));
+                    return;
+                  }
+                  boolean accepted =
+                      submit(
+                          () -> {
+                            if (!exchange.live) {
+                              if (response != null)
+                                response.sent.completeExceptionally(
+                                    new IOException("HTTP exchange closed"));
+                            } else if (failure != null) exchange.abort(failure);
+                            else if (response == null)
+                              exchange.abort(new IOException("HTTP handler returned null"));
+                            else exchange.respond(response);
+                          });
+                  if (!accepted && response != null)
+                    response.cancel(new IOException("HTTP server stopped"));
+                });
       } catch (Throwable failure) {
         exchange.abort(failure);
       }
@@ -939,10 +952,11 @@ public final class NativeHttpServer implements AutoCloseable {
     }
 
     void begin() {
-      response.sent.whenComplete(
-          (ignored, failure) -> {
-            if (failure != null) submit(() -> exchange.abort(failure));
-          });
+      var unusedTransmissionObserver =
+          response.sent.whenComplete(
+              (ignored, failure) -> {
+                if (failure != null) submit(() -> exchange.abort(failure));
+              });
       byte[] completeBody =
           response.body instanceof FixedBody fixed
                   && fixed.bytes.length == response.length
@@ -1112,6 +1126,8 @@ public final class NativeHttpServer implements AutoCloseable {
       } else advance();
     }
 
+    // Throwable identity is required to avoid illegal self-suppression.
+    @SuppressWarnings("ReferenceEquality")
     void fail(Throwable failure) {
       if (failed) return;
       failed = true;
@@ -1185,6 +1201,7 @@ public final class NativeHttpServer implements AutoCloseable {
     if (handle != 0) api.driverWake(handle);
   }
 
+  @SuppressWarnings("ReferenceEquality") // Never join the current owner thread.
   private void awaitLoop() {
     Thread current = thread;
     if (current != null && current != Thread.currentThread()) {

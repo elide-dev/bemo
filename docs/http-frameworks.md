@@ -5,6 +5,12 @@ Spring WebFlux adapters. These modules are local candidates; release performance
 and lifecycle qualification are still in progress. The Rust seam and generated
 image imports remain unchanged.
 
+Bemo parses HTTP wire bytes and encodes response headers and framing in Rust.
+The Java loop consumes parsed native events and span metadata, materializes the
+framework request, and hands response records back to the native encoder. Ktor
+and Spring retain application routing and body codecs; neither adapter runs a
+second HTTP wire parser.
+
 `NativeHttpServer` lives in `bemo-api`. Drivers, exchange handles and delivered
 body segments stay on its thread. Request publishers copy a segment into managed
 storage only when a subscriber requests it, then release the native segment and
@@ -77,7 +83,8 @@ option remains experimental until differential and serving checks qualify it.
 `NativeHttpServer.fixedBody(bytes)` identifies a known body whose bytes remain unchanged
 until `Response.sent()` completes. Bodies up to the native response-part limit use one
 HTTP/1 encode and one physical completion when metadata capability
-`CAP_HTTP1_COMPLETE_CREDIT` is present. Legacy backends and larger or length-mismatched
+`CAP_HTTP1_COMPLETE_CREDIT` (bit `4`) is present. Bit `2` remains reserved for
+upstream native allocation; it does not imply complete-response support. Legacy backends and larger or length-mismatched
 bodies retain publisher streaming. Ktor byte responses and Spring single-buffer `Mono`
 responses use this path; arbitrary publishers retain incremental demand.
 

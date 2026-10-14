@@ -58,7 +58,7 @@ public final class BemoReactiveWebServerFactory extends AbstractReactiveWebServe
       byte[] certificate = null;
       byte[] key = null;
       if (encrypted) {
-        if (ssl.getClientAuth() != null && ssl.getClientAuth() != Ssl.ClientAuth.NONE
+        if ((ssl.getClientAuth() != null && ssl.getClientAuth() != Ssl.ClientAuth.NONE)
             || ssl.getCiphers() != null
             || ssl.getEnabledProtocols() != null
             || !ssl.getServerNameBundles().isEmpty()) {
