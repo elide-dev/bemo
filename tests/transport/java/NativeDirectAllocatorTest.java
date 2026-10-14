@@ -40,6 +40,10 @@ public final class NativeDirectAllocatorTest {
     ByteBuf buffer = allocator.directBuffer(8, 1 << 20);
     if (!buffer.isDirect()) throw new AssertionError("expected a direct buffer");
     String kind = buffer.getClass().getSimpleName() + (buffer.hasMemoryAddress() ? "/address" : "");
+    // A freshly allocated buffer (before any growth) must already be backed by Bemo's native
+    // allocator; the initial allocation may not silently fall back to Netty's direct path.
+    if (allocator.nativeAllocatedBytes() < baseline + buffer.capacity())
+      throw new AssertionError("fresh direct buffer is not backed by the Bemo native allocator");
     // Write across several reallocations, checking the whole prefix after each one.
     int capacity = buffer.capacity();
     for (int index = 0; index < 4096; index++) {
@@ -71,6 +75,11 @@ public final class NativeDirectAllocatorTest {
     List<ByteBuf> buffers = new ArrayList<>();
     for (int index = 0; index < 256; index++)
       buffers.add(allocator.directBuffer(1024).writeLong(index));
+    // These buffers are never grown, so their storage must come from Bemo's native allocator for
+    // the whole lifetime (the common request/response case); no part of them is Netty-owned.
+    if (allocator.nativeAllocatedBytes() < baseline + (long) buffers.size() * 1024)
+      throw new AssertionError(
+          "never-grown direct buffers are not backed by the Bemo native allocator");
     var failure = new AtomicReference<Throwable>();
     var done = new CountDownLatch(1);
     Thread release =
