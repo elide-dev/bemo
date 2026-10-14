@@ -21,6 +21,15 @@ import org.jspecify.annotations.Nullable;
  * it, and closing a workload cancels only its own operations.
  */
 public interface TransportNative {
+  /**
+   * Selects a compatible registered backend, preferring the embedding's direct implementation. A
+   * null result lets framework adapters retain their stock transport. Native handles remain owned
+   * by the caller; discovery creates no workload or driver.
+   */
+  static @Nullable TransportNative load() {
+    return TransportNativeDiscovery.load();
+  }
+
   /** Preserved transport ABI version, independent of Bemo metadata ABI 1. */
   int ABI_VERSION = 3;
 
