@@ -29,6 +29,13 @@ public final class FfmTransportNative implements TransportNative {
   // no allocation, where a per-read `ofAddress(..).reinterpret(..)` or `asByteBuffer()` costs one.
   private static final MemorySegment ALL = MemorySegment.NULL.reinterpret(Long.MAX_VALUE);
 
+  private final boolean completeHttp1;
+
+  @Override
+  public boolean supportsCompleteHttp1Responses() {
+    return completeHttp1;
+  }
+
   private final MethodHandle version;
   private final MethodHandle lastError;
   private final MethodHandle ownerNew;
@@ -272,6 +279,20 @@ public final class FfmTransportNative implements TransportNative {
     if (ValueLayout.ADDRESS.byteSize() != 8)
       throw new UnsupportedOperationException("64-bit JVM required");
     SymbolLookup symbols = SymbolLookup.libraryLookup(library, Arena.global());
+    boolean complete = false;
+    var capabilitySymbol = symbols.find("bemo_capabilities");
+    if (capabilitySymbol.isPresent()) {
+      try {
+        MethodHandle capabilities =
+            Linker.nativeLinker()
+                .downcallHandle(
+                    capabilitySymbol.get(), FunctionDescriptor.of(ValueLayout.JAVA_LONG));
+        complete = ((long) capabilities.invokeExact() & CAP_HTTP1_COMPLETE_CREDIT) != 0;
+      } catch (Throwable error) {
+        throw failure(error);
+      }
+    }
+    completeHttp1 = complete;
     version = bind(symbols, "abi_version", ValueLayout.JAVA_INT);
     if (version() != TransportNative.ABI_VERSION)
       throw new IllegalArgumentException("Unsupported transport ABI version");

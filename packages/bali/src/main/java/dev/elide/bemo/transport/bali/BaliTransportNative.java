@@ -10,6 +10,14 @@ import java.nio.ByteBuffer;
 
 /** Direct image calls; the guest retains its own Bemo and framework classes. */
 public final class BaliTransportNative implements TransportNative {
+  private final boolean completeHttp1 =
+      (BemoNative.bemo_capabilities() & CAP_HTTP1_COMPLETE_CREDIT) != 0;
+
+  @Override
+  public boolean supportsCompleteHttp1Responses() {
+    return completeHttp1;
+  }
+
   private static int servingAvailableCores0() {
     return BemoNative.elide_transport_serving_available_cores();
   }

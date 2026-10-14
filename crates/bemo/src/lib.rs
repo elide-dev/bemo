@@ -21,5 +21,7 @@ pub const ABI_VERSION: u32 = 1;
 pub const CAP_TRANSPORT_V3: u64 = 1;
 /// `bemo_alloc`, `bemo_free`, and `bemo_alloc_live` allocate from the transport's allocator.
 pub const CAP_NATIVE_ALLOC: u64 = 2;
+/// Complete HTTP/1 responses can report physical completion.
+pub const CAP_HTTP1_COMPLETE_CREDIT: u64 = 4;
 /// Implemented data-plane capabilities.
-pub const CAPABILITIES: u64 = CAP_TRANSPORT_V3 | CAP_NATIVE_ALLOC;
+pub const CAPABILITIES: u64 = CAP_TRANSPORT_V3 | CAP_NATIVE_ALLOC | CAP_HTTP1_COMPLETE_CREDIT;

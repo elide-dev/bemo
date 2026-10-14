@@ -1458,6 +1458,57 @@ fn op_limit_during_send_keeps_connection_alive() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "native driver and sockets are unavailable under miri")]
+fn complete_response_reports_one_physical_credit() {
+  let mut h = harness();
+  h.peer.write_all(b"GET /fixed HTTP/1.1\r\nHost: a\r\n\r\n").unwrap();
+  let exchange = h.take(EVENT_REQUEST, 1)[0].value;
+  assert_eq!(
+    // SAFETY: Live exchange and body, no header records. Invalid flags must not consume it.
+    unsafe {
+      elide_transport_http_respond(
+        h.driver,
+        exchange,
+        200,
+        std::ptr::null(),
+        0,
+        b"pong".as_ptr(),
+        4,
+        RESPOND_STREAM | RESPOND_COMPLETE_CREDIT,
+      )
+    },
+    INVALID
+  );
+  assert_eq!(
+    // SAFETY: Body remains readable until the synchronous encoder returns.
+    unsafe {
+      elide_transport_http_respond(
+        h.driver,
+        exchange,
+        200,
+        std::ptr::null(),
+        0,
+        b"pong".as_ptr(),
+        4,
+        RESPOND_COMPLETE_CREDIT,
+      )
+    },
+    0
+  );
+  let got = h.read_while_polling(|got| got.ends_with(b"pong"));
+  let parsed = responses(&got);
+  assert_eq!(parsed.len(), 1);
+  assert_eq!(parsed[0].1, b"pong");
+  let sent = h.take(EVENT_PART_SENT, 1);
+  assert_eq!(sent[0].value, exchange);
+  assert_eq!(sent[0].result, got.len() as i64);
+  assert!(h.pending.iter().all(|event| event.kind != EVENT_PART_SENT));
+  assert_eq!(elide_transport_http_free(h.driver, exchange), 0);
+  h.peer.shutdown(std::net::Shutdown::Both).unwrap();
+  h.take(EVENT_CLOSED, 1);
+}
+
+#[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn streaming_response_is_chunked_byte_exact_and_holds_the_lane() {
   let mut h = harness();

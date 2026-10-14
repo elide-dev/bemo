@@ -86,6 +86,8 @@ pub const HAS_BODY: u8 = 1;
 pub const HAS_HEADER_METADATA: u8 = 2;
 /// Flag for [`elide_transport_http_respond`]: send the head only; the body follows as parts.
 pub const RESPOND_STREAM: u32 = 2;
+/// Report one physical completion for a complete HTTP/1 response.
+pub const RESPOND_COMPLETE_CREDIT: u32 = 4;
 /// Flag for [`elide_transport_http_chunk_send`]: this part ends the response.
 pub const CHUNK_FINAL: u32 = 2;
 /// Retain a frozen body handle instead of consuming prepared mutable storage. HTTP/1 chunked
@@ -321,6 +323,8 @@ struct Parts {
   queued_bytes: usize,
   /// Parts arrive through `chunk_send` and each reports [`EVENT_PART_SENT`].
   streaming: bool,
+  /// Report physical completion for each queued part.
+  report: bool,
   framing: Framing,
   /// Payload bytes accepted so far, checked against `Framing::Length`.
   body_bytes: u64,
@@ -337,6 +341,7 @@ impl Parts {
       complete: true,
       queued_bytes: len,
       streaming: false,
+      report: false,
       framing: Framing::Length(len as u64),
       body_bytes: 0,
       bodiless: false,
@@ -1197,7 +1202,7 @@ fn pump(state: &mut DriverState, socket: u64, events: &mut VecDeque<NativeEvent>
           exchange: front,
           len,
           remaining: len,
-          report: parts.streaming,
+          report: parts.report,
         });
         if let Some(previous) = batch.last_mut() {
           if let Err(part) = previous.merge(part) {
@@ -1351,7 +1356,7 @@ fn fail_writes(http: &mut HttpSocket, socket: u64, code: i64, events: &mut VecDe
     }
   }
   for (exchange, parts) in http.ready.drain() {
-    if parts.streaming {
+    if parts.report {
       for _ in 0..parts.len() {
         events.push_back(event(EVENT_PART_SENT, 0, socket, exchange, code));
       }
@@ -1553,6 +1558,8 @@ pub unsafe fn elide_transport_http_spans(exchange: u64, output: *mut u32, capaci
 /// `body_length` declares the body (`content-length`), or `u64::MAX` for an unknown length
 /// (`transfer-encoding: chunked`; on HTTP/1.0 the connection closes after the body instead).
 /// Parts then follow through [`elide_transport_http_chunk_send`].
+/// [`RESPOND_COMPLETE_CREDIT`] instead requests one physical completion for a complete
+/// HTTP/1 response; it cannot be combined with streaming or used on HTTP/2.
 ///
 /// # Safety
 /// Every address must be readable for its stated length for the duration of the call.
@@ -1571,6 +1578,10 @@ pub unsafe fn elide_transport_http_respond(
     return INVALID;
   }
   let stream = flags & RESPOND_STREAM != 0;
+  let complete_credit = flags & RESPOND_COMPLETE_CREDIT != 0;
+  if stream && complete_credit {
+    return INVALID;
+  }
   let framing = match body_length {
     u64::MAX if stream => Framing::Chunked,
     declared => Framing::Length(declared),
@@ -1602,6 +1613,9 @@ pub unsafe fn elide_transport_http_respond(
       .get(&exchange)
       .is_some_and(|entry| entry.stream != 0)
     {
+      if complete_credit {
+        return INVALID;
+      }
       return h2_socket::respond(state, exchange, status as u16, &headers, body, body_length, stream);
     }
     let Some(entry) = state.http.exchanges.get_mut(&exchange) else {
@@ -1659,9 +1673,11 @@ pub unsafe fn elide_transport_http_respond(
     };
     entry.responded = true;
     let mut parts = Parts::single(encoded);
+    parts.report = complete_credit;
     if stream {
       parts.complete = false;
       parts.streaming = true;
+      parts.report = true;
       parts.framing = framing;
       parts.bodiless = bodiless;
     }
@@ -2021,12 +2037,13 @@ pub fn elide_transport_http_free(driver: u64, exchange: u64) -> i32 {
     }
     if let Some(http) = state.http.sockets.get_mut(&socket) {
       let queued = if let Some(parts) = http.ready.get_mut(&exchange) {
-        // Buffered parts never report, and queue ownership already proves quarantine is needed.
-        if parts.streaming {
+        // Suppress credited parts; queue ownership still requires quarantine until retirement.
+        if parts.report {
           for part in http.inflight.iter_mut().filter(|p| p.exchange == exchange) {
             part.report = false;
           }
           parts.streaming = false;
+          parts.report = false;
         }
         if !parts.complete {
           parts.complete = true;
@@ -2196,6 +2213,24 @@ mod tests {
   }
 
   #[test]
+  fn complete_response_failure_reports_once_and_releases_storage() {
+    let budget = Budget::new(1024);
+    let mut bytes = Buffer::new(8, budget.clone()).unwrap();
+    bytes.write(0, b"response").unwrap();
+    let mut parts = Parts::single(bytes.freeze());
+    parts.report = true;
+    assert!(parts.complete);
+    assert!(!parts.streaming);
+    let mut socket = HttpSocket::new(budget.clone(), 1024, None);
+    socket.queue(123, parts);
+    let mut events = VecDeque::new();
+    fail_writes(&mut socket, 456, -1, &mut events);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].kind, EVENT_PART_SENT);
+    assert_eq!(budget.used(), 0);
+  }
+
+  #[test]
   fn response_parts_preserve_order_across_inline_spill_and_refill() {
     let budget = Budget::new(1024);
     let part = |value| {
@@ -2224,7 +2259,7 @@ mod tests {
   #[test]
   #[cfg_attr(miri, ignore = "native driver is unavailable under miri")]
   fn freed_stream_suppresses_reports_until_all_wire_references_retire() {
-    for queued in [false, true] {
+    for (queued, streaming) in [(false, false), (true, false), (false, true), (true, true)] {
       let owner = elide_transport_owner_new(1024 * 1024);
       let driver = elide_transport_driver_new(owner, Backend::Auto as u32, 8);
       let socket = identity();
@@ -2264,8 +2299,9 @@ mod tests {
         }
         if queued {
           let mut parts = Parts::single(byte());
-          parts.streaming = true;
-          parts.complete = false;
+          parts.streaming = streaming;
+          parts.report = true;
+          parts.complete = !streaming;
           parts.queued_bytes += 2;
           http.queue(exchange, parts);
         }

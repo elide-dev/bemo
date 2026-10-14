@@ -33,6 +33,13 @@ import org.jspecify.annotations.Nullable;
 @CContext(CapiTransportNative.Headers.class)
 @CLibrary(value = "bemo_ffi", requireStatic = true)
 public final class CapiTransportNative implements TransportNative {
+  private final boolean completeHttp1 =
+      (BemoNatives.bemo_capabilities() & CAP_HTTP1_COMPLETE_CREDIT) != 0;
+
+  @Override
+  public boolean supportsCompleteHttp1Responses() {
+    return completeHttp1;
+  }
 
   public static int servingHelperStart(long token) {
     return BemoNatives.elide_transport_serving_helper_start(token);

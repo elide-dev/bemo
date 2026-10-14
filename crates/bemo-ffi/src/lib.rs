@@ -50,7 +50,7 @@ mod tests {
   #[test]
   fn boundary_matches_core() {
     assert_eq!(bemo_abi_version(), bemo::ABI_VERSION);
-    assert_eq!(bemo_capabilities(), bemo::CAP_TRANSPORT_V3 | bemo::CAP_NATIVE_ALLOC);
+    assert_eq!(bemo_capabilities(), bemo::CAPABILITIES);
   }
 }
 
