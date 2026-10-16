@@ -79,11 +79,21 @@ final class NativeTlsSession implements AutoCloseable {
         outputOnly = false;
         releasePendingReads();
       }
-      closePromise.addListener(
-          done -> {
-            if (done.isSuccess()) promise.trySuccess();
-            else promise.tryFailure(done.cause());
-          });
+      if (closePromise.isVoid()) {
+        channel
+            .closeFuture()
+            .addListener(
+                done -> {
+                  if (done.isSuccess()) promise.trySuccess();
+                  else promise.tryFailure(done.cause());
+                });
+      } else {
+        closePromise.addListener(
+            done -> {
+              if (done.isSuccess()) promise.trySuccess();
+              else promise.tryFailure(done.cause());
+            });
+      }
       return;
     }
     outputOnly = halfClose;
