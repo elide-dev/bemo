@@ -423,6 +423,8 @@ impl Engine {
     }
     let status = if self.outbound_done() {
       Status::Closed
+    } else if self.is_handshaking() && sink.produced == 0 && !self.pending.output_pending() {
+      Status::Ok
     } else if sink.produced == 0 && (self.pending.output_pending() || sink.consumed < sink.source.len()) {
       Status::BufferOverflow
     } else {
@@ -1061,6 +1063,67 @@ mod tests {
       client.unwrap(Input::Shared(&[]), &mut out).unwrap().status,
       Status::Closed
     );
+  }
+
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn engine_wrap_app_data_during_blocked_handshake_returns_ok_not_overflow() {
+    for versions in [&[&rustls::version::TLS13][..], &[&rustls::version::TLS12][..]] {
+      let (mut client, _server) = pair(versions, "localhost");
+      let mut out = vec![0; MAX_RECORD];
+      let hello = client.wrap(&[], &mut out).unwrap();
+      assert!(hello.produced > 0, "client emitted a ClientHello");
+      assert_eq!(client.handshake_status(), Handshake::NeedUnwrap);
+      let mut big = vec![0; 32 * 1024];
+      let outcome = client.wrap(b"app data before handshake completes", &mut big).unwrap();
+      assert_eq!(
+        (outcome.status, outcome.consumed, outcome.produced),
+        (Status::Ok, 0, 0),
+        "client wrap with app data while handshake-blocked must not report BufferOverflow"
+      );
+      assert_eq!(outcome.handshake, Handshake::NeedUnwrap);
+
+      let (mut client, mut server) = pair(versions, "localhost");
+      let mut to_server = Vec::new();
+      drain(&mut client, &[], &mut to_server).unwrap();
+      feed(&mut server, &mut to_server, &mut Vec::new()).unwrap();
+      let mut to_client = Vec::new();
+      drain(&mut server, &[], &mut to_client).unwrap();
+      assert_eq!(server.handshake_status(), Handshake::NeedUnwrap);
+      let mut big = vec![0; 32 * 1024];
+      let outcome = server.wrap(b"app data before handshake completes", &mut big).unwrap();
+      assert_eq!(
+        (outcome.status, outcome.consumed, outcome.produced),
+        (Status::Ok, 0, 0),
+        "server wrap with app data while handshake-blocked must not report BufferOverflow"
+      );
+      assert_eq!(outcome.handshake, Handshake::NeedUnwrap);
+
+      feed(&mut client, &mut to_client, &mut Vec::new()).unwrap();
+      let mut to_server = Vec::new();
+      drain(&mut client, &[], &mut to_server).unwrap();
+      feed(&mut server, &mut to_server, &mut Vec::new()).unwrap();
+      if versions[0] == &rustls::version::TLS12 {
+        let mut to_client = Vec::new();
+        drain(&mut server, &[], &mut to_client).unwrap();
+        feed(&mut client, &mut to_client, &mut Vec::new()).unwrap();
+      }
+      assert!(
+        !client.is_handshaking(),
+        "client handshake completed after blocked wrap"
+      );
+      assert!(
+        !server.is_handshaking(),
+        "server handshake completed after blocked wrap"
+      );
+
+      let payload = b"post-handshake data";
+      let mut wire = Vec::new();
+      drain(&mut client, payload, &mut wire).unwrap();
+      let mut received = Vec::new();
+      feed(&mut server, &mut wire, &mut received).unwrap();
+      assert_eq!(received, payload);
+    }
   }
 
   #[test]
