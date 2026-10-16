@@ -432,7 +432,10 @@ impl Persistent {
         if group.grow {
           match group.pool.grow() {
             Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::OutOfMemory => {}
+            // A closed workload budget reports BrokenPipe from replacement allocation; a closing
+            // group's retirement is asynchronous, so tolerate it like OutOfMemory instead of
+            // poisoning the shared driver. See `Budget::reserve`.
+            Err(error) if matches!(error.kind(), io::ErrorKind::OutOfMemory | io::ErrorKind::BrokenPipe) => {}
             Err(error) => return Err(error),
           }
           group.grow = false;
@@ -444,7 +447,14 @@ impl Persistent {
               group.published += 1;
               self.stats.buffers_published += 1;
             }
-            Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::OutOfMemory) => {}
+            // BrokenPipe: a closed budget can no longer fund replacement storage for a checked-out
+            // slot. Tolerate it so the closing workload's group stops republishing without failing
+            // the driver shared by other workloads.
+            Err(error)
+              if matches!(
+                error.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::OutOfMemory | io::ErrorKind::BrokenPipe
+              ) => {}
             Err(error) => return Err(error),
           }
         }
