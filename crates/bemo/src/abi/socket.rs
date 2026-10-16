@@ -656,6 +656,12 @@ pub fn elide_transport_socket_close(driver: u64, socket: u64) -> i32 {
     let Some(state) = drivers.0.get_mut(&driver) else {
       return INVALID;
     };
+    if super::http::is_http(state, socket) {
+      let mut events = std::collections::VecDeque::new();
+      super::http::close_socket(state, socket, &mut events);
+      state.http.overflow.extend(events);
+      return 0;
+    }
     let Some(connection) = state.sockets.remove(&socket) else {
       return INVALID;
     };
