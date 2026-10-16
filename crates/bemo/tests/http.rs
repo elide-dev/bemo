@@ -3834,3 +3834,220 @@ fn native_h2_free_before_responding_cancels_the_stream() {
     ]
   );
 }
+
+/// A parked HTTP socket (receive lane idle, no pending operation) must still tear down fully
+/// when the consumer force-closes it: `EVENT_CLOSED` is delivered, `state.http.sockets` is
+/// emptied, and the owner budget drains. This is the core bug — on epoll and io_uring with
+/// non-default capacity, the raw close used to leave the HTTP entry behind with no completion
+/// to drive teardown.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn parked_http_socket_close_emits_closed_and_cleans_up() {
+  let mut h = harness();
+  // Send a POST body larger than BODY_WINDOW_BYTES and never ack the segments, parking the
+  // receive lane with no pending operation in state.operations.
+  let body: Vec<u8> = (0..BODY_WINDOW_BYTES * 4).map(|i| (i % 251) as u8).collect();
+  let head = format!(
+    "POST /big HTTP/1.1\r\nHost: a\r\nContent-Length: {}\r\n\r\n",
+    body.len()
+  );
+  let mut peer = h.peer.try_clone().unwrap();
+  let payload = body.clone();
+  let writer = std::thread::spawn(move || {
+    peer.write_all(head.as_bytes()).unwrap();
+    let _ = peer.write_all(&payload);
+  });
+  let _exchange = h.take(EVENT_REQUEST, 1)[0].value;
+  let held = h.drain_segments();
+  let delivered: usize = held.iter().map(|s| s.result as usize).sum();
+  assert!(delivered < body.len(), "window did not stall: {delivered}");
+  // The lane is now parked: confirm no events arrive.
+  for _ in 0..4 {
+    assert_eq!(h.poll(50_000_000), 0, "receives must stay parked");
+  }
+  // Force-close the socket while the lane is parked.
+  assert_eq!(elide_transport_socket_close(h.driver, h.socket), 0);
+  // EVENT_CLOSED must be delivered on the next poll.
+  let closed = h.take(EVENT_CLOSED, 1);
+  assert_eq!(closed.len(), 1);
+  assert_eq!(closed[0].socket, h.socket);
+  // No more events for this socket.
+  for _ in 0..4 {
+    assert_eq!(h.poll(50_000_000), 0, "no spurious events after close");
+  }
+  writer.join().unwrap();
+  h.release_segments(&held);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
+/// Force-closing an HTTP socket with queued streaming response parts must fail each unsent part
+/// with an `EVENT_PART_SENT` error event, then emit `EVENT_CLOSED`. Before the fix, the parts
+/// were silently dropped on non-io_uring backends.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn parked_http_socket_close_fails_queued_streaming_parts() {
+  let mut h = harness();
+  h.peer.write_all(b"GET /stream HTTP/1.1\r\nHost: a\r\n\r\n").unwrap();
+  let exchange = h.take(EVENT_REQUEST, 1)[0].value;
+  // Start a streaming response and queue two parts without a final.
+  respond_stream(h.driver, exchange, 200, &[], u64::MAX);
+  send_chunk(h.driver, exchange, b"part1", false);
+  send_chunk(h.driver, exchange, b"part2", false);
+  // Force-close while parts are queued. Some parts may have already been sent successfully
+  // (the head), but any unsent streaming parts must be failed with EVENT_PART_SENT errors.
+  assert_eq!(elide_transport_socket_close(h.driver, h.socket), 0);
+  // Collect all events: at least one EVENT_PART_SENT must carry a negative (error) result,
+  // proving queued parts were failed rather than silently dropped.
+  let mut saw_failed_part = false;
+  for _ in 0..64 {
+    h.poll(50_000_000);
+    for ev in &h.pending {
+      if ev.kind == EVENT_PART_SENT && ev.value == exchange && ev.result < 0 {
+        saw_failed_part = true;
+      }
+    }
+    if h.pending.iter().any(|e| e.kind == EVENT_CLOSED) {
+      break;
+    }
+  }
+  assert!(
+    saw_failed_part,
+    "at least one queued streaming part must be failed with EVENT_PART_SENT(error): {:?}",
+    h.pending
+  );
+  // EVENT_CLOSED must be delivered.
+  let closed = h.take(EVENT_CLOSED, 1);
+  assert_eq!(closed.len(), 1);
+  assert_eq!(closed[0].socket, h.socket);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
+/// A non-HTTP socket close must follow the raw path and return 0; no HTTP state is touched.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn non_http_socket_close_is_unaffected() {
+  let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+  let owner = elide_transport_owner_new(1024 * 1024);
+  let driver = elide_transport_driver_new(common::workload(), common::backend() as u32, 16);
+  let endpoint = endpoint(owner, listener.local_addr().unwrap());
+  let socket = elide_transport_socket_connect(common::workload(), driver, endpoint);
+  assert_ne!(socket, 0);
+  let batch = elide_transport_buffer_new(owner, 8 * size_of::<NativeEvent>() as u64);
+  let accepted = std::thread::spawn(move || listener.accept().unwrap().0);
+  assert_eq!(events(driver, batch, 1, 1)[0].2, 0);
+  let _peer = accepted.join().unwrap();
+  // Close without activating HTTP mode — must return 0.
+  assert_eq!(elide_transport_socket_close(driver, socket), 0);
+  // No HTTP state was ever created.
+  assert_eq!(elide_transport_buffer_release(endpoint), 0);
+  assert_eq!(elide_transport_buffer_release(batch), 0);
+  assert_eq!(elide_transport_driver_release(driver), 0);
+  assert_eq!(elide_transport_owner_used(owner), 0);
+  assert_eq!(elide_transport_owner_release(owner), 0);
+}
+
+/// Double close of an HTTP socket: the first returns 0, the second returns INVALID.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn double_close_of_http_socket_returns_invalid() {
+  let mut h = harness();
+  h.peer.write_all(b"GET / HTTP/1.1\r\nHost: a\r\n\r\n").unwrap();
+  let _ = h.take(EVENT_REQUEST, 1);
+  assert_eq!(elide_transport_socket_close(h.driver, h.socket), 0);
+  h.take(EVENT_CLOSED, 1);
+  // Second close must return INVALID — the socket is already gone.
+  assert_eq!(elide_transport_socket_close(h.driver, h.socket), INVALID);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
+/// Force-closing an HTTP socket with an in-flight persistent receive (io_uring default capacity)
+/// must emit exactly one EVENT_CLOSED — not zero, not two. This guards against double-close
+/// regressions on the path where the cancellation completion also routes through close_socket.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn close_http_socket_with_inflight_receive_emits_one_closed() {
+  let mut h = harness();
+  h.peer.write_all(b"GET / HTTP/1.1\r\nHost: a\r\n\r\n").unwrap();
+  let _ = h.take(EVENT_REQUEST, 1);
+  // The receive lane is in flight (persistent on io_uring default, one-shot elsewhere).
+  assert_eq!(elide_transport_socket_close(h.driver, h.socket), 0);
+  let closed = h.take(EVENT_CLOSED, 1);
+  assert_eq!(closed.len(), 1, "exactly one EVENT_CLOSED expected");
+  assert_eq!(closed[0].socket, h.socket);
+  // No second EVENT_CLOSED.
+  for _ in 0..4 {
+    let n = h.poll(50_000_000);
+    assert_eq!(n, 0, "no spurious events after close");
+  }
+  assert!(
+    !h.pending.iter().any(|e| e.kind == EVENT_CLOSED),
+    "no duplicate EVENT_CLOSED"
+  );
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
+/// After force-closing a parked HTTP socket, acking held segments must not resurrect the
+/// socket or produce new HTTP request/body events — the zombie cannot self-heal because the
+/// socket is already torn down.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn ack_after_parked_close_produces_no_events() {
+  let mut h = harness();
+  let body: Vec<u8> = (0..BODY_WINDOW_BYTES * 4).map(|i| (i % 251) as u8).collect();
+  let head = format!(
+    "POST /big HTTP/1.1\r\nHost: a\r\nContent-Length: {}\r\n\r\n",
+    body.len()
+  );
+  let mut peer = h.peer.try_clone().unwrap();
+  let writer = std::thread::spawn(move || {
+    peer.write_all(head.as_bytes()).unwrap();
+    let _ = peer.write_all(&body);
+  });
+  let _exchange = h.take(EVENT_REQUEST, 1)[0].value;
+  let held = h.drain_segments();
+  // Park confirmed.
+  for _ in 0..4 {
+    assert_eq!(h.poll(50_000_000), 0);
+  }
+  // Force-close.
+  assert_eq!(elide_transport_socket_close(h.driver, h.socket), 0);
+  h.take(EVENT_CLOSED, 1);
+  // Ack all held segments — this must not produce any new HTTP request/body events for the
+  // closed socket. The socket is gone from state.http.sockets, so arm_receive cannot re-arm.
+  h.ack_segments(&held);
+  for _ in 0..8 {
+    h.poll(50_000_000);
+  }
+  // No new HTTP request or body events for the closed socket.
+  assert!(
+    !h.pending
+      .iter()
+      .any(|e| e.kind == EVENT_REQUEST || e.kind == EVENT_BODY),
+    "acking after close must not produce HTTP request/body events: {:?}",
+    h.pending
+  );
+  // No second EVENT_CLOSED.
+  assert!(
+    !h.pending.iter().any(|e| e.kind == EVENT_CLOSED),
+    "no duplicate EVENT_CLOSED from acking: {:?}",
+    h.pending
+  );
+  writer.join().unwrap();
+  h.release_segments(&held);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
