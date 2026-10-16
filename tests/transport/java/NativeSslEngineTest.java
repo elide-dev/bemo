@@ -17,6 +17,7 @@ import io.netty.util.CharsetUtil;
 import io.netty.util.ReferenceCountUtil;
 import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.X509Certificate;
@@ -24,6 +25,8 @@ import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLHandshakeException;
 
 /** Netty SslHandler contracts over NativeSslEngine, on v2 sockets and on NIO with heap buffers. */
@@ -92,6 +95,7 @@ public final class NativeSslEngineTest {
         System.out.println("SslHandler contracts over NativeSslEngine passed: " + stack.name());
       }
       derContext(api, cert, key, v2);
+      arrayUnwrapOverflow(api, server, client);
     } finally {
       for (NativeSslContext context :
           new NativeSslContext[] {
@@ -657,6 +661,81 @@ public final class NativeSslEngineTest {
       channel.close().syncUninterruptibly();
       server.close().syncUninterruptibly();
     }
+  }
+
+  /**
+   * The array-destination {@code unwrap} must not mask a {@code BUFFER_OVERFLOW} with {@code
+   * BUFFER_UNDERFLOW} when the first destination is too small for a pending record. When a later
+   * destination has room, the record is delivered into it; otherwise the reported status is {@code
+   * BUFFER_OVERFLOW}, never {@code BUFFER_UNDERFLOW}.
+   */
+  static void arrayUnwrapOverflow(
+      TransportNative api, NativeSslContext server, NativeSslContext client) throws Exception {
+    SSLEngine clientEngine = client.newEngine(UnpooledByteBufAllocator.DEFAULT, "localhost", 443);
+    SSLEngine serverEngine = server.newEngine(UnpooledByteBufAllocator.DEFAULT);
+    try {
+      handshake(clientEngine, serverEngine);
+      ByteBuffer payload = ByteBuffer.allocate(10000);
+      for (int i = 0; i < payload.capacity(); i++) payload.put(i, (byte) (i * 31 + 7));
+      ByteBuffer wire = ByteBuffer.allocateDirect(65536);
+      SSLEngineResult wrapped = clientEngine.wrap(payload, wire);
+      wire.flip();
+      long recordLength = wrapped.bytesProduced();
+      // Control: a single too-small destination reports overflow (matching the 2-arg unwrap).
+      ByteBuffer small = ByteBuffer.allocate(100);
+      SSLEngineResult control = serverEngine.unwrap(wire, new ByteBuffer[] {small}, 0, 1);
+      require(
+          control.getStatus() == SSLEngineResult.Status.BUFFER_OVERFLOW,
+          "single small destination reports overflow: " + control.getStatus());
+      require(control.bytesConsumed() == 0, "overflow consumes nothing");
+      require(control.bytesProduced() == 0, "overflow produces nothing");
+      require(wire.remaining() == recordLength, "overflow leaves the record on the wire");
+      // Bug case: the first destination is too small, the second has room. The record must be
+      // delivered into the second destination rather than stalling on BUFFER_UNDERFLOW 0/0.
+      ByteBuffer large = ByteBuffer.allocate(65536);
+      SSLEngineResult result = serverEngine.unwrap(wire, new ByteBuffer[] {small, large}, 0, 2);
+      require(
+          result.getStatus() == SSLEngineResult.Status.OK,
+          "array unwrap delivers the record into a room destination: " + result.getStatus());
+      require(result.bytesConsumed() == recordLength, "array unwrap consumed the full record");
+      require(result.bytesProduced() == 10000, "array unwrap produced the full plaintext");
+      require(small.position() == 0, "small destination untouched");
+      large.flip();
+      require(large.remaining() == 10000, "large destination holds the plaintext");
+      for (int i = 0; i < 10000; i++)
+        require(large.get(i) == (byte) (i * 31 + 7), "plaintext byte " + i);
+    } finally {
+      ReferenceCountUtil.release(clientEngine);
+      ReferenceCountUtil.release(serverEngine);
+    }
+    System.out.println("NativeSslEngine array-destination unwrap overflow contract passed");
+  }
+
+  static void handshake(SSLEngine client, SSLEngine server) throws Exception {
+    ByteBuffer empty = ByteBuffer.allocate(0);
+    ByteBuffer toServer = ByteBuffer.allocateDirect(65536);
+    ByteBuffer toClient = ByteBuffer.allocateDirect(65536);
+    client.beginHandshake();
+    server.beginHandshake();
+    for (int round = 0; round < 64; round++) {
+      client.wrap(empty, toServer);
+      drainHandshake(server, toServer);
+      server.wrap(empty, toClient);
+      drainHandshake(client, toClient);
+      if (client.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING
+          && server.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) return;
+    }
+    throw new AssertionError("direct engine handshake stalled");
+  }
+
+  static void drainHandshake(SSLEngine engine, ByteBuffer wire) throws Exception {
+    wire.flip();
+    ByteBuffer sink = ByteBuffer.allocateDirect(65536);
+    while (wire.hasRemaining()) {
+      SSLEngineResult result = engine.unwrap(wire, sink);
+      if (result.bytesConsumed() == 0 && result.bytesProduced() == 0) break;
+    }
+    wire.compact();
   }
 
   static void require(boolean condition, String message) {
