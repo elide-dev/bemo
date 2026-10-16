@@ -3107,6 +3107,90 @@ fn native_h2_free_on_flow_control_stalled_stream_force_resets_and_closes() {
   assert_eq!(elide_transport_owner_release(h.owner), 0);
 }
 
+/// A peer that completes TLS with ALPN `h2` but sends only a partial HTTP/2 client preface
+/// (fewer than 24 bytes) and then closes cleanly via `close_notify` must not leak the accepted
+/// socket forever. The driver's `finish_shutdown` path transitions the pending h2 handshake to
+/// `State::Closed` so `is_closed()` becomes true, the TLS lane closes, and `EVENT_CLOSED` fires.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_tls_partial_preface_and_close_notify_closes_the_socket() {
+  use rustls::pki_types::ServerName;
+  use std::sync::Arc;
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let peer = h.peer.try_clone().unwrap();
+  let client = std::thread::spawn(move || {
+    let client = rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+    let mut stream = rustls::StreamOwned::new(client, peer);
+    // Send only 9 of the 24-byte HTTP/2 client preface, then half-close cleanly.
+    stream.write_all(b"PRI * HTT").unwrap();
+    stream.conn.send_close_notify();
+    stream.flush().unwrap();
+    let mut reply = Vec::new();
+    let _ = stream.read_to_end(&mut reply);
+  });
+  // The server must observe EVENT_CLOSED within a bounded number of polls — not leak forever.
+  let deadline = Instant::now() + Duration::from_secs(10);
+  loop {
+    if h.pending.iter().any(|event| event.kind == EVENT_CLOSED) {
+      break;
+    }
+    assert!(
+      Instant::now() < deadline,
+      "EVENT_CLOSED never fired; partial-preface socket leaked"
+    );
+    h.poll(200_000_000);
+  }
+  h.take(EVENT_CLOSED, 1);
+  // No request should have been dispatched (the handshake never completed).
+  assert!(!h.pending.iter().any(|event| event.kind == EVENT_REQUEST));
+  client.join().unwrap();
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
+/// A peer that completes TLS with ALPN `h2` but sends only a single byte of the HTTP/2 client
+/// preface (1 of 24) and then closes cleanly via `close_notify` must not leak the accepted socket
+/// forever. This exercises the boundary where the h2 handshake has received input but cannot
+/// complete, and the TLS-lane deadline is already disarmed.
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_h2_tls_single_byte_preface_and_close_notify_closes_the_socket() {
+  use rustls::pki_types::ServerName;
+  use std::sync::Arc;
+  let (mut h, config) = tls_fixture_with_protocol(&[&rustls::version::TLS13], b"h2");
+  let peer = h.peer.try_clone().unwrap();
+  let client = std::thread::spawn(move || {
+    let client = rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+    let mut stream = rustls::StreamOwned::new(client, peer);
+    // Send only the first byte of the 24-byte HTTP/2 client preface, then half-close cleanly.
+    stream.write_all(b"P").unwrap();
+    stream.conn.send_close_notify();
+    stream.flush().unwrap();
+    let mut reply = Vec::new();
+    let _ = stream.read_to_end(&mut reply);
+  });
+  let deadline = Instant::now() + Duration::from_secs(10);
+  loop {
+    if h.pending.iter().any(|event| event.kind == EVENT_CLOSED) {
+      break;
+    }
+    assert!(
+      Instant::now() < deadline,
+      "EVENT_CLOSED never fired; single-byte-preface socket leaked"
+    );
+    h.poll(200_000_000);
+  }
+  h.take(EVENT_CLOSED, 1);
+  assert!(!h.pending.iter().any(|event| event.kind == EVENT_REQUEST));
+  client.join().unwrap();
+  assert_eq!(elide_transport_driver_release(h.driver), 0);
+  assert_eq!(elide_transport_buffer_release(h.batch), 0);
+  assert_eq!(elide_transport_owner_used(h.owner), 0);
+  assert_eq!(elide_transport_owner_release(h.owner), 0);
+}
+
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn parsed_header_metadata_is_advertised_and_preserves_first_host() {
