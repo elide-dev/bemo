@@ -1091,6 +1091,41 @@ mod tests {
     assert!(error.to_string().contains("overflow"));
   }
 
+  /// A destination too small for a complete application-data record triggers a pre-check overflow
+  /// that decrypts nothing and queues no plaintext, so a subsequent zero-length drain reports
+  /// underflow. The Rust-side contract the Java array-destination drain loop relies on: it must
+  /// not read the drain's underflow as the genuine status, and the record stays decryptable.
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn engine_pre_check_overflow_queues_no_plaintext_and_empty_drain_underflows() {
+    let (mut client, mut server) = pair(&[&rustls::version::TLS13], "localhost");
+    handshake(&mut client, &mut server);
+    let payload: Vec<u8> = (0..10_000u32).map(|i| (i * 31 + 7) as u8).collect();
+    let mut wire = Vec::new();
+    assert_eq!(drain(&mut client, &payload, &mut wire).unwrap(), payload.len());
+    assert!(!wire.is_empty());
+    let record_len = wire.len();
+    let mut small = vec![0u8; 100];
+    let overflow = server.unwrap(Input::Shared(&wire), &mut small).unwrap();
+    assert_eq!(overflow.status, Status::BufferOverflow);
+    assert_eq!(overflow.consumed, 0);
+    assert_eq!(overflow.produced, 0);
+    assert!(
+      small.iter().all(|byte| *byte == 0),
+      "pre-check overflow decrypts nothing"
+    );
+    let drain = server.unwrap(Input::Shared(&[]), &mut small).unwrap();
+    assert_eq!(drain.status, Status::BufferUnderflow);
+    assert_eq!(drain.consumed, 0);
+    assert_eq!(drain.produced, 0);
+    let mut large = vec![0u8; MAX_RECORD];
+    let outcome = server.unwrap(Input::Shared(&wire), &mut large).unwrap();
+    assert_eq!(outcome.status, Status::Ok);
+    assert_eq!(outcome.consumed, record_len);
+    assert_eq!(outcome.produced, payload.len());
+    assert_eq!(&large[..payload.len()], &payload[..]);
+  }
+
   #[test]
   #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
   fn engine_retains_fragmented_handshake_records() {
