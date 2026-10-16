@@ -314,7 +314,8 @@ def test_transport(native_image=False, reports=None, agent=(), native=None, env=
   else:
     for contract in ("FfmTransportTest", "NativeByteBufTest", "NativeChannelTest", "NativeLifecycleTest",
                      "NativeTlsChannelTest", "NativeTlsNegativeTest", "NativeTlsOrderingTest",
-                     "NativeTlsClosePromiseTest", "NativeTransferTest", "NativeJfrTest",
+                     "NativeTlsClosePromiseTest", "NativeTlsDoubleCloseTest",
+                     "NativeTransferTest", "NativeJfrTest",
                      "NativeReentrantCloseTest", "NativeReceiveAllocatorTest", "NativeSslEngineTest",
                      "NativeSslInteropTest", "NativeSslPolicyTest", "NativeDirectAllocatorTest",
                      "StandaloneTransportCheck", "NativeHttpServerTest", "NativeHttpWorkersTest"):
