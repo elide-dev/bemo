@@ -1590,7 +1590,12 @@ pub unsafe fn elide_transport_http_respond(
     _ if stream => &[],
     Ok(0) => &[],
     // SAFETY: The ABI caller guarantees length readable bytes for the duration of this call.
-    Ok(length) if !body.is_null() => unsafe { std::slice::from_raw_parts(body, length) },
+    // No caller can ever make more than `isize::MAX` bytes readable, so reject impossible
+    // lengths (including the `u64::MAX` "unknown length" sentinel used only with streaming)
+    // before forming a slice that `slice::from_raw_parts` cannot soundly describe.
+    Ok(length) if length <= isize::MAX as usize && !body.is_null() => unsafe {
+      std::slice::from_raw_parts(body, length)
+    },
     _ => return INVALID,
   };
   let headers: Vec<ResponseHeader<'_>> = (0..count as usize)

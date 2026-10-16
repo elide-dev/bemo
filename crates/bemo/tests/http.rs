@@ -3716,6 +3716,57 @@ fn http_calls_validate_arguments_before_touching_the_exchange() {
 
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn respond_rejects_impossible_body_length_without_streaming_instead_of_ub() {
+  let mut h = harness();
+  h.peer
+    .write_all(b"GET / HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n")
+    .unwrap();
+  let exchange = h.take(EVENT_REQUEST, 1)[0].value;
+  let body = [0u8; 4];
+
+  // `u64::MAX` is the documented "unknown length" sentinel, but only alongside `RESPOND_STREAM`.
+  // Without the flag it must be rejected with `INVALID` rather than forming a slice larger than
+  // `isize::MAX`, which `slice::from_raw_parts` cannot soundly describe and no caller can ever
+  // satisfy the safety contract for.
+  assert_eq!(
+    // SAFETY: The exchange lease and body storage remain live; the oversized length is rejected before any read.
+    unsafe { elide_transport_http_respond(h.driver, exchange, 200, std::ptr::null(), 0, body.as_ptr(), u64::MAX, 0,) },
+    INVALID,
+    "u64::MAX body length without RESPOND_STREAM must be rejected, not UB"
+  );
+  // Any length above `isize::MAX` is equally impossible to satisfy and must be rejected the same way.
+  assert_eq!(
+    // SAFETY: The exchange lease and body storage remain live; the oversized length is rejected before any read.
+    unsafe {
+      elide_transport_http_respond(
+        h.driver,
+        exchange,
+        200,
+        std::ptr::null(),
+        0,
+        body.as_ptr(),
+        (isize::MAX as u64) + 1,
+        0,
+      )
+    },
+    INVALID,
+    "body length above isize::MAX without RESPOND_STREAM must be rejected, not UB"
+  );
+
+  // The rejected calls must not have corrupted the exchange: a normal respond still works.
+  respond(h.driver, exchange, 200, &[], b"ok");
+  h.take(EVENT_CLOSED, 1);
+  let mut got = Vec::new();
+  h.peer.read_to_end(&mut got).unwrap();
+  let text = String::from_utf8_lossy(&got);
+  assert!(text.starts_with("HTTP/1.1 200 OK\r\n"), "{text}");
+  assert!(text.ends_with("\r\n\r\nok"), "{text}");
+  assert_eq!(elide_transport_http_free(h.driver, exchange), 0);
+  h.finish();
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn native_h2_streams_request_bodies_and_rejects_unsupported_expectations_natively() {
   use rustls::pki_types::ServerName;
   use std::future::Future;
