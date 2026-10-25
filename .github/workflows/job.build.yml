@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Harden runner
         if: runner.os == 'Linux'
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
       - name: Checkout
@@ -26,7 +26,7 @@ jobs:
         run: python3 -c 'import json; print("version=" + json.load(open("tools/versions.json"))["llvm"]["toolchain_version"])' >> "$GITHUB_OUTPUT"
       - name: Install Elide native toolchain
         id: native-toolchain
-        uses: elide-dev/toolchain/action@53b07cdc93ca8d9ba1be65725aa3362e1d4c1c09
+        uses: elide-dev/toolchain/action@171eb7cde379e17822e042cfbda26c9740c10b03
         with:
           version: ${{ steps.native-version.outputs.version }}
           target: ${{ runner.os == 'Linux' && 'x86_64-unknown-linux-gnu' || 'arm64-apple-darwin' }}
