@@ -58,8 +58,13 @@ public final class NativeServerSocketChannel extends NativeChannel implements Se
   @Override
   void beginNativeRead() {
     if (!active || accept != 0 || !(readRequested || settings.isAutoRead())) return;
-    accept = io().api.socketAccept(workload, io().driver(), socket);
-    if (accept == 0) throw new NativeTransportException("Native accept admission failed");
+    long pending = io().api.socketAccept(workload, io().driver(), socket);
+    // Admission rejection (the driver's transient operation limit is reached) yields 0, not a
+    // negative completion. Returning instead of throwing keeps the listener open: a throw
+    // propagates to NativeUnsafe.handle (or AbstractUnsafe.beginRead) and force-closes the
+    // server channel. Arming retries on the next doBeginRead / auto-read once capacity frees.
+    if (pending == 0) return;
+    accept = pending;
   }
 
   @Override
@@ -67,7 +72,18 @@ public final class NativeServerSocketChannel extends NativeChannel implements Se
     if (event.kind != 2 || event.operation != accept) return;
     accept = 0;
     if (!open) return;
-    if (event.result < 0) throw NativeTransportException.operation("accept", event.result);
+    if (event.result < 0) {
+      // A failed accept is a per-connection rejection (EMFILE/ENFILE, ECONNABORTED, transport
+      // quota exhaustion), not a listener fault: discard the failed connection and keep
+      // accepting. Mirrors AbstractNioMessageChannel, which catches per-accept IOException
+      // (including "too many open files") and leaves the server channel open. The native side
+      // reports value == 0 on failure, so there is no adopted handle to release here; the
+      // dispatcher discards any non-zero value left on the completion.
+      pipeline().fireExceptionCaught(NativeTransportException.operation("accept", event.result));
+      readRequested = false;
+      beginNativeRead();
+      return;
+    }
     NativeSocketChannel child = new NativeSocketChannel(this, io().api, event.value);
     event.value = 0;
     readRequested = false;
