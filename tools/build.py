@@ -255,7 +255,9 @@ def test_transport(native_image=False, reports=None, agent=(), native=None, env=
                      "NativeTlsClosePromiseTest", "NativeTransferTest", "NativeJfrTest",
                      "NativeReentrantCloseTest", "NativeReceiveAllocatorTest", "NativeSslEngineTest",
                      "NativeSslInteropTest", "NativeSslPolicyTest", "NativeDirectAllocatorTest",
-                     "StandaloneTransportCheck"):
+                     "StandaloneTransportCheck",
+                     "dev.elide.bemo.transport.NativeAcceptResilienceTest",
+                     "dev.elide.bemo.transport.NativeAcceptAdmissionTest"):
       reports.run(contract, [os.environ.get("BEMO_TEST_JAVA", java_tool("java")), *agent,
           "--enable-native-access=ALL-UNNAMED", "-ea", "-cp", classpath([output, *cp]),
           contract, native or library(), cert, key], timeout=90, cwd=ROOT, env=env)
