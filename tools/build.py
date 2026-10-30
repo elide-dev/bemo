@@ -250,7 +250,8 @@ def test_transport(native_image=False, reports=None, agent=(), native=None, env=
         *linker, "CapiTlsChannelTest", binary, timeout=900)
     reports.run("CapiTlsChannelTest", [binary, cert, key], timeout=180, cwd=ROOT)
   else:
-    for contract in ("FfmTransportTest", "NativeByteBufTest", "NativeChannelTest", "NativeLifecycleTest",
+    for contract in ("FfmTransportTest", "NativeByteBufTest", "NativeChannelTest",
+                     "NativeBackpressureTest", "NativeLifecycleTest",
                      "NativeTlsChannelTest", "NativeTlsNegativeTest", "NativeTlsOrderingTest",
                      "NativeTlsClosePromiseTest", "NativeTransferTest", "NativeJfrTest",
                      "NativeReentrantCloseTest", "NativeReceiveAllocatorTest", "NativeSslEngineTest",
