@@ -216,7 +216,15 @@ pub(super) fn drive(state: &mut DriverState, socket: u64, events: &mut VecDeque<
   };
   let tls = http.tls.as_mut().unwrap();
   tls.driving = false;
-  let yielded = !blocked && !tls.wire_sending && (!tls.wire.is_empty() || tls.lane.has_application());
+  // The bounded drive loop can exhaust its 256-iteration budget while complete TLS records
+  // remain undecrypted in the reception lane, queued plaintext waits to feed the parser, or
+  // accepted input waits for admission. `Progress::Blocked` is the only exit that means "no
+  // more work is possible without a receive or transmit completion"; gate on `!blocked` so a
+  // partial trailing record (which needs more network input) does not busy-loop the poll.
+  let pending_input =
+    !blocked && (tls.lane.has_pending_input() || !tls.plaintext.is_empty() || !http.pending_input.is_empty());
+  let yielded =
+    pending_input || (!blocked && !tls.wire_sending && (!tls.wire.is_empty() || tls.lane.has_application()));
   tls.needs_drive = yielded;
   // Multishot EOF may follow ciphertext before the handshake write completes. Drain accepted
   // ciphertext/plaintext first; only close_notify permits preserving delayed responses.

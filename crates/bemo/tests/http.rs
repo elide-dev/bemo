@@ -2582,6 +2582,122 @@ fn native_http_tls_large_response_retries_inline_yields_and_backpressure() {
 
 #[test]
 #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+fn native_http_tls_parses_a_request_split_across_many_small_records_without_a_timer() {
+  use rustls::pki_types::ServerName;
+  use std::io::ErrorKind;
+  use std::sync::Arc;
+  use std::sync::atomic::{AtomicBool, Ordering};
+  // A burst of one-byte TLS records exceeds the bounded drive loop's 256-iteration budget, so a
+  // single drive pass exits on its iteration bound with complete ciphertext still queued in the
+  // reception lane. Before the fix, the exit bookkeeping ignored that input side and set neither
+  // `needs_drive` nor a retry, so a subsequent `poll(timeout_ns = u64::MAX)` with a silent peer
+  // parked indefinitely with the request head undecrypted. No timer or unrelated socket may be
+  // needed to resume progress; the drive pass itself must keep the remaining work runnable.
+  for version in [&rustls::version::TLS13, &rustls::version::TLS12] {
+    let (mut h, config) = tls_fixture_with_versions(&[version]);
+    let peer = h.peer.try_clone().unwrap();
+    let (proceed, wait) = std::sync::mpsc::channel();
+    let client = std::thread::spawn(move || {
+      let mut client =
+        rustls::ClientConnection::new(Arc::new(config), ServerName::try_from("localhost").unwrap()).unwrap();
+      let mut sock = peer;
+      // Complete the handshake before fragmenting the request: while handshaking, rustls holds
+      // app data and would coalesce it into full-size records once the handshake finishes. After
+      // the handshake, each `writer().write_all(&[byte])` followed by `write_tls` emits its own
+      // one-byte application-data record.
+      let mut wire = Vec::new();
+      client.write_tls(&mut wire).unwrap();
+      sock.write_all(&wire).unwrap();
+      let handshake = Instant::now() + Duration::from_secs(10);
+      while client.is_handshaking() {
+        let mut buf = [0; 16384];
+        match sock.read(&mut buf) {
+          Ok(0) => panic!("peer closed during TLS handshake"),
+          Ok(n) => {
+            client.read_tls(&mut &buf[..n]).unwrap();
+          }
+          Err(ref error) if error.kind() == ErrorKind::WouldBlock => {
+            assert!(Instant::now() < handshake, "TLS handshake timed out");
+            std::thread::yield_now();
+            continue;
+          }
+          Err(error) => panic!("TLS handshake read failed: {error}"),
+        }
+        client.process_new_packets().unwrap();
+        wire.clear();
+        client.write_tls(&mut wire).unwrap();
+        if !wire.is_empty() {
+          sock.write_all(&wire).unwrap();
+        }
+      }
+      assert_eq!(client.alpn_protocol(), Some(b"http/1.1".as_slice()));
+      // A request head whose blank line only appears in the final byte. Each byte is its own TLS
+      // record (~22-30 wire bytes), so one 16 KiB receive carries hundreds of records — far more
+      // than a single bounded drive pass decrypts. The head only completes once every record is
+      // decrypted, so no `EVENT_REQUEST` can be emitted while a backlog remains in the lane.
+      let head = format!(
+        "GET /small-records HTTP/1.1\r\nHost: localhost\r\nX-Pad: {}\r\nConnection: close\r\n\r\n",
+        "x".repeat(10_000)
+      );
+      for byte in head.as_bytes() {
+        client.writer().write_all(&[*byte]).unwrap();
+        wire.clear();
+        client.write_tls(&mut wire).unwrap();
+        sock.write_all(&wire).unwrap();
+      }
+      // Stop writing and keep the socket open: the server must drive itself to drain the backlog.
+      wait.recv_timeout(Duration::from_secs(20)).ok();
+      let mut stream = rustls::StreamOwned::new(client, sock);
+      stream.sock.set_read_timeout(Some(Duration::from_secs(5))).ok();
+      let mut reply = Vec::new();
+      stream.read_to_end(&mut reply).unwrap();
+      reply
+    });
+    // Poll with an indefinite timeout. A watchdog wakes the driver if a drive pass stalls on the
+    // undecrypted backlog; with the bug, `needs_poll` is false and no `EVENT_REQUEST` arrives.
+    let expired = Arc::new(AtomicBool::new(false));
+    let timeout = expired.clone();
+    let driver = h.driver;
+    let (finished, waiting) = std::sync::mpsc::channel::<()>();
+    let watchdog = std::thread::spawn(move || {
+      if matches!(
+        waiting.recv_timeout(Duration::from_secs(8)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+      ) {
+        timeout.store(true, Ordering::Release);
+        elide_transport_driver_wake(driver);
+      }
+    });
+    let exchange = loop {
+      if let Some(pos) = h.pending.iter().position(|event| event.kind == EVENT_REQUEST) {
+        break h.pending.remove(pos).value;
+      }
+      h.poll(u64::MAX);
+      assert!(
+        !expired.load(Ordering::Acquire),
+        "TLS request head never parsed; bounded drive stalled on an undecrypted ciphertext backlog"
+      );
+    };
+    drop(finished);
+    watchdog.join().unwrap();
+    assert_eq!(view(exchange, VIEW_PATH, 0), b"/small-records");
+    respond(h.driver, exchange, 200, &[], b"ok");
+    proceed.send(()).unwrap();
+    h.take(EVENT_CLOSED, 1);
+    let reply = client.join().unwrap();
+    let parsed = responses(&reply);
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].1, b"ok");
+    assert_eq!(elide_transport_http_free(h.driver, exchange), 0);
+    assert_eq!(elide_transport_driver_release(h.driver), 0);
+    assert_eq!(elide_transport_buffer_release(h.batch), 0);
+    assert_eq!(elide_transport_owner_used(h.owner), 0);
+    assert_eq!(elide_transport_owner_release(h.owner), 0);
+  }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
 fn freed_pipeline_handles_cannot_replace_queued_responses() {
   let mut h = harness();
   let mut peer = h.peer.try_clone().unwrap();

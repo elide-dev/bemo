@@ -106,6 +106,13 @@ impl Lane {
     self.application.is_some()
   }
 
+  /// Undecrypted ciphertext remains in the reception lane. A bounded drive pass can exhaust its
+  /// iteration budget before draining a backlog of complete records; the exit bookkeeping uses
+  /// this to keep the remaining work runnable instead of waiting for unrelated socket input.
+  pub(crate) fn has_pending_input(&self) -> bool {
+    self.input.as_ref().is_some_and(|buffer| IoBuf::buf_len(buffer) > 0)
+  }
+
   pub(crate) fn transmitted(&mut self) {
     assert!(self.waiting);
     self.waiting = false;
@@ -612,5 +619,18 @@ mod tests {
     assert_eq!(&received[..1000], &[b'a'; 1000]);
     assert_eq!(&received[1000..2000], &[b'b'; 1000]);
     assert_eq!(&received[2000..], &[b'c'; 1000]);
+  }
+
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn has_pending_input_reports_undecrypted_ciphertext_held_in_the_reception_lane() {
+    let (mut lane, _client) = pair();
+    assert!(!lane.has_pending_input(), "a fresh lane holds no ciphertext");
+    // `feed` accepts ciphertext into the private input buffer; the lane has not decrypted any of it,
+    // so the pending-input predicate must hold until a `progress` pass drains it.
+    lane
+      .feed(bytes(b"undecrypted ciphertext queued behind the bounded drive budget"))
+      .unwrap();
+    assert!(lane.has_pending_input());
   }
 }
