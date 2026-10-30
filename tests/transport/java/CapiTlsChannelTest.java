@@ -17,6 +17,7 @@ public final class CapiTlsChannelTest {
     NativeTlsChannelTest.verify(api, cert, key);
     NativeTlsNegativeTest.verify(api, cert, key);
     NativeTlsOrderingTest.verify(api, cert, key);
+    NativeTlsWorkloadTest.verify(api, cert, key);
     NativeTransferTest.verify(api, cert, key);
     NativeReceiveAllocatorTest.verify(api, cert, key);
     NativeJfrTest.verify(api, cert, key);
