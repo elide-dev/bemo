@@ -190,6 +190,9 @@ def jvm():
 
 
 def java_tool(name):
+  if name == "native-image":
+    import setup_graalvm
+    return setup_graalvm.home() / "bin/native-image"
   home = os.environ.get("JAVA_HOME")
   if home:
     suffix = ".exe" if os.name == "nt" else ""
@@ -259,6 +262,8 @@ def ffm_contracts(reports, native, agent=(), env=None, cc=None):
 
 
 def test_native_image():
+  import setup_graalvm
+  os.environ["JAVA_HOME"] = str(setup_graalvm.home())
   rust()
   jvm()
   test_root = ROOT / "tests/java/dev/elide/bemo"

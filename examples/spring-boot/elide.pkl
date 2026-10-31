@@ -32,6 +32,10 @@ sources {
 
 dependencies {
   maven {
+    repositories {
+      ["gvm-elide"] = "https://maven.elide.dev/gvm-elide/\(versions.graalvm_sdk)"
+      ["central"] = "https://repo1.maven.org/maven2/"
+    }
     runtimeOnly {
       "../../build/examples/netty-native.jar"
       "../../build/examples/bemo-native.jar"

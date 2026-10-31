@@ -81,7 +81,7 @@ class BemoEngine(
         val port = server.start().toCompletableFuture().join()
         resolved.add(connector.withPort(port))
         println(
-            "Bemo native HTTP: backend=${api.javaClass.name} port=$port tls=${configuration.certificatePem != null}"
+            "Bemo native HTTP: backend=${api.javaClass.name} port=$port tls=${configuration.certificatePem != null}",
         )
       }
       resolvedConnectorsDeferred.complete(resolved)
@@ -203,7 +203,7 @@ private class BemoRequest(
 
               override fun onNext(bytes: ByteArray) {
                 CoroutineScope(nativeCall.coroutineContext).launch(
-                    start = CoroutineStart.UNDISPATCHED
+                    start = CoroutineStart.UNDISPATCHED,
                 ) {
                   try {
                     channel.writeFully(bytes)
@@ -223,7 +223,7 @@ private class BemoRequest(
               override fun onComplete() {
                 channel.close()
               }
-            }
+            },
         )
   }
 
@@ -291,7 +291,7 @@ private class BemoResponse(
                   if (cancelled) return
                   if (n != 1L) {
                     subscriber.onError(
-                        IllegalArgumentException("one native response credit required")
+                        IllegalArgumentException("one native response credit required"),
                     )
                     return
                   }
@@ -311,7 +311,7 @@ private class BemoResponse(
                   cancelled = true
                   if (!channel.isClosedForWrite) channel.cancel()
                 }
-              }
+              },
           )
         }
     send(publisher, values[HttpHeaders.ContentLength]?.toLongOrNull() ?: -1)

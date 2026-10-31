@@ -19,7 +19,6 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          distribution: graalvm
           java: '25'
       - name: Test statically linked C API
         run: make test-native-image

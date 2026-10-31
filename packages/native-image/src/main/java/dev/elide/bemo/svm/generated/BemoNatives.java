@@ -17,7 +17,7 @@ public final class BemoNatives {
   private BemoNatives() {}
 
   public static final String ABI_FINGERPRINT =
-      "0b39e670698b4289c7a82008ca3f05929882cb12b505d03209cbea0d8b3dc58e";
+      "7457763aef4845f54949461dca4ca610d01e7dab6231bc9fe16bafe071a5879e";
 
   public static final class elide_transport_buffer_view_t {
     private elide_transport_buffer_view_t() {}

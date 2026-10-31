@@ -20,7 +20,12 @@ make test
 make test-native-image
 ```
 
-The build obtains the generator revision recorded in `tools/versions.json`.
+The build pins Myna 0.6.0 and Elide 1.6.1 in `tools/versions.json`.
+`make test-native-image` provisions the checksummed GraalVM
+`25.5.5-elide.21` distribution matching the SDK dependencies. The SDK artifacts
+come from `https://maven.elide.dev/gvm-elide/25.5.5-elide.21`; Native Image
+consumers must configure this Maven repository. API and FFM artifacts remain
+independent of GraalVM.
 It compiles only the dependency-free generator CLI’s tracked sources through
 Elide, then checks the
 committed `BemoNatives.java` against fresh generation. C signatures, Rust export

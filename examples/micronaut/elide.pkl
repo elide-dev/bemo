@@ -46,6 +46,10 @@ sources {
 
 dependencies {
   maven {
+    repositories {
+      ["gvm-elide"] = "https://maven.elide.dev/gvm-elide/\(versions.graalvm_sdk)"
+      ["central"] = "https://repo1.maven.org/maven2/"
+    }
     processors {
       "io.micronaut:micronaut-inject-java:4.10.30"
       "io.micronaut:micronaut-graal:4.10.30"

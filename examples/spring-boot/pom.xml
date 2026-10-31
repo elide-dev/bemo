@@ -9,11 +9,11 @@
   <properties>
     <maven.compiler.release>22</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <graalvm-sdk.version>25.3.4.1</graalvm-sdk.version>
-    <bemo.version>0.3.0</bemo.version>
+    <graalvm-sdk.version>25.5.5-elide.21</graalvm-sdk.version>
+    <bemo.version>0.4.0</bemo.version>
     <tcnative.version>2.0.84.Final</tcnative.version>
-    <netty.version>4.2.18.Final</netty.version>
-    <spring-boot.version>4.1.1</spring-boot.version>
+    <netty.version>4.2.19.Final</netty.version>
+    <spring-boot.version>4.1.2</spring-boot.version>
     <micronaut.version>4.10.30</micronaut.version>
     <netty.arch>${os.detected.arch}</netty.arch>
     <bemo.arch>${os.detected.arch}</bemo.arch>
@@ -24,6 +24,10 @@
     <bemo.gzip.level>1</bemo.gzip.level>
   </properties>
   <repositories>
+    <repository>
+      <id>gvm-elide</id>
+      <url>https://maven.elide.dev/gvm-elide/${graalvm-sdk.version}</url>
+    </repository>
     <repository>
       <id>bemo-examples-local</id>
       <url>file://${project.basedir}/../../build/examples/maven</url>

@@ -1,17 +1,17 @@
 {
-  "elide": "1.5.4+20260921",
+  "elide": "1.6.1",
   "java": 25,
   "jvm_release": 22,
-  "graalvm_sdk": "25.3.4.1",
+  "graalvm_sdk": "25.5.5-elide.21",
   "java_format": "1.28.0",
-  "netty": "4.2.18.Final",
+  "netty": "4.2.19.Final",
   "jacoco": "0.8.15",
   "nextest": "0.9.135",
   "llvm_cov": "0.8.7",
   "codspeed": "5.0.2",
   "fuzz": "0.13.1",
-  "error_prone": "2.50.0",
-  "nullaway": "0.14.2",
+  "error_prone": "2.51.0",
+  "nullaway": "0.14.3",
   "jspecify": "1.0.1",
   "checker": "4.3.0",
   "nullaway_dataflow": "4.2.3",
@@ -44,12 +44,25 @@
   },
   "myna": {
     "repository": "https://github.com/elide-dev/myna.git",
-    "revision": "34a0213e0ce05a7d46d351e2208ed9518b802a98"
+    "revision": "66ee758fa3073cfac1dc386510105e41f219bad3"
   },
-  "ktor": "3.6.0",
-  "kotlin": "2.4.20",
+  "ktor": "3.6.1",
+  "kotlin": "2.4.21",
   "tcnative": "2.0.84.Final",
-  "spring": "7.0.9",
-  "reactor": "3.8.7",
-  "spring_boot": "4.1.1"
+  "spring": "7.0.10",
+  "reactor": "3.8.8",
+  "spring_boot": "4.1.2",
+  "graalvm": {
+    "version": "25.5.5-elide.21",
+    "archives": {
+      "aarch64-apple-darwin": {
+        "url": "https://maven.elide.dev/gvm-elide/25.5.5-elide.21/dist/graalvm-ee-25.5.5-elide.21-macos-aarch64.tar.gz",
+        "sha256": "7ec06b440e5365255371cfcb73e0fbfed5519d475c6fc9e49d06f4512633bf0e"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://maven.elide.dev/gvm-elide/25.5.5-elide.21/dist/graalvm-ee-25.5.5-elide.21-linux-amd64.tar.gz",
+        "sha256": "1100390d588667a288d7d2e51db56ab88c8858874d0f2f602387166370d19ea3"
+      }
+    }
+  }
 }

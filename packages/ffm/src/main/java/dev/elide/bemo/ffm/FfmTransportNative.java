@@ -28,6 +28,8 @@ public final class FfmTransportNative implements TransportNative, AutoCloseable 
    *
    * @param library native library produced by Cargo for this platform
    */
+  // Ownership transfers to this AutoCloseable; failed construction closes the arena below.
+  @SuppressWarnings("MustBeClosedChecker")
   public FfmTransportNative(Path library) {
     arena = Arena.ofShared();
     try {
