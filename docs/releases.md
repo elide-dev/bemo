@@ -109,3 +109,13 @@ No additional long-lived automation token is required.
 References: [GitHub immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases),
 [artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations),
 and [SLSA Build requirements](https://slsa.dev/spec/v1.2/build-requirements).
+
+## Recover Maven publication after a publisher fix
+
+An immutable GitHub release can succeed before a Maven publisher fails. Fix the
+publisher on main, then dispatch `on.central.yml` and/or `on.packages.yml` with
+its `version` input (without `v`). Both recovery paths authenticate the existing
+release and its provenance; they do not rebuild or modify its tag or assets.
+The GitHub Packages recovery workflow is restricted to main and the release
+environment. Publication validates the version-specific module inventory:
+releases before 0.4.0 have four modules; 0.4.0 adds Bali, Spring, and Ktor.

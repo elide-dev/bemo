@@ -1,0 +1,35 @@
+name: Recover GitHub Packages release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing immutable GitHub release version (without v)
+        required: true
+        type: string
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: github-packages-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  packages:
+    if: github.repository == 'elide-dev/bemo' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.5
+      - name: Authenticate and publish immutable release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python3 tools/publish_packages.py recover --version "$RELEASE_VERSION"

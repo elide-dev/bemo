@@ -1,5 +1,6 @@
 """Validate cross-platform package merging and deployment without credentials."""
 import hashlib
+import io
 import os
 from pathlib import Path
 import tempfile
@@ -11,25 +12,46 @@ import publish_packages as packages
 
 
 class PackagePublishingTest(unittest.TestCase):
-  def bundles(self, source, changed=None):
+  def bundles(self, source, changed=None, value="0.1.0-SNAPSHOT"):
     for platform in packages.release.PLATFORMS.values():
       contents = {}
-      for name in packages.artifacts("0.1.0-SNAPSHOT", platform):
+      for name in packages.artifacts(value, platform):
         if name.endswith(".pom"):
           artifact = name.split("/")[-3]
           content = (f'<project xmlns="http://maven.apache.org/POM/4.0.0"><groupId>dev.elide.bemo</groupId>'
-                     f'<artifactId>{artifact}</artifactId><version>0.1.0-SNAPSHOT</version>'
+                     f'<artifactId>{artifact}</artifactId><version>{value}</version>'
                      '<packaging>jar</packaging></project>').encode()
         else:
           content = name.encode()
         contents[name] = content
       if changed:
         changed(contents, platform)
-      with zipfile.ZipFile(source / f"bemo-0.1.0-SNAPSHOT-{platform}-unsigned.zip", "w") as archive:
+      with zipfile.ZipFile(source / f"bemo-{value}-{platform}-unsigned.zip", "w") as archive:
         for name, content in contents.items():
           archive.writestr(name, content)
           for algorithm in packages.CHECKSUMS:
             archive.writestr(f"{name}.{algorithm}", hashlib.new(algorithm, content).hexdigest() + "\n")
+
+  def test_framework_modules_are_merged_and_deployed_for_0_4_0(self):
+    modules = {"api", "ffm", "netty", "native-image", "bali", "spring", "ktor"}
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      self.bundles(root, value="0.4.0")
+      output = packages.merge(root, root / "merged", "0.4.0")
+      self.assertEqual({p.name for p in (output / "dev/elide/bemo").iterdir()},
+                       {"bemo-" + module for module in modules})
+    with patch.object(packages.subprocess, "run") as run:
+      packages.deploy(Path("repository"), "0.4.0", Path("settings.xml"))
+    self.assertEqual(run.call_count, 7)
+    for module in ("bali", "spring", "ktor"):
+      command = next(c.args[0] for c in run.call_args_list
+                     if f"-Dfile=repository/dev/elide/bemo/bemo-{module}/0.4.0/bemo-{module}-0.4.0.jar" in c.args[0])
+      self.assertIn("-Dclassifiers=sources,javadoc", command)
+
+  def test_historical_releases_keep_the_four_module_inventory(self):
+    for value in ("0.2.0", "0.3.0"):
+      self.assertEqual({name.split("/")[3] for name in packages.artifacts(value)},
+                       {"bemo-api", "bemo-ffm", "bemo-netty", "bemo-native-image"})
 
   def test_merge_retains_every_native_classifier_and_common_artifact(self):
     with tempfile.TemporaryDirectory() as directory:
@@ -39,6 +61,31 @@ class PackagePublishingTest(unittest.TestCase):
       expected = set().union(*(packages.artifacts("0.1.0-SNAPSHOT", platform)
                                for platform in packages.release.PLATFORMS.values()))
       self.assertEqual({str(p.relative_to(output)) for p in output.rglob("*") if p.is_file()}, expected)
+
+  def test_equivalent_jars_keep_original_linux_bytes_and_reject_content_changes(self):
+    target = "dev/elide/bemo/bemo-api/0.4.0/bemo-api-0.4.0.jar"
+    for corruption in (None, "content", "duplicate"):
+      with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        originals = {}
+        def change(contents, platform):
+          stream = io.BytesIO()
+          with zipfile.ZipFile(stream, "w") as archive:
+            info = zipfile.ZipInfo("Example.class", (2026, 1, 1 if platform.startswith("linux") else 2, 0, 0, 0))
+            payload = b"class bytes"
+            if corruption == "content" and platform.startswith("osx"):
+              payload = b"changed class"
+            archive.writestr(info, payload)
+            if corruption == "duplicate" and platform.startswith("osx"):
+              archive.writestr(info, payload)
+          contents[target] = originals[platform] = stream.getvalue()
+        self.bundles(root, change, value="0.4.0")
+        if corruption:
+          with self.assertRaisesRegex(RuntimeError, "differ between platforms"):
+            packages.merge(root, root / "merged", "0.4.0")
+        else:
+          output = packages.merge(root, root / "merged", "0.4.0")
+          self.assertEqual((output / target).read_bytes(), originals["linux-x86_64-gnu"])
 
   def test_common_artifact_difference_rejects_before_output_changes(self):
     with tempfile.TemporaryDirectory() as directory:
@@ -115,13 +162,32 @@ class PackagePublishingTest(unittest.TestCase):
       packages.publish(Path("repository"), "0.1.0-SNAPSHOT")
       verify.assert_called_once()
 
+  def test_manual_publication_authenticates_immutable_release_before_deploy(self):
+    environment = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+                   "GITHUB_REPOSITORY": "elide-dev/bemo", "GH_TOKEN": "private-token", "GITHUB_ACTOR": "actor"}
+    with tempfile.TemporaryDirectory() as directory:
+      repository = Path(directory) / "maven"
+      with patch.dict(os.environ, environment), \
+           patch("publish_central.fetch_release") as fetch, patch.object(packages, "merge") as merge, \
+           patch.object(packages, "deploy") as deploy, patch.object(packages, "verify_remote"):
+        packages.publish(repository, "0.4.0")
+        fetch.assert_called_once_with(repository.parent / "release", "0.4.0")
+        merge.assert_called_once_with(repository.parent / "release", repository, "0.4.0")
+        deploy.assert_called_once()
+      with patch.dict(os.environ, environment), \
+           patch("publish_central.fetch_release", side_effect=RuntimeError("invalid provenance")), \
+           patch.object(packages, "deploy") as deploy:
+        with self.assertRaisesRegex(RuntimeError, "invalid provenance"):
+          packages.publish(repository, "0.4.0")
+        deploy.assert_not_called()
+
   def test_snapshot_verification_resolves_timestamped_names_and_rejects_changed_bytes(self):
     with tempfile.TemporaryDirectory() as directory:
       root = Path(directory)
       self.bundles(root)
       output = packages.merge(root, root / "merged", "0.1.0-SNAPSHOT")
       remote = {}
-      for module in packages.MODULES:
+      for module in packages.modules("0.1.0-SNAPSHOT"):
         artifact = f"bemo-{module}"
         path = f"dev/elide/bemo/{artifact}/0.1.0-SNAPSHOT"
         entries = []

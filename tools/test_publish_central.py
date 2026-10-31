@@ -45,6 +45,19 @@ class CentralPublishingTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "unexpected"):
           central.validate_bundle(bundle, "0.2.0")
 
+  def test_framework_release_has_seven_signed_modules(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      with patch.object(central.packages, "merge", side_effect=self.repository), \
+           patch.object(central.subprocess, "run", side_effect=self.sign):
+        bundle = central.prepare(root, root / "bundle.zip", "0.4.0", "fingerprint")
+        central.validate_bundle(bundle, "0.4.0")
+      with zipfile.ZipFile(bundle) as archive:
+        for module in ("api", "ffm", "netty", "native-image", "bali", "spring", "ktor"):
+          prefix = f"dev/elide/bemo/bemo-{module}/0.4.0/bemo-{module}-0.4.0"
+          self.assertIn(prefix + ".pom.asc", archive.namelist())
+          self.assertIn(prefix + ".jar.asc", archive.namelist())
+
   @unittest.skipUnless(shutil.which("gpg"), "GPG is not installed")
   def test_real_gpg_signatures_reject_tampered_artifacts(self):
     with tempfile.TemporaryDirectory() as directory:
@@ -204,7 +217,7 @@ class CentralPublishingTest(unittest.TestCase):
   def test_deploy_resumes_saved_upload_after_interrupted_validation(self):
     deployment = "28570f16-da32-4c14-bd2e-c1acc0782365"
     missing = urllib.error.HTTPError("https://repo.maven.apache.org", 404, "not found", {}, None)
-    purls = [f"pkg:maven/dev.elide.bemo/bemo-{module}@0.3.0" for module in central.packages.MODULES]
+    purls = [f"pkg:maven/dev.elide.bemo/bemo-{module}@0.3.0" for module in central.packages.modules("0.3.0")]
     with tempfile.TemporaryDirectory() as directory:
       root = Path(directory)
       bundle = self.deployment_bundle(root)

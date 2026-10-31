@@ -3,8 +3,10 @@
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,15 +20,24 @@ import zipfile
 import build
 import release
 
-MODULES = ("api", "ffm", "netty", "native-image")
+LEGACY_MODULES = ("api", "ffm", "netty", "native-image")
+MODULES = build.MODULES
 CHECKSUMS = ("md5", "sha1", "sha256", "sha512")
 REGISTRY = "https://maven.pkg.github.com/elide-dev/bemo"
 DEPLOY_GOAL = "org.apache.maven.plugins:maven-deploy-plugin:3.2.0:deploy-file"
 
 
+def modules(value):
+  match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-SNAPSHOT)?", value)
+  if match is None:
+    raise ValueError("Unsupported Maven release version")
+  # Framework adapters first shipped in 0.4.0; retain recovery of older releases.
+  return MODULES if tuple(map(int, match.groups())) >= (0, 4, 0) else LEGACY_MODULES
+
+
 def artifacts(value, platform=None, *, include_thinlto=True):
   names = set()
-  for module in MODULES:
+  for module in modules(value):
     prefix = f"dev/elide/bemo/bemo-{module}/{value}/bemo-{module}-{value}"
     names.update(prefix + suffix for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"))
     if platform and module in ("ffm", "native-image"):
@@ -34,6 +45,20 @@ def artifacts(value, platform=None, *, include_thinlto=True):
       if module == "native-image" and include_thinlto:
         names.add(f"{prefix}-{platform}-thinlto.jar")
   return names
+
+
+def same_jar_contents(left, right):
+  """Ignore ZIP serialization differences, but never differing or ambiguous members."""
+  def members(content):
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+      names = archive.namelist()
+      if len(names) != len(set(names)):
+        raise ValueError("Duplicate JAR members")
+      return {name: archive.read(name) for name in names}
+  try:
+    return members(left) == members(right)
+  except (zipfile.BadZipFile, ValueError):
+    return False
 
 
 def merge(source, destination, value, *, include_thinlto=True):
@@ -51,10 +76,13 @@ def merge(source, destination, value, *, include_thinlto=True):
         for algorithm in CHECKSUMS:
           if archive.read(f"{name}.{algorithm}").decode().strip() != hashlib.new(algorithm, content).hexdigest():
             raise RuntimeError(f"Invalid {algorithm} checksum: {name}")
-        if name in merged and merged[name] != content:
-          raise RuntimeError(f"Common Maven artifacts differ between platforms: {name}")
+        if name in merged:
+          if merged[name] != content and not (name.endswith(".jar") and same_jar_contents(merged[name], content)):
+            raise RuntimeError(f"Common Maven artifacts differ between platforms: {name}")
+          # Keep the original Linux JAR bytes covered by its release attestation.
+          continue
         merged[name] = content
-  for module in MODULES:
+  for module in modules(value):
     name = f"dev/elide/bemo/bemo-{module}/{value}/bemo-{module}-{value}.pom"
     pom = ET.fromstring(merged[name])
     ns = {"m": "http://maven.apache.org/POM/4.0.0"}
@@ -71,7 +99,7 @@ def merge(source, destination, value, *, include_thinlto=True):
 
 
 def deploy(repository, value, settings, url=REGISTRY):
-  for module in MODULES:
+  for module in modules(value):
     prefix = repository / f"dev/elide/bemo/bemo-{module}/{value}/bemo-{module}-{value}"
     classifiers = ["sources", "javadoc"]
     if module in ("ffm", "native-image"):
@@ -98,7 +126,7 @@ def read_remote(url, headers):
 
 
 def verify_remote(repository, value, headers, url=REGISTRY):
-  for module in MODULES:
+  for module in modules(value):
     artifact = f"bemo-{module}"
     directory = f"dev/elide/bemo/{artifact}/{value}"
     versions = {}
@@ -144,11 +172,19 @@ def select():
 
 
 def publish(repository, value):
-  if (os.environ.get("GITHUB_EVENT_NAME"), os.environ.get("GITHUB_REF"), os.environ.get("GITHUB_REPOSITORY")) != (
-      "push", "refs/heads/main", "elide-dev/bemo"):
-    raise RuntimeError("GitHub Packages publication requires a verified main push")
+  event = os.environ.get("GITHUB_EVENT_NAME")
+  if event not in ("push", "workflow_dispatch") or (
+      os.environ.get("GITHUB_REF"), os.environ.get("GITHUB_REPOSITORY")) != (
+      "refs/heads/main", "elide-dev/bemo"):
+    raise RuntimeError("GitHub Packages publication requires a verified main push or immutable-release recovery")
   if not os.environ.get("GH_TOKEN") or not os.environ.get("GITHUB_ACTOR"):
     raise RuntimeError("GitHub Packages publication requires workflow credentials")
+  if event == "workflow_dispatch":
+    # Recovery uses authenticated release bytes, never a development checkout's artifacts.
+    from publish_central import fetch_release
+    source = repository.parent / "release"
+    fetch_release(source, value)
+    merge(source, repository, value)
   with tempfile.TemporaryDirectory(prefix="bemo-publish-") as directory:
     settings = Path(directory) / "settings.xml"
     settings.write_text('''<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
@@ -165,10 +201,16 @@ def publish(repository, value):
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("task", choices=("select", "merge", "publish"))
+  parser.add_argument("task", choices=("select", "merge", "publish", "recover"))
+  parser.add_argument("--version", default=build.VERSION)
   args = parser.parse_args()
   if args.task == "select":
     select()
+    raise SystemExit(0)
+  if args.task == "recover":
+    if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
+      raise RuntimeError("Release recovery requires a manual main workflow")
+    publish(build.BUILD / "packages-recovery" / "maven", args.version)
     raise SystemExit(0)
   destination = merge(build.BUILD / "release-assets", build.BUILD / "github-packages", build.VERSION)
   if args.task == "publish":
