@@ -99,6 +99,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Use a writable tool cache on the benchmark runner
+        run: |
+          mkdir -p "$RUNNER_TEMP/bemo-tool-cache"
+          echo "RUNNER_TOOL_CACHE=$RUNNER_TEMP/bemo-tool-cache" >> "$GITHUB_ENV"
       - uses: ./.github/actions/setup-bench
       - uses: ./.github/actions/setup-cargo-tools
         with:
