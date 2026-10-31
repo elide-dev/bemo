@@ -99,10 +99,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Use a writable tool cache on the benchmark runner
+      - name: Prepare writable Java caches on the benchmark runner
         run: |
-          mkdir -p "$RUNNER_TEMP/bemo-tool-cache"
-          echo "RUNNER_TOOL_CACHE=$RUNNER_TEMP/bemo-tool-cache" >> "$GITHUB_ENV"
+          for cache in Java_Temurin-Hotspot_jdk Java_GraalVM_jdk; do
+            sudo -n install -d -o "$(id -u)" -g "$(id -g)" "$RUNNER_TOOL_CACHE/$cache"
+          done
       - uses: ./.github/actions/setup-bench
       - uses: ./.github/actions/setup-cargo-tools
         with:
