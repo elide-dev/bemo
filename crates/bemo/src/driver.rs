@@ -1571,4 +1571,148 @@ mod tests {
     assert!(driver.try_shutdown(Duration::from_secs(5)).unwrap());
     assert_eq!(budget.used(), 0);
   }
+
+  /// Closing a workload's budget while one of its persistent receive buffers is checked out must
+  /// not poison the shared driver. `service_groups` republishes the checked-out slot by allocating
+  /// replacement storage through the (now closed) budget, which reports `BrokenPipe`; that signal
+  /// must be tolerated like the closed-budget convention used everywhere else.
+  #[cfg(target_os = "linux")]
+  #[test]
+  #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+  fn closing_a_workload_budget_with_a_checked_out_buffer_does_not_poison_the_shared_driver() {
+    use std::io::Write;
+    let mut driver = driver();
+    if driver.backend() != Backend::IoUring {
+      return;
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let connection = driver.attach(client.into()).unwrap();
+    let budget = Budget::new(65536);
+    let receive = driver
+      .enable_persistent_receive(&connection, budget.clone(), 16384, 32768)
+      .unwrap();
+    // Deliver one receive and keep its buffer alive so one pool slot stays checked out. While the
+    // slot is checked out, the next republish allocates replacement storage through the budget.
+    peer.write_all(b"payload").unwrap();
+    let mut held = None::<Buffer>;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while held.is_none() {
+      assert!(Instant::now() < deadline, "persistent receive timed out");
+      for event in driver.poll(Duration::from_millis(10), 4).unwrap() {
+        let Event::PersistentReceived {
+          id,
+          result,
+          buffer,
+          credit,
+          ..
+        } = event
+        else {
+          panic!("unexpected event: {event:?}")
+        };
+        assert_eq!(id, receive);
+        assert_eq!(result.unwrap(), 7);
+        drop(credit);
+        held = buffer;
+      }
+    }
+    let held = held.unwrap();
+    assert!(budget.used() >= 16384);
+    // A routine workload close closes its budget; its sockets retire asynchronously. The closed
+    // budget makes replacement allocation in `SharedReceivePool::publish` fail with `BrokenPipe`.
+    budget.close();
+    // service_groups runs at the top of this poll and republishes the checked-out slot. Without
+    // the fix, the BrokenPipe escapes through `prepare` into `Driver::fail`, permanently marking
+    // the driver failed for every workload sharing it.
+    let post_close = driver.poll(Duration::from_millis(10), 4);
+    assert!(
+      post_close.is_ok(),
+      "closing a workload's budget with a checked-out persistent buffer poisoned the shared driver: {:?}",
+      post_close.err()
+    );
+    // The driver must remain recoverable: subsequent polls succeed and shutdown is reachable.
+    assert!(driver.poll(Duration::ZERO, 4).is_ok());
+    // Release the held buffer so the slot can republish without allocating, then retire the
+    // receive and shut down cleanly. The driver must not be permanently failed.
+    drop(held);
+    drop(connection);
+    assert!(driver.try_shutdown(Duration::from_secs(5)).unwrap());
+    assert_eq!(budget.used(), 0);
+  }
+
+  /// The healthy counterpart: while the budget stays open, a checked-out slot's replacement
+  /// allocation succeeds, the driver keeps servicing, and shutdown completes cleanly. Guards
+  /// against the fix regressing the normal republish path.
+  #[cfg(target_os = "linux")]
+  #[test]
+  #[cfg_attr(miri, ignore = "io_uring and real sockets are unavailable under miri")]
+  fn persistent_receive_republishes_normally_while_the_workload_budget_is_open() {
+    use std::io::Write;
+    let mut driver = driver();
+    if driver.backend() != Backend::IoUring {
+      return;
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let connection = driver.attach(client.into()).unwrap();
+    let budget = Budget::new(65536);
+    let receive = driver
+      .enable_persistent_receive(&connection, budget.clone(), 16384, 32768)
+      .unwrap();
+    peer.write_all(b"payload").unwrap();
+    let mut held = None::<Buffer>;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while held.is_none() {
+      assert!(Instant::now() < deadline, "persistent receive timed out");
+      for event in driver.poll(Duration::from_millis(10), 4).unwrap() {
+        let Event::PersistentReceived {
+          id,
+          result,
+          buffer,
+          credit,
+          ..
+        } = event
+        else {
+          panic!("unexpected event: {event:?}")
+        };
+        assert_eq!(id, receive);
+        assert_eq!(result.unwrap(), 7);
+        drop(credit);
+        held = buffer;
+      }
+    }
+    let held = held.unwrap();
+    assert!(budget.used() >= 16384);
+    // With the budget open, service_groups allocates the replacement and republishes; the driver
+    // stays healthy and keeps serving.
+    assert!(driver.poll(Duration::from_millis(10), 4).is_ok());
+    assert!(
+      budget.used() >= 2 * 16384,
+      "replacement allocation charged the open budget"
+    );
+    // A second receive still completes, proving the driver never failed.
+    peer.write_all(b"again").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut received_again = false;
+    while !received_again {
+      assert!(Instant::now() < deadline, "second receive timed out");
+      for event in driver.poll(Duration::from_millis(10), 4).unwrap() {
+        let Event::PersistentReceived { id, result, credit, .. } = event else {
+          panic!("unexpected event: {event:?}")
+        };
+        assert_eq!(id, receive);
+        assert_eq!(result.unwrap(), 5);
+        drop(credit);
+        received_again = true;
+      }
+    }
+    drop(held);
+    drop(connection);
+    assert!(driver.try_shutdown(Duration::from_secs(5)).unwrap());
+    assert_eq!(budget.used(), 0);
+  }
 }

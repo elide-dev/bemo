@@ -19,6 +19,25 @@ fn retained_slice_keeps_storage_and_budget_alive() {
 }
 
 #[test]
+fn over_limit_reservations_preserve_accounting_and_closed_owner_errors() {
+  let budget = Budget::new(8);
+  let held = Buffer::new(4, budget.clone()).unwrap();
+  assert_eq!(
+    Buffer::new(9, budget.clone()).unwrap_err().kind(),
+    std::io::ErrorKind::OutOfMemory
+  );
+  assert_eq!(budget.used(), 4);
+  budget.close();
+  assert_eq!(
+    Buffer::new(9, budget.clone()).unwrap_err().kind(),
+    std::io::ErrorKind::BrokenPipe
+  );
+  assert_eq!(budget.used(), 4);
+  drop(held);
+  assert_eq!(budget.used(), 0);
+}
+
+#[test]
 fn rejects_uninitialized_and_overflowing_ranges() {
   let mut buffer = Buffer::new(8, Budget::new(8)).unwrap();
   assert!(buffer.write(1, b"x").is_err());

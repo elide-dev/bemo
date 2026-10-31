@@ -15,6 +15,7 @@ def sharedTools = file('../../tools/examples.py')
 def nativeOutput = file('../../build/examples/native/gradle/micronaut' + (platformName == 'windows' ? '.exe' : ''))
 
 repositories {
+  maven { url = uri("https://maven.elide.dev/gvm-elide/${pins.graalvm_sdk}") }
   maven { url = uri('../../build/examples/maven') }
   mavenCentral()
 }

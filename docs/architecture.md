@@ -217,8 +217,19 @@ not promise that a particular OS backend is available.
 
 C layouts use fixed-width fields. Generated exports are checked against the
 Rust signatures and public headers. Native Image imports are generated from the
-same interface description. Rust panics cannot unwind through C calls; a panic
-at this boundary terminates the process.
+same interface description. Generated C exports contain Rust panics with
+`catch_unwind`; release builds use `panic = "unwind"`. A failing signed call
+returns -900 (PANIC), and subsequent entries return -901 (POISONED) without
+accessing driver or handle state. Unsigned handle/count calls return zero.
+Metadata ABI/capability queries remain constant. Poison is process-wide because
+an operation may have partially changed shared state. Already admitted calls
+may finish; borrowed output records are unspecified on failure. Containment
+retains potentially damaged resources rather than attempting repair or release.
+Allocation failure and aborting dependencies are outside unwind containment.
+
+`bemo-bali` provides direct image-owned guest API calls selected through
+`TransportNativeDiscovery`; ordinary JVMs fall back to the FFM provider.
+The API and FFM artifacts have no dependency on Bali runtime types.
 
 ## Building and checking changes
 

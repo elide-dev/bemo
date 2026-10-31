@@ -26,6 +26,10 @@ sources {
 
 dependencies {
   maven {
+    repositories {
+      ["gvm-elide"] = "https://maven.elide.dev/gvm-elide/\(versions.graalvm_sdk)"
+      ["central"] = "https://repo1.maven.org/maven2/"
+    }
     packages {
       "io.netty:netty-transport:\(versions.netty)"
       "io.netty:netty-handler:\(versions.netty)"
@@ -42,6 +46,10 @@ dependencies {
       "org.graalvm.sdk:nativeimage:\(versions.graalvm_sdk)"
       "org.graalvm.sdk:word:\(versions.graalvm_sdk)"
       "org.jspecify:jspecify:\(versions.jspecify)"
+      "org.springframework:spring-web:\(versions.spring)"
+      "org.springframework.boot:spring-boot-web-server:\(versions.spring_boot)"
+      "io.projectreactor:reactor-core:\(versions.reactor)"
+      "io.ktor:ktor-server-core-jvm:\(versions.ktor)"
       "com.google.errorprone:error_prone_core:\(versions.error_prone):with-dependencies"
       "com.uber.nullaway:nullaway:\(versions.nullaway)"
       "org.checkerframework:checker:\(versions.checker)"

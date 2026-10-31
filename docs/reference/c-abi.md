@@ -20,6 +20,7 @@ Query the metadata ABI before resolving anything else. Capabilities are additive
 | `BEMO_ABI_VERSION` | `1` |
 | `BEMO_CAP_TRANSPORT_V3` | `UINT64_C(1)` |
 | `BEMO_CAP_NATIVE_ALLOC` | `UINT64_C(2)` |
+| `BEMO_CAP_HTTP1_COMPLETE_CREDIT` | `UINT64_C(4)` |
 
 ### Functions
 
@@ -73,6 +74,8 @@ The transport boundary shared by the FFM and Native Image bindings. Handles are 
 
 | Name | Value |
 | --- | --- |
+| `ELIDE_TRANSPORT_PANIC` | `(-900)` |
+| `ELIDE_TRANSPORT_POISONED` | `(-901)` |
 | `ELIDE_TRANSPORT_ABI_VERSION` | `3` |
 
 ### Types
@@ -359,7 +362,7 @@ int32_t elide_transport_http_view(uint64_t exchange, uint32_t kind, uint32_t ind
 
 #### `elide_transport_http_respond`
 
-headers: count records of {name address, name length, value address, value length}. flags bit 1 (RESPOND_STREAM) sends the head only and ignores body: bodyLength then declares content-length, or UINT64_MAX for chunked. Parts follow through http_chunk_send.
+headers: count records of {name address, name length, value address, value length}. Flag 4 (RESPOND_COMPLETE_CREDIT), advertised by Bemo capability 2, requests one PART_SENT after physical completion of a complete HTTP/1 response. It rejects streaming and HTTP/2 combinations. Freeing suppresses reports while retaining wire leases. Flag 2 (RESPOND_STREAM) sends the head only and ignores body: bodyLength then declares content-length, or UINT64_MAX for chunked. Parts follow through http_chunk_send.
 
 ```c
 int32_t elide_transport_http_respond(uint64_t driver, uint64_t exchange, uint32_t status, const uint64_t *headers, uint32_t count, const uint8_t *body, uint64_t bodyLength, uint32_t flags);

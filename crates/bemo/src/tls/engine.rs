@@ -423,6 +423,8 @@ impl Engine {
     }
     let status = if self.outbound_done() {
       Status::Closed
+    } else if self.is_handshaking() && sink.produced == 0 && !self.pending.output_pending() {
+      Status::Ok
     } else if sink.produced == 0 && (self.pending.output_pending() || sink.consumed < sink.source.len()) {
       Status::BufferOverflow
     } else {
@@ -1065,6 +1067,67 @@ mod tests {
 
   #[test]
   #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn engine_wrap_app_data_during_blocked_handshake_returns_ok_not_overflow() {
+    for versions in [&[&rustls::version::TLS13][..], &[&rustls::version::TLS12][..]] {
+      let (mut client, _server) = pair(versions, "localhost");
+      let mut out = vec![0; MAX_RECORD];
+      let hello = client.wrap(&[], &mut out).unwrap();
+      assert!(hello.produced > 0, "client emitted a ClientHello");
+      assert_eq!(client.handshake_status(), Handshake::NeedUnwrap);
+      let mut big = vec![0; 32 * 1024];
+      let outcome = client.wrap(b"app data before handshake completes", &mut big).unwrap();
+      assert_eq!(
+        (outcome.status, outcome.consumed, outcome.produced),
+        (Status::Ok, 0, 0),
+        "client wrap with app data while handshake-blocked must not report BufferOverflow"
+      );
+      assert_eq!(outcome.handshake, Handshake::NeedUnwrap);
+
+      let (mut client, mut server) = pair(versions, "localhost");
+      let mut to_server = Vec::new();
+      drain(&mut client, &[], &mut to_server).unwrap();
+      feed(&mut server, &mut to_server, &mut Vec::new()).unwrap();
+      let mut to_client = Vec::new();
+      drain(&mut server, &[], &mut to_client).unwrap();
+      assert_eq!(server.handshake_status(), Handshake::NeedUnwrap);
+      let mut big = vec![0; 32 * 1024];
+      let outcome = server.wrap(b"app data before handshake completes", &mut big).unwrap();
+      assert_eq!(
+        (outcome.status, outcome.consumed, outcome.produced),
+        (Status::Ok, 0, 0),
+        "server wrap with app data while handshake-blocked must not report BufferOverflow"
+      );
+      assert_eq!(outcome.handshake, Handshake::NeedUnwrap);
+
+      feed(&mut client, &mut to_client, &mut Vec::new()).unwrap();
+      let mut to_server = Vec::new();
+      drain(&mut client, &[], &mut to_server).unwrap();
+      feed(&mut server, &mut to_server, &mut Vec::new()).unwrap();
+      if versions[0] == &rustls::version::TLS12 {
+        let mut to_client = Vec::new();
+        drain(&mut server, &[], &mut to_client).unwrap();
+        feed(&mut client, &mut to_client, &mut Vec::new()).unwrap();
+      }
+      assert!(
+        !client.is_handshaking(),
+        "client handshake completed after blocked wrap"
+      );
+      assert!(
+        !server.is_handshaking(),
+        "server handshake completed after blocked wrap"
+      );
+
+      let payload = b"post-handshake data";
+      let mut wire = Vec::new();
+      drain(&mut client, payload, &mut wire).unwrap();
+      let mut received = Vec::new();
+      feed(&mut server, &mut wire, &mut received).unwrap();
+      assert_eq!(received, payload);
+    }
+  }
+
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
   fn engine_reports_underflow_overflow_and_small_destinations() {
     let (mut client, mut server) = pair(&[&rustls::version::TLS13], "localhost");
     handshake(&mut client, &mut server);
@@ -1089,6 +1152,41 @@ mod tests {
       .unwrap(Input::Shared(&[0x16, 3, 3, 0xff, 0xff]), &mut out)
       .unwrap_err();
     assert!(error.to_string().contains("overflow"));
+  }
+
+  /// A destination too small for a complete application-data record triggers a pre-check overflow
+  /// that decrypts nothing and queues no plaintext, so a subsequent zero-length drain reports
+  /// underflow. The Rust-side contract the Java array-destination drain loop relies on: it must
+  /// not read the drain's underflow as the genuine status, and the record stays decryptable.
+  #[test]
+  #[cfg_attr(miri, ignore = "rustls handshakes call into AWS-LC")]
+  fn engine_pre_check_overflow_queues_no_plaintext_and_empty_drain_underflows() {
+    let (mut client, mut server) = pair(&[&rustls::version::TLS13], "localhost");
+    handshake(&mut client, &mut server);
+    let payload: Vec<u8> = (0..10_000u32).map(|i| (i * 31 + 7) as u8).collect();
+    let mut wire = Vec::new();
+    assert_eq!(drain(&mut client, &payload, &mut wire).unwrap(), payload.len());
+    assert!(!wire.is_empty());
+    let record_len = wire.len();
+    let mut small = vec![0u8; 100];
+    let overflow = server.unwrap(Input::Shared(&wire), &mut small).unwrap();
+    assert_eq!(overflow.status, Status::BufferOverflow);
+    assert_eq!(overflow.consumed, 0);
+    assert_eq!(overflow.produced, 0);
+    assert!(
+      small.iter().all(|byte| *byte == 0),
+      "pre-check overflow decrypts nothing"
+    );
+    let drain = server.unwrap(Input::Shared(&[]), &mut small).unwrap();
+    assert_eq!(drain.status, Status::BufferUnderflow);
+    assert_eq!(drain.consumed, 0);
+    assert_eq!(drain.produced, 0);
+    let mut large = vec![0u8; MAX_RECORD];
+    let outcome = server.unwrap(Input::Shared(&wire), &mut large).unwrap();
+    assert_eq!(outcome.status, Status::Ok);
+    assert_eq!(outcome.consumed, record_len);
+    assert_eq!(outcome.produced, payload.len());
+    assert_eq!(&large[..payload.len()], &payload[..]);
   }
 
   #[test]

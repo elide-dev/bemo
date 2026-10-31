@@ -29,6 +29,7 @@ def generate():
 #![allow(clippy::too_many_arguments)]
 use bemo::abi::{BufferView, NativeEvent, ReceiveResult};
 use std::ffi::c_void;
+use crate::guard::BOUNDARY;
 ''']
   names = set()
   base = ROOT / "crates/bemo/src"
@@ -51,10 +52,16 @@ use std::ffi::c_void;
       if unsafe:
         output.append(f"///\n/// # Safety\n/// The caller must satisfy the safety contract of [`{target}`].\n")
       output.append(f'#[unsafe(no_mangle)]\npub {unsafe or ""}extern "C" fn {name}({params}) {returns} {{\n')
+      if not args and not unsafe:
+        output.append(f"  BOUNDARY.call({target})\n")
+        output.append("}\n\n")
+        continue
+      output.append("  BOUNDARY.call(|| {\n")
       if unsafe:
-        output.append(f"  // SAFETY: the exported contract is identical to the Rust handle API.\n  unsafe {{ {target}({args}) }}\n")
+        output.append(f"    // SAFETY: the exported contract is identical to the Rust handle API.\n    unsafe {{ {target}({args}) }}\n")
       else:
-        output.append(f"  {target}({args})\n")
+        output.append(f"    {target}({args})\n")
+      output.append("  })\n")
       output.append("}\n\n")
   header = (ROOT / "include/elide_transport.h").read_text()
   declarations = set(re.findall(r'^\w+[\w\s*]*\b(elide_transport_\w+)\(', header, re.M))

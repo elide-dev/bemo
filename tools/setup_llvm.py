@@ -23,14 +23,14 @@ def digest(path):
 def unpack(archive, checksum, parent):
   """Verify an archive, extract it below parent, and return its single root."""
   if digest(archive) != checksum:
-    raise RuntimeError('LLVM distribution checksum mismatch')
+    raise RuntimeError('Toolchain distribution checksum mismatch')
   tmp = tempfile.mkdtemp(prefix='llvm-extract-', dir=parent)
-  with tarfile.open(archive, 'r:xz') as source:
+  with tarfile.open(archive, 'r:*') as source:
     source.extractall(tmp, filter='data')
   roots = list(Path(tmp).iterdir())
   if len(roots) != 1 or not roots[0].is_dir():
     shutil.rmtree(tmp)
-    raise RuntimeError('Expected one LLVM distribution root')
+    raise RuntimeError('Expected one toolchain distribution root')
   return Path(tmp), roots[0]
 
 
@@ -66,10 +66,11 @@ def fetch(url, checksum, archive):
   print(f'Downloading {url}', file=sys.stderr, flush=True)
   temporary = archive.with_suffix('.download')
   try:
-    with urllib.request.urlopen(url, timeout=600) as source, temporary.open('wb') as output:
+    request = urllib.request.Request(url, headers={'User-Agent': 'bemo-toolchain/1.0'})
+    with urllib.request.urlopen(request, timeout=600) as source, temporary.open('wb') as output:
       shutil.copyfileobj(source, output)
     if digest(temporary) != checksum:
-      raise RuntimeError('LLVM distribution checksum mismatch')
+      raise RuntimeError('Toolchain distribution checksum mismatch')
     temporary.replace(archive)
   finally:
     temporary.unlink(missing_ok=True)

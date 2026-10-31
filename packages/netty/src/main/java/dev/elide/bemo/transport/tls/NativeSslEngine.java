@@ -308,12 +308,22 @@ public final class NativeSslEngine extends ApplicationProtocolSslEngine
     int consumed = consumed(packed);
     int produced = produced(packed);
     boolean finished = finished(packed);
-    // Plaintext beyond one destination stays queued natively; drain it into the next ones.
+    // Plaintext beyond one destination stays queued natively; drain it into the next ones, or retry
+    // the record against a later destination when an overflow pre-check queued nothing to drain.
     while (STATUS[(int) (packed >>> 48 & 3)] == Status.BUFFER_OVERFLOW && ++index < end) {
       if (!destinations[index].hasRemaining()) continue;
-      packed = unwrapOnce(source, 0, destinations[index]);
-      produced += produced(packed);
-      finished |= finished(packed);
+      long drain = unwrapOnce(source, 0, destinations[index]);
+      if (produced(drain) > 0) {
+        packed = drain;
+        produced += produced(drain);
+        finished |= finished(drain);
+      } else {
+        long retry = unwrapOnce(source, source.remaining(), destinations[index]);
+        packed = retry;
+        consumed += consumed(retry);
+        produced += produced(retry);
+        finished |= finished(retry);
+      }
     }
     return result(packed, consumed, produced, finished);
   }

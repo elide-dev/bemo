@@ -39,6 +39,32 @@ public final class FfmContract {
         }
       }
     }
+    String previous = System.setProperty("bemo.native.path", args[0]);
+    try {
+      var selected = dev.elide.bemo.transport.TransportNative.load();
+      if (!(selected instanceof dev.elide.bemo.transport.FfmTransportNative)) {
+        throw new AssertionError("ServiceLoader did not select the portable FFM backend");
+      }
+      long owner = selected.ownerNew(4096);
+      if (owner == 0) throw new AssertionError("Selected backend rejected workload");
+      try {
+        long buffer = selected.bufferNew(owner, 64);
+        if (buffer == 0) throw new AssertionError("Selected backend rejected buffer");
+        try {
+          selected.bufferView(buffer).put((byte) 42);
+          if (selected.bufferFreeze(buffer, 1) != 0) throw new AssertionError("Freeze failed");
+          if (selected.bufferView(buffer).get(0) != 42)
+            throw new AssertionError("Payload mismatch");
+        } finally {
+          if (selected.bufferRelease(buffer) != 0) throw new AssertionError("Release failed");
+        }
+      } finally {
+        if (selected.ownerRelease(owner) != 0) throw new AssertionError("Owner release failed");
+      }
+    } finally {
+      if (previous == null) System.clearProperty("bemo.native.path");
+      else System.setProperty("bemo.native.path", previous);
+    }
     System.out.println("FFM contract passed");
   }
 }

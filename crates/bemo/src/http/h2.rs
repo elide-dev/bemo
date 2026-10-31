@@ -534,8 +534,16 @@ impl Connection {
 
   /// Input is closed and accepted streams have drained; no peer PONG can arrive now.
   pub(crate) fn finish_shutdown(&mut self) {
-    if let State::Connected(connection) = &mut self.state {
-      connection.abrupt_shutdown(Reason::NO_ERROR);
+    match &mut self.state {
+      State::Connected(connection) => connection.abrupt_shutdown(Reason::NO_ERROR),
+      State::Handshake(_) => {
+        // The peer closed input before the HTTP/2 client preface was fully received. The
+        // server preface already sits in `Wire::output` and stays flushable via
+        // `take_output_limit`; dropping the handshake future retires the connection so the
+        // driver's `is_closed() && wire.is_empty() && !http.sending` condition can fire.
+        self.state = State::Closed;
+      }
+      State::Closed => {}
     }
   }
 
@@ -1131,6 +1139,49 @@ pub(crate) mod tests {
     }
     assert!(pair.server.is_closed());
     assert!(pair.server.poll(&mut cx, 8).unwrap().is_empty());
+  }
+
+  #[test]
+  fn finish_shutdown_closes_a_pending_handshake_on_peer_close() {
+    let mut connection = Connection::new();
+    let mut cx = Context::from_waker(Waker::noop());
+    // A partial client preface (9 of 24 bytes) leaves the h2 handshake pending.
+    connection.feed(Bytes::from_static(b"PRI * HTT")).unwrap();
+    assert!(connection.poll(&mut cx, 8).unwrap().is_empty());
+    assert!(!connection.is_closed());
+    // The server preface is written eagerly and stays flushable after shutdown.
+    assert!(connection.take_output().is_some());
+    // Mimic the ABI peer-close path: the driver calls `finish_shutdown` when
+    // `peer_closed && streams.is_empty()`. Without handling `State::Handshake`
+    // this is a no-op and the connection leaks forever.
+    connection.finish_shutdown();
+    assert!(connection.is_closed());
+    assert!(connection.poll(&mut cx, 8).unwrap().is_empty());
+  }
+
+  #[test]
+  fn finish_shutdown_closes_a_handshake_that_received_no_preface() {
+    let mut connection = Connection::new();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(connection.poll(&mut cx, 8).unwrap().is_empty());
+    assert!(!connection.is_closed());
+    connection.finish_shutdown();
+    assert!(connection.is_closed());
+    assert!(connection.poll(&mut cx, 8).unwrap().is_empty());
+  }
+
+  #[test]
+  fn finish_shutdown_is_idempotent_after_close() {
+    let mut connection = Connection::new();
+    let mut cx = Context::from_waker(Waker::noop());
+    connection.feed(Bytes::from_static(b"PRI * HTT")).unwrap();
+    connection.poll(&mut cx, 8).unwrap();
+    connection.finish_shutdown();
+    assert!(connection.is_closed());
+    // Calling again must not panic or error.
+    connection.finish_shutdown();
+    assert!(connection.is_closed());
+    assert!(connection.poll(&mut cx, 8).unwrap().is_empty());
   }
 
   #[test]

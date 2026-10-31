@@ -69,6 +69,19 @@ var clientTls = NativeTlsContext.client(transport, trustAnchorsPem, "h2");
 bootstrap.channelFactory(() -> new NativeSocketChannel().tls(clientTls, "example.com"));
 ```
 
+The `client` and `server` factories above bind the context to the default workload, so
+they only serve channels in the default group. A context is bound to the workload its
+channels register under, so a non-default group needs a context built for that workload:
+
+```java
+long workload = Workload.id(transport, Workload.Profile.SANDBOXED);
+var clientTls = NativeTlsContext.client(transport, workload, trustAnchorsPem, "h2");
+var serverTls = NativeTlsContext.server(transport, workload, certificateChainPem, privateKeyPem, "h2");
+```
+
+Using the wrong workload is rejected at session setup with an `IllegalArgumentException`
+that names both the context's workload and the channel's.
+
 **An `SSLEngine` adapter** plugs into Netty's `SslHandler`, for code that expects
 an `SslContext`:
 

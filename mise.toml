@@ -1,7 +1,7 @@
 min_version = "2026.8.3"
 
 [tools]
-"github:elide-dev/elide" = "1.5.4+20260921"
+"github:elide-dev/elide" = "1.6.1"
 java = "openjdk-25.0.2"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 hk = "1.55.0"

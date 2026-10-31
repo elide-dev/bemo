@@ -30,6 +30,17 @@ class SetupLLVMTest(unittest.TestCase):
       setup_llvm.extract(archive, hashlib.sha256(archive.read_bytes()).hexdigest(), root / 'install')
       self.assertEqual((root / 'install/bin/clang').read_bytes(), b'clang')
 
+  def test_gzip_toolchain_root_is_normalized(self):
+    with tempfile.TemporaryDirectory() as tmp:
+      root = Path(tmp)
+      archive = root / 'graalvm.tar.gz'
+      with tarfile.open(archive, 'w:gz') as output:
+        entry = tarfile.TarInfo('graalvm/Contents/Home/bin/native-image')
+        entry.size = 5
+        output.addfile(entry, io.BytesIO(b'image'))
+      setup_llvm.extract(archive, hashlib.sha256(archive.read_bytes()).hexdigest(), root / 'install')
+      self.assertEqual((root / 'install/Contents/Home/bin/native-image').read_bytes(), b'image')
+
   def test_addon_merges_into_a_renamed_bundle_root(self):
     with tempfile.TemporaryDirectory() as tmp:
       root = Path(tmp)

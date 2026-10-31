@@ -22,7 +22,7 @@ jobs:
       - name: Build deterministic CPU benchmarks
         run: cargo codspeed build -p bemo --bench buffers --bench handles --bench http --locked -m simulation
       - name: Track CPU performance
-        uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
+        uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062 # v5.6.0
         with:
           mode: simulation
           runner-version: '5.2.1'
@@ -99,6 +99,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Prepare writable Java caches on the benchmark runner
+        run: |
+          for cache in Java_Temurin-Hotspot_jdk Java_GraalVM_jdk; do
+            sudo -n install -d -o "$(id -u)" -g "$(id -g)" "$RUNNER_TOOL_CACHE/$cache"
+          done
       - uses: ./.github/actions/setup-bench
       - uses: ./.github/actions/setup-cargo-tools
         with:
@@ -106,7 +111,7 @@ jobs:
       - run: cargo codspeed build -p bemo --bench tls --locked -m walltime
       - run: make bench-prepare
       - name: Track TLS and end-to-end wall time
-        uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
+        uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062 # v5.6.0
         with:
           mode: walltime
           runner-version: '5.2.1'

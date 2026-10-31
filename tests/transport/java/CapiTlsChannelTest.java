@@ -17,11 +17,14 @@ public final class CapiTlsChannelTest {
     NativeTlsChannelTest.verify(api, cert, key);
     NativeTlsNegativeTest.verify(api, cert, key);
     NativeTlsOrderingTest.verify(api, cert, key);
+    NativeTlsWorkloadTest.verify(api, cert, key);
     NativeTransferTest.verify(api, cert, key);
     NativeReceiveAllocatorTest.verify(api, cert, key);
     NativeJfrTest.verify(api, cert, key);
     NativeSslEngineTest.verify(api, cert, key);
     NativeSslPolicyTest.verify(api, cert, key);
     NativeSslInteropTest.verify(api, Path.of(args[0]), Path.of(args[1]));
+    NativeHttpServerTest.verify(api, Path.of(args[0]), Path.of(args[1]));
+    NativeHttpWorkersTest.verify(api, Path.of(args[0]), Path.of(args[1]));
   }
 }

@@ -11,6 +11,7 @@ extern "C" {
 #define BEMO_ABI_VERSION 1
 #define BEMO_CAP_TRANSPORT_V3 UINT64_C(1)
 #define BEMO_CAP_NATIVE_ALLOC UINT64_C(2)
+#define BEMO_CAP_HTTP1_COMPLETE_CREDIT UINT64_C(4)
 /* Query version first. No allocation, callbacks, thread affinity, or ownership transfer. */
 uint32_t bemo_abi_version(void);
 /* Implemented data-plane capabilities. Unknown bits must be ignored. */

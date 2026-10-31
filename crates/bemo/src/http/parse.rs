@@ -425,7 +425,10 @@ impl Connection {
       Body::ChunkExt { size, len } => {
         let room = MAX_CHUNK_LINE_BYTES - len;
         let window = &rest[..rest.len().min(room)];
-        match window.iter().position(|b| *b == b'\r' || *b == b'\n') {
+        match window
+          .iter()
+          .position(|b| *b == b'\r' || *b == b'\n' || (*b < 0x20 && *b != b'\t') || *b == 0x7f)
+        {
           Some(i) if window[i] == b'\r' => (Some(Body::ExtLf { size }), cursor + i + 1),
           Some(_) => return Err(ParseError::BadRequest),
           None if rest.len() > room => return Err(ParseError::BadRequest),
@@ -1137,6 +1140,9 @@ mod tests {
       b"5\r\nhello\r\r0\r\n\r\n",
       b"5\r\nhelloXX0\r\n\r\n",
       b"5;ext\nhello\r\n0\r\n\r\n",
+      b"5;e\x00f\r\nhello\r\n0\r\n\r\n",
+      b"5;e\x7ff\r\nhello\r\n0\r\n\r\n",
+      b"5;e\x1ff\r\nhello\r\n0\r\n\r\n",
     ] {
       let mut wire = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec();
       wire.extend_from_slice(tail);
@@ -1157,6 +1163,92 @@ mod tests {
     );
     let out = feed(&mut conn, long.as_bytes());
     assert_eq!(error(out.last().unwrap()), ParseError::BadRequest);
+  }
+
+  #[test]
+  fn chunk_extension_control_octets_are_bad_requests() {
+    let head: &[u8] = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
+    for bad in [0x00u8, 0x01, 0x08, 0x0a, 0x0b, 0x0c, 0x0e, 0x1f, 0x7f] {
+      let mut wire = head.to_vec();
+      wire.extend_from_slice(b"5;e");
+      wire.push(bad);
+      wire.extend_from_slice(b"f\r\nhello\r\n0\r\n\r\n");
+      let mut conn = Connection::new(budget());
+      let out = feed(&mut conn, &wire);
+      assert_eq!(error(out.last().unwrap()), ParseError::BadRequest, "octet {:#04x}", bad);
+      assert!(conn.is_closed(), "octet {:#04x}", bad);
+    }
+    for good in [0x09u8, 0x20] {
+      let mut wire = head.to_vec();
+      wire.extend_from_slice(b"5;e");
+      wire.push(good);
+      wire.extend_from_slice(b"f\r\nhello\r\n0\r\n\r\n");
+      let mut conn = Connection::new(budget());
+      let out = feed(&mut conn, &wire);
+      assert_eq!(body_of(&out), b"hello", "octet {:#04x}", good);
+      assert!(!conn.is_closed(), "octet {:#04x}", good);
+    }
+  }
+
+  #[test]
+  fn chunk_extension_control_octets_rejected_at_every_split() {
+    let head: &[u8] = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
+    for bad in [0x00u8, 0x0a, 0x1f, 0x7f] {
+      let mut wire = head.to_vec();
+      wire.extend_from_slice(b"5;e");
+      wire.push(bad);
+      wire.extend_from_slice(b"f\r\nhello\r\n0\r\n\r\n");
+      for split in 1..wire.len() {
+        let mut conn = Connection::new(budget());
+        let mut out = feed(&mut conn, &wire[..split]);
+        out.extend(feed(&mut conn, &wire[split..]));
+        assert_eq!(
+          error(out.last().unwrap()),
+          ParseError::BadRequest,
+          "octet {bad:#04x} split {split}"
+        );
+        assert!(conn.is_closed(), "octet {bad:#04x} split {split}");
+      }
+    }
+  }
+
+  #[test]
+  fn chunk_extension_strictness_matches_no_extension_path() {
+    let head: &[u8] = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
+    for octet in [0x00u8, 0x01, 0x1f, 0x7f] {
+      let mut no_semi = head.to_vec();
+      no_semi.extend_from_slice(b"5");
+      no_semi.push(octet);
+      no_semi.extend_from_slice(b"\r\nhello\r\n0\r\n\r\n");
+      let mut with_semi = head.to_vec();
+      with_semi.extend_from_slice(b"5;e");
+      with_semi.push(octet);
+      with_semi.push(b'f');
+      with_semi.extend_from_slice(b"\r\nhello\r\n0\r\n\r\n");
+      for (wire, label) in [(no_semi, "no semicolon"), (with_semi, "with semicolon")] {
+        let mut conn = Connection::new(budget());
+        let out = feed(&mut conn, &wire);
+        assert_eq!(
+          error(out.last().unwrap()),
+          ParseError::BadRequest,
+          "octet {octet:#04x} ({label})"
+        );
+        assert!(conn.is_closed(), "octet {octet:#04x} ({label})");
+      }
+    }
+    for octet in [0x09u8, 0x20] {
+      let mut wire = head.to_vec();
+      wire.extend_from_slice(b"5;e");
+      wire.push(octet);
+      wire.extend_from_slice(b"f\r\nhello\r\n0\r\n\r\n");
+      for split in 1..wire.len() {
+        let mut conn = Connection::new(budget());
+        let mut out = feed(&mut conn, &wire[..split]);
+        out.extend(feed(&mut conn, &wire[split..]));
+        assert_eq!(body_of(&out), b"hello", "octet {:#04x} split {split}", octet);
+        assert!(!conn.is_closed(), "octet {:#04x} split {split}", octet);
+      }
+    }
   }
 
   #[test]

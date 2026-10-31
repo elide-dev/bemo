@@ -1,4 +1,6 @@
 [package]
+# Path-based embedders must inherit Bemo's workspace, not the consumer's.
+workspace = "../.."
 name = "bemo"
 description = "Runtime-independent native transport core for Netty and Elide"
 version.workspace = true

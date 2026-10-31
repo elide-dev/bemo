@@ -11,16 +11,29 @@ import org.jspecify.annotations.Nullable;
 public final class NativeTlsContext implements AutoCloseable {
   final TransportNative api;
   private long handle;
+  private final long workload;
 
-  private NativeTlsContext(TransportNative api, long handle) {
+  private NativeTlsContext(TransportNative api, long handle, long workload) {
     if (handle == 0) throw new IllegalArgumentException("Invalid native TLS configuration");
     this.api = api;
     this.handle = handle;
+    this.workload = workload;
   }
 
   public static NativeTlsContext client(
       TransportNative api, byte[] trustAnchorsPem, String... protocols) {
     return create(api, Workload.id(api), trustAnchorsPem, null, protocols);
+  }
+
+  /**
+   * Bind a client context to {@code workload}; the channel it serves must register under the same
+   * open workload, as the native layer requires session creation to name the context's owning
+   * workload. Mirrors {@link #server(TransportNative, long, byte[], byte[], String...)} so
+   * non-default workload groups can establish client TLS.
+   */
+  public static NativeTlsContext client(
+      TransportNative api, long workload, byte[] trustAnchorsPem, String... protocols) {
+    return create(api, workload, trustAnchorsPem, null, protocols);
   }
 
   public static NativeTlsContext server(
@@ -62,7 +75,8 @@ public final class NativeTlsContext implements AutoCloseable {
           api,
           key == null
               ? api.tlsClient(workload, certBuffer, alpnBuffer)
-              : api.tlsServer(workload, certBuffer, keyBuffer, alpnBuffer));
+              : api.tlsServer(workload, certBuffer, keyBuffer, alpnBuffer),
+          workload);
     } finally {
       if (certBuffer != 0) api.bufferRelease(certBuffer);
       if (keyBuffer != 0) api.bufferRelease(keyBuffer);
@@ -94,8 +108,21 @@ public final class NativeTlsContext implements AutoCloseable {
         peerName == null ? 0 : upload(api, owner, peerName.getBytes(StandardCharsets.UTF_8));
     try {
       long session = api.tlsNew(workload, handle, owner, name);
-      if (session == 0)
-        throw new IllegalArgumentException("Native TLS session requires a valid peer identity");
+      if (session == 0) {
+        // A native session handle of 0 is the ABI's universal failure signal: the workload may be
+        // closed, the owner's budget exhausted, the peer name invalid, or the channel's workload
+        // may not match the workload this context was created under. Detect the mismatch up front
+        // and name both handles, rather than blaming peer identity for every failure mode.
+        if (workload != this.workload)
+          throw new IllegalArgumentException(
+              "Native TLS session rejected: context is bound to workload "
+                  + this.workload
+                  + " but the channel uses workload "
+                  + workload);
+        throw new IllegalArgumentException(
+            "Native TLS session creation failed (workload closed, owner budget exhausted, "
+                + "invalid peer name, or native TLS setup error)");
+      }
       return session;
     } finally {
       if (name != 0) api.bufferRelease(name);

@@ -40,6 +40,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
   private boolean completingConnect;
   private final NativeIoHandler.Completion immediateRead = new NativeIoHandler.Completion();
   private long send;
+  private boolean writeDeferred;
   private long stagedWrite;
   private int sentLength;
   private final long[] sendRegions = new long[64 * 3];
@@ -453,6 +454,17 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
     throw new UnsupportedOperationException("Native TCP writes require ByteBuf");
   }
 
+  private void deferWrite() {
+    if (writeDeferred) return;
+    writeDeferred = true;
+    eventLoop()
+        .execute(
+            () -> {
+              writeDeferred = false;
+              if (open) ((NativeUnsafe) unsafe()).resumeWrites();
+            });
+  }
+
   @Override
   protected void doWrite(ChannelOutboundBuffer outbound) {
     // Connect listeners may flush before TLS starts; leave those writes queued for TLS.
@@ -511,8 +523,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
                 io().api
                     .socketSendGathered(
                         workload, io().driver(), socket, sendRegions, sendRegionCount);
-            if (send == 0)
-              throw new NativeTransportException("Native gathered send admission failed");
+            if (send == 0) deferWrite();
             return;
           }
         } catch (RuntimeException error) {
@@ -539,7 +550,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
                     nativeBytes.freeze(),
                     bytes.readerIndex(),
                     sentLength);
-        if (send == 0) throw new NativeTransportException("Native send admission failed");
+        if (send == 0) deferWrite();
         return;
       }
       // Gather flushed records into one bounded send instead of round-tripping through
@@ -604,7 +615,7 @@ abstract class NativeStreamChannel extends NativeChannel implements DuplexChanne
           io().api.bufferRelease(stagedWrite);
           stagedWrite = 0;
         }
-        throw new NativeTransportException("Native send admission failed");
+        deferWrite();
       }
       return;
     }
