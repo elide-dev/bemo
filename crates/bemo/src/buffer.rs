@@ -176,6 +176,10 @@ impl Budget {
     if self.is_closed() {
       return Err(io::ErrorKind::BrokenPipe.into());
     }
+    // An impossible reservation need not read the shared accounting counter.
+    if capacity > self.0.limit {
+      return Err(io::ErrorKind::OutOfMemory.into());
+    }
     self
       .0
       .used
