@@ -253,7 +253,7 @@ def deploy(bundle, value, destination):
   print("Central deployment: " + deployment, flush=True)
   validated = wait(deployment, "VALIDATED")
   (destination / "validation.json").write_text(json.dumps(validated, indent=2) + "\n")
-  expected_purls = {f"pkg:maven/dev.elide.bemo/bemo-{module}@{value}" for module in packages.MODULES}
+  expected_purls = {f"pkg:maven/dev.elide.bemo/bemo-{module}@{value}" for module in packages.modules(value)}
   if set(validated.get("purls", [])) != expected_purls:
     raise RuntimeError("Central deployment does not identify the intended release modules")
   if validated["deploymentState"] == "VALIDATED":
