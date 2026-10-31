@@ -176,10 +176,6 @@ impl Budget {
     if self.is_closed() {
       return Err(io::ErrorKind::BrokenPipe.into());
     }
-    // An impossible reservation need not read the shared accounting counter.
-    if capacity > self.0.limit {
-      return Err(io::ErrorKind::OutOfMemory.into());
-    }
     self
       .0
       .used
@@ -492,6 +488,18 @@ impl Buffer {
   /// # Errors
   /// Rejects zero/oversized allocations, exhausted budgets, and allocator failure.
   pub fn new(capacity: usize, budget: Budget) -> io::Result<Self> {
+    // Reject impossible requests before entering the allocator or shared accounting path.
+    // Invalid capacities retain their InvalidInput precedence in allocate/reuse below.
+    if capacity > budget.0.limit && capacity <= isize::MAX as usize {
+      return Err(
+        if budget.is_closed() {
+          io::ErrorKind::BrokenPipe
+        } else {
+          io::ErrorKind::OutOfMemory
+        }
+        .into(),
+      );
+    }
     if capacity > POOL_BYTES || capacity > budget.0.limit / 2 {
       return Self::allocate(capacity, budget, None);
     }
