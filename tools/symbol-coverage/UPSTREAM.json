@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
   "repository": "elide-dev/debuginfo.dev",
-  "commit": "588284b14caf530621063d667ccba6b8dc0bedd4",
+  "commit": "ddf001ea8259d88dbf3ea82a330836e4cdbfdd7a",
   "path": "tools/symbol-coverage",
   "files": {
-    "collect.py": "b2e8e5aba19dec401e5bf38319878b957b18bb066752f4ccf1506a6d90b13e79",
-    "manifest-v1.schema.json": "63e7da7fb3a1c3151e82298e802b07ab351af7d27ae53fa3b6bac8c0357e1f5f"
+    "collect.py": "39ab1ad9e45bb3937492cb1918fb65f5de51882a4b92351b869ec902d3ea64a0",
+    "manifest-v1.schema.json": "63e7da7fb3a1c3151e82298e802b07ab351af7d27ae53fa3b6bac8c0357e1f5f",
+    "installers.py": "7f14ad140f75fcb7df8d82baafd2b37fd39660e9478b82d980a069aa56c6c560"
   }
 }

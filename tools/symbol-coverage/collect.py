@@ -318,17 +318,19 @@ class Inventory:
                 return
             if head == b"!<arch>\n":
                 self.containers.append({**artifact(path, name), "format": "ar"})
-                self.files.append(
-                    {
-                        **artifact(path, name),
-                        "format": "static-archive",
-                        "kind": "input",
-                        "architecture": "unverified",
-                        "identity": None,
-                        "dwarf": False,
-                        "debuglink": None,
-                    }
-                )
+                # Debian packages use ar as an envelope, not as a static link input.
+                if not lower.endswith(".deb"):
+                    self.files.append(
+                        {
+                            **artifact(path, name),
+                            "format": "static-archive",
+                            "kind": "input",
+                            "architecture": "unverified",
+                            "identity": None,
+                            "dwarf": False,
+                            "debuglink": None,
+                        }
+                    )
                 with open(path, "rb") as stream:
                     stream.seek(8)
                     table, seen = b"", set()
@@ -424,6 +426,10 @@ class Inventory:
                     ".dwarf",
                     ".zst",
                     ".rpm",
+                    ".msi",
+                    ".pkg",
+                    ".dmg",
+                    ".cab",
                     ".jmod",
                     ".o",
                     ".obj",
