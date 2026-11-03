@@ -577,6 +577,15 @@ def package():
     for path in sorted(stage.rglob("*")):
       if path.is_file():
         archive.write(path, path.relative_to(stage))
+  # Inspect the exact Maven bundle, including nested classifier JARs and ThinLTO members.
+  run(sys.executable, ROOT / "tools/symbol-coverage/collect.py",
+      "--repository", "elide-dev/bemo", "--distribution", bundle.relative_to(ROOT),
+      "--metadata", json.dumps({"release": VERSION, "platform": platform.system().lower(),
+                                "architecture": platform.machine(),
+                                "configuration": {"cargoProfile": "release", "classifier": classifier()}}),
+      "--evidence", "Cargo.lock", "--evidence", "tools/versions.json",
+      "--evidence", str((bitcode.DIRECTORY / "manifest.json").relative_to(ROOT)),
+      "--out", BUILD / "reports/symbol-coverage.json")
   print(f"Staged unsigned Maven repository: {stage}\nBundle: {bundle}")
 
 
