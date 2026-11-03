@@ -6,8 +6,11 @@ stdlib only so the same collector can be vendored into existing packaging tools.
 """
 
 import argparse
+import bz2
+import gzip
 import hashlib
 import json
+import lzma
 import mmap
 import os
 import re
@@ -24,6 +27,12 @@ from pathlib import Path, PurePosixPath
 VERSION = 1
 MAX_DEPTH = 8
 MAX_EXPANDED = 128 * 1024**3
+MACHO_MAGICS = (
+    b"\xcf\xfa\xed\xfe",
+    b"\xce\xfa\xed\xfe",
+    b"\xfe\xed\xfa\xcf",
+    b"\xfe\xed\xfa\xce",
+)
 
 
 def digest(path):
@@ -126,12 +135,7 @@ def native(path):
                 "dwarf": dwarf,
                 "debuglink": debuglink,
             }
-        if magic in (
-            b"\xcf\xfa\xed\xfe",
-            b"\xce\xfa\xed\xfe",
-            b"\xfe\xed\xfa\xcf",
-            b"\xfe\xed\xfa\xce",
-        ):
+        if magic in MACHO_MAGICS:
             endian = "<" if magic[0] in (0xCF, 0xCE) else ">"
             wide = magic in (b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf")
             cpu, _, kind, count = struct.unpack_from(endian + "IIII", b, 4)
@@ -175,10 +179,42 @@ def native(path):
                 "dwarf": dwarf,
                 "debuglink": None,
             }
-        if magic in (b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbf"):
-            # Java classfiles share CAFEBABE. Fat Mach-O has a small nfat_arch.
-            if magic == b"\xca\xfe\xba\xbe" and struct.unpack_from(">I", b, 4)[0] > 64:
-                return None
+        if magic in (
+            b"\xca\xfe\xba\xbe",
+            b"\xbe\xba\xfe\xca",
+            b"\xca\xfe\xba\xbf",
+            b"\xbf\xba\xfe\xca",
+        ):
+            # Java class versions 45..64 also look like a small nfat_arch.
+            # Require an actual fat table with bounded Mach-O slices, rather
+            # than classifying class files by their shared four-byte signature.
+            endian = ">" if magic[0] == 0xCA else "<"
+            wide = magic in (b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca")
+            count = struct.unpack_from(endian + "I", b, 4)[0]
+            stride = 32 if wide else 20
+            table_end = 8 + count * stride
+            valid = count > 0 and table_end <= len(b)
+            if valid:
+                for index in range(count):
+                    entry = struct.unpack_from(
+                        endian + ("IIQQII" if wide else "IIIII"), b, 8 + index * stride
+                    )
+                    offset, size = entry[2:4]
+                    if (
+                        offset < table_end
+                        or size < 28
+                        or offset + size > len(b)
+                        or b[offset : offset + 4] not in MACHO_MAGICS
+                    ):
+                        valid = False
+                        break
+            if not valid:
+                if (
+                    magic == b"\xca\xfe\xba\xbe"
+                    and struct.unpack_from(">H", b, 6)[0] >= 45
+                ):
+                    return None
+                raise ValueError("invalid universal Mach-O slice table")
             return {
                 "format": "macho-fat",
                 "kind": "module",
@@ -256,6 +292,16 @@ class Inventory:
     def __init__(self):
         self.files, self.containers, self.gaps, self.aliases = [], [], [], []
         self.expanded = 0
+        self.scratch = None
+
+    def __del__(self):
+        if self.scratch is not None:
+            self.scratch.cleanup()
+
+    def scratch_file(self, depth):
+        if self.scratch is None:
+            self.scratch = tempfile.TemporaryDirectory(prefix="symbol-members-")
+        return Path(self.scratch.name) / f"member-{depth}"
 
     def gap(self, path, reason):
         self.gaps.append({"path": path, "status": "unverified", "reason": reason})
@@ -264,17 +310,68 @@ class Inventory:
         self.expanded += size
         if self.expanded > MAX_EXPANDED:
             raise ValueError("archive expansion limit exceeded")
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "member"
-            with path.open("wb") as temp:
-                remaining = size
-                while remaining:
-                    chunk = source.read(min(1024 * 1024, remaining))
-                    if not chunk:
-                        raise ValueError("truncated archive member")
-                    temp.write(chunk)
-                    remaining -= len(chunk)
-            self.scan(path, name, depth)
+        # Reuse one file per recursion depth. Parent archive readers stay open
+        # while nested members are inspected, so sharing one file across depths
+        # would overwrite their bytes. Metadata retains no temporary paths.
+        # A directory per resource dominated collection on real JDK bundles.
+        path = self.scratch_file(depth)
+        with path.open("wb") as temp:
+            remaining = size
+            while remaining:
+                chunk = source.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise ValueError("truncated archive member")
+                temp.write(chunk)
+                remaining -= len(chunk)
+        self.scan(path, name, depth)
+
+    def compressed(self, path, name, depth, kind):
+        self.containers.append({**artifact(path, name), "format": kind})
+        output = self.scratch_file(depth + 1)
+        process = None
+        with tempfile.TemporaryFile() as errors:
+            try:
+                if kind == "zstd":
+                    decoder = shutil.which("zstd")
+                    if not decoder:
+                        raise ValueError(
+                            "zstd decoder unavailable for compressed payload"
+                        )
+                    process = subprocess.Popen(
+                        [decoder, "-dc", "--", str(path)],
+                        stdout=subprocess.PIPE,
+                        stderr=errors,
+                    )
+                    source = process.stdout
+                else:
+                    source = {"gzip": gzip.open, "xz": lzma.open, "bzip2": bz2.open}[
+                        kind
+                    ](path, "rb")
+                with source, output.open("wb") as target:
+                    while chunk := source.read(1024 * 1024):
+                        self.expanded += len(chunk)
+                        if self.expanded > MAX_EXPANDED:
+                            raise ValueError("archive expansion limit exceeded")
+                        target.write(chunk)
+                if process is not None and process.wait() != 0:
+                    errors.seek(0)
+                    raise ValueError(
+                        "zstd decode failed: "
+                        + errors.read(4096).decode("utf-8", "replace")
+                    )
+                suffix = {"gzip": ".gz", "xz": ".xz", "bzip2": ".bz2", "zstd": ".zst"}[
+                    kind
+                ]
+                member = PurePosixPath(name).name.removesuffix(suffix)
+                # A nameless compressed tar still needs archive inspection; a gzip
+                # charmap is plain data, not an invalid tar archive.
+                if tarfile.is_tarfile(output) and not member.endswith(".tar"):
+                    member += ".tar"
+                self.scan(output, name + "!/" + member, depth + 1)
+            finally:
+                if process is not None and process.poll() is None:
+                    process.kill()
+                    process.wait()
 
     def scan(self, path, name, depth=0):
         if depth > MAX_DEPTH:
@@ -283,6 +380,23 @@ class Inventory:
             head = source.read(8)
         lower = name.lower()
         try:
+            tar_suffixes = (".tar", ".tar.gz", ".tar.xz", ".tgz", ".txz", ".tar.bz2")
+            compression = next(
+                (
+                    kind
+                    for magic, kind in (
+                        (b"\x1f\x8b", "gzip"),
+                        (b"\xfd7zXZ\0", "xz"),
+                        (b"BZh", "bzip2"),
+                        (b"\x28\xb5\x2f\xfd", "zstd"),
+                    )
+                    if head.startswith(magic)
+                ),
+                None,
+            )
+            if compression and not lower.endswith(tar_suffixes):
+                self.compressed(path, name, depth, compression)
+                return
             if lower.endswith(".oci.tar"):
                 self.oci(path, name, depth)
                 return
@@ -380,9 +494,7 @@ class Inventory:
                     "thin archive references external files; final link relationship unavailable",
                 )
                 return
-            if lower.endswith(
-                (".tar", ".tar.gz", ".tar.xz", ".tgz", ".txz", ".tar.bz2")
-            ) or head[:2] in (b"\x1f\x8b", b"\xfd7"):
+            if lower.endswith(tar_suffixes):
                 self.containers.append({**artifact(path, name), "format": "tar"})
                 with tarfile.open(path, "r|*") as archive:
                     seen = set()
@@ -449,6 +561,8 @@ class Inventory:
             EOFError,
             tarfile.TarError,
             zipfile.BadZipFile,
+            OSError,
+            lzma.LZMAError,
         ) as error:
             self.gap(name, f"inspection failed: {error}")
             self.gaps[-1]["artifact"] = artifact(path, name)

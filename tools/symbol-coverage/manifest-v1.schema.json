@@ -135,7 +135,7 @@
         "required": ["format"],
         "properties": {
           "format": {
-            "enum": ["zip", "tar", "ar", "oci"]
+              "enum": ["zip", "tar", "ar", "oci", "gzip", "xz", "bzip2", "zstd"]
           }
         }
       }
