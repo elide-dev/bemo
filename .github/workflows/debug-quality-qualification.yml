@@ -1,0 +1,12 @@
+name: Debug quality qualification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rust:
+    uses: ./.github/workflows/check.rust.yml
+  native-image:
+    uses: ./.github/workflows/check.native-image.yml
+  package:
+    uses: ./.github/workflows/job.build.yml
