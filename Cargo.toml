@@ -25,8 +25,8 @@ bytes = { version = "1" }
 tokio = { version = "1", default-features = false, features = ["net", "io-util", "macros", "rt", "sync", "time"] }
 socket2 = { version = "0.6", features = ["all"] }
 libc = { version = "0" }
-rustls = { version = "=0.23.46", default-features = false }
-aws-lc-rs = { version = "=1.18.2", default-features = false }
+rustls = { version = "=0.23.46", git = "https://github.com/elide-dev/rustls.git", rev = "4a81dbcffc9b1c81b21fcd396f2f64f9953fd4d6", default-features = false }
+aws-lc-rs = { version = "=1.18.2", git = "https://github.com/elide-dev/aws-lc-rs.git", rev = "2722aadb32e6e45dd2364f4e8f550267e238f158", default-features = false }
 libmimalloc-sys = { version = "=0.1.49" }
 
 [workspace.lints.rust]

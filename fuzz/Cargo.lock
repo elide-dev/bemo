@@ -32,8 +32,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 [[package]]
 name = "aws-lc-rs"
 version = "1.18.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faac5829c2b74c28f830747e7818ccfb684261b5f48a1118b1e2a13d36dfab13"
+source = "git+https://github.com/elide-dev/aws-lc-rs.git?rev=2722aadb32e6e45dd2364f4e8f550267e238f158#2722aadb32e6e45dd2364f4e8f550267e238f158"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -42,8 +41,7 @@ dependencies = [
 [[package]]
 name = "aws-lc-sys"
 version = "0.46.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1622d8446a2d4b2ce0c7eefc73dd43a99779028d5ee5c2dd8073a658ba8a2bc"
+source = "git+https://github.com/elide-dev/aws-lc-rs.git?rev=2722aadb32e6e45dd2364f4e8f550267e238f158#2722aadb32e6e45dd2364f4e8f550267e238f158"
 dependencies = [
  "cc",
  "cmake",
@@ -674,8 +672,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
+source = "git+https://github.com/elide-dev/rustls.git?rev=4a81dbcffc9b1c81b21fcd396f2f64f9953fd4d6#4a81dbcffc9b1c81b21fcd396f2f64f9953fd4d6"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
@@ -697,8 +694,7 @@ dependencies = [
 [[package]]
 name = "rustls-webpki"
 version = "0.103.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
+source = "git+https://github.com/elide-dev/webpki.git?rev=057dff401dfd03d5004f17f871a4650b2cd886f4#057dff401dfd03d5004f17f871a4650b2cd886f4"
 dependencies = [
  "aws-lc-rs",
  "ring",

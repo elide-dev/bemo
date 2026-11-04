@@ -15,7 +15,7 @@ libfuzzer-sys = "=0.4.13"
 # Reference implementations used as differential oracles, never as code under test.
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 httparse = "=1.10.1"
-rustls = { version = "=0.23.46", default-features = false, features = ["std", "tls12", "aws-lc-rs"] }
+rustls = { version = "=0.23.46", git = "https://github.com/elide-dev/rustls.git", rev = "4a81dbcffc9b1c81b21fcd396f2f64f9953fd4d6", default-features = false, features = ["std", "tls12", "aws-lc-rs"] }
 
 [[bin]]
 name = "http"
