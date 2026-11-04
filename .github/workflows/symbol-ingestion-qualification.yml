@@ -12,6 +12,7 @@ permissions:
   contents: read
 jobs:
   symbols:
+    if: inputs.source_run != '' || vars.DEBUGINFO_DEV_SOURCE_RUN != ''
     uses: ./.github/workflows/job.symbols.yml
     permissions:
       contents: read

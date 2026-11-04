@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -24,7 +25,11 @@ spec.loader.exec_module(ingest)
 def gh(*args):
     result = subprocess.run(["gh", *args], capture_output=True, text=True)
     if result.returncode:
-        raise RuntimeError("GitHub artifact lookup/download failed; ingestion incomplete")
+        detail = re.sub(r"https?://\S+", "[download URL]", result.stderr)
+        for name in ("GH_TOKEN", "GITHUB_TOKEN", "DEBUGINFO_DEV_APIKEY"):
+            if os.environ.get(name):
+                detail = detail.replace(os.environ[name], "[REDACTED]")
+        raise RuntimeError("GitHub artifact lookup/download failed; ingestion incomplete: " + detail[-1200:])
     return result.stdout
 
 
@@ -79,6 +84,7 @@ def collect(config, source_run, directory):
         raise ValueError("Missing/expired final symbol or distribution evidence")
     directory.mkdir(parents=True, exist_ok=False)
     for artifact in artifacts:
+        print(f"Downloading producer artifact {artifact['id']} ({artifact['name']}, {artifact['size_in_bytes']} compressed bytes)", flush=True)
         gh("run", "download", str(source_run), "-R", repository, "-n", artifact["name"], "-D", str(directory / str(artifact["id"])))
     # Komodo's producer retains its peers as a tar, alongside its final archive.
     # Extract only explicitly configured private-symbol archives, using Python's

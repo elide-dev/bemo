@@ -1,0 +1,55 @@
+name: Qualify live symbol controls
+on:
+  push:
+    branches: [codex/symbol-ingestion]
+    paths: [.github/workflows/qualify-live-symbols.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qualify:
+    if: vars.DEBUGINFO_DEV_QUALIFY_ID != '' && github.ref == format('refs/heads/{0}', vars.DEBUGINFO_DEV_BRANCH || 'main')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEBUGINFO_DEV_PROJECT: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      DEBUGINFO_DEV_QUALIFY_ID: ${{ vars.DEBUGINFO_DEV_QUALIFY_ID }}
+      DEBUGINFO_DEV_QUALIFY_SHA256: ${{ vars.DEBUGINFO_DEV_QUALIFY_SHA256 }}
+      DEBUGINFO_DEV_QUALIFY_COMMIT: ${{ vars.DEBUGINFO_DEV_QUALIFY_COMMIT }}
+      DEBUGINFO_DEV_FOREIGN_DEBUG_ID: ${{ vars.DEBUGINFO_DEV_FOREIGN_DEBUG_ID }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: elide-dev/debuginfo-client@47894d0764ff0c7f4763b3e8289e94376c36aa1b
+        with:
+          repository: elide-dev/debuginfo-client
+          version: 0.7.1
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Retrieve and verify the exact existing real-product debug peer
+        shell: bash
+        run: |
+          dbginfo --no-telemetry get "$DEBUGINFO_DEV_QUALIFY_ID" -o "$RUNNER_TEMP/existing.debug"
+          python3 - <<'PYCODE'
+          import json,os,hashlib
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP']);peer=root/'existing.debug'
+          with peer.open('rb') as stream: actual=hashlib.file_digest(stream,'sha256').hexdigest()
+          assert actual==os.environ['DEBUGINFO_DEV_QUALIFY_SHA256'],'Unexpected service bytes'
+          plan={'repository':os.environ['GITHUB_REPOSITORY'],'uploads':[{'file':str(peer),'debugId':os.environ['DEBUGINFO_DEV_QUALIFY_ID'],'debugSha256':actual,'commit':os.environ['DEBUGINFO_DEV_QUALIFY_COMMIT']}],'gaps':[]}
+          (root/'qualification-plan.json').write_text(json.dumps(plan))
+          PYCODE
+      - name: Exercise idempotency, collisions, authentication and project isolation
+        shell: bash
+        run: python3 tools/symbol-coverage/qualify-ingest.py --plan "$RUNNER_TEMP/qualification-plan.json" --out "$RUNNER_TEMP/live-controls.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: symbol-ingestion-live-controls
+          path: ${{ runner.temp }}/live-controls.json
+          if-no-files-found: error
+          retention-days: 90
