@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 
 
 def digest(path):
@@ -140,13 +141,25 @@ def download(url, org, debug_id, path):
     # configured service, and the credential must not leave that origin.
     config = "\n".join("header = " + json.dumps(value) for value in (
         "Authorization: Bearer " + key, "X-Debuginfo-Tenant: " + org)) + "\n"
-    result = subprocess.run(["curl", "--disable", "--fail", "--silent", "--show-error",
-        "--proto", "=https", "--connect-timeout", "30", "--speed-limit", "1", "--speed-time", "30",
-        "--retry", "2", "--retry-max-time", "180",
-        "--config", "-", "--output", str(path), f"{url.rstrip('/')}/buildid/{debug_id}/debuginfo"],
-        input=config, capture_output=True, text=True)
-    if result.returncode:
-        raise RuntimeError(f"debuginfod readback failed (curl exit {result.returncode}); ingestion incomplete: {safe_detail(result.stderr)}")
+    started = time.monotonic()
+    for attempt in range(3):
+        Path(path).unlink(missing_ok=True)
+        result = subprocess.run(["curl", "--disable", "--fail", "--silent", "--show-error",
+            "--proto", "=https", "--connect-timeout", "30", "--speed-limit", "1", "--speed-time", "30",
+            "--config", "-", "--output", str(path), f"{url.rstrip('/')}/buildid/{debug_id}/debuginfo"],
+            input=config, capture_output=True, text=True)
+        if not result.returncode:
+            return
+        Path(path).unlink(missing_ok=True)
+        # Retry only interrupted GET transports: partial body, timeout, empty
+        # reply, send/receive failure or HTTP/2 stream reset. HTTP errors (22),
+        # including auth denials, remain terminal. No upload is repeated here.
+        delay = 2 ** attempt
+        if result.returncode not in (18, 28, 52, 55, 56, 92) or attempt == 2 or time.monotonic() - started + delay >= 180:
+            break
+        print(f"Interrupted debuginfod GET (curl {result.returncode}); retry {attempt + 1}/2", flush=True)
+        time.sleep(delay)
+    raise RuntimeError(f"debuginfod readback failed (curl exit {result.returncode}); ingestion incomplete: {safe_detail(result.stderr)}")
 
 
 def private_project(url, org, org_id, project, project_id):
