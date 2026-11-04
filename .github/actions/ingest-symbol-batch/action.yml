@@ -16,7 +16,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: elide-dev/setup-debuginfo@0527b468ab5733f736eafc85d9aa238359082611
+    - uses: elide-dev/debuginfo-client@47894d0764ff0c7f4763b3e8289e94376c36aa1b
       with:
         repository: elide-dev/debuginfo-client
         version: 0.7.1
