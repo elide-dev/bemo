@@ -1,5 +1,8 @@
 name: Debug quality qualification
 on:
+  push:
+    branches: [codex/debug-quality]
+    paths: [.github/workflows/debug-quality-qualification.yml]
   workflow_dispatch:
 permissions:
   contents: read
