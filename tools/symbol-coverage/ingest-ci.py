@@ -33,7 +33,7 @@ def gh(*args):
     return result.stdout
 
 
-def batches(uploads, limit=2 * 1024 ** 3):
+def batches(uploads, limit=1024 ** 3):
     result, current, size = [], [], 0
     for item in uploads:
         length = Path(item["file"]).stat().st_size
@@ -44,8 +44,8 @@ def batches(uploads, limit=2 * 1024 ** 3):
         size += length
     if current:
         result.append(current)
-    if len(result) > 32:
-        raise ValueError("More than 32 credential batches required; split the consumer platform/artifact selection")
+    if len(result) > 64:
+        raise ValueError("More than 64 credential batches required; split the consumer platform/artifact selection")
     return result
 
 

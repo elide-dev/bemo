@@ -3,7 +3,8 @@
 `.github/workflows/on.symbols.yml` observes successful producer workflows and calls
 `job.symbols.yml`. The latter can also ingest an earlier successful producer run
 without recompiling it. It runs from the repository's linked trusted upload branch,
-uses `elide-dev/setup-debuginfo` for a project-scoped 15-minute GitHub credential,
+uses the shared `elide-dev/setup-debuginfo` action (or its byte-identical official
+`elide-dev/debuginfo-client` distribution) for a project-scoped 15-minute GitHub credential,
 and uploads only final peers selected by the distribution/preservation manifests.
 
 Repository settings supply `DEBUGINFO_DEV_URL`, `DEBUGINFO_DEV_ORG`,
@@ -35,3 +36,7 @@ supplier gaps and source-provenance limits remain in the receipts. Successful in
 and readback do not certify complete source attribution or guest/JIT capture.
 
 See the [shared contract](https://github.com/elide-dev/debuginfo.dev/blob/main/tools/symbol-coverage/README.md#private-ci-ingestion).
+
+Credential batches are bounded to 1 GiB; a larger individual peer occupies its own
+batch. The workflow refreshes access before every batch. Live controls independently
+exercise idempotency, collision rejection and private-project isolation.
