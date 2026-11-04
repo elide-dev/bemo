@@ -60,20 +60,23 @@ def pdb_info(data):
     import uuid
 
     block_size, _, blocks, directory_size, _, block_map = struct.unpack_from("<6I", data, 32)
-    if block_size not in (512, 1024, 2048, 4096) or blocks * block_size > len(data):
+    if block_size not in (512, 1024, 2048, 4096) or blocks * block_size > len(data) or directory_size > len(data) or block_map >= blocks:
         raise ValueError("invalid PDB block geometry")
     count = (directory_size + block_size - 1) // block_size
     indices = struct.unpack_from("<" + "I" * count, data, block_map * block_size)
     directory = b"".join(data[i * block_size : (i + 1) * block_size] for i in indices)[:directory_size]
     streams = struct.unpack_from("<I", directory)[0]
+    if streams < 4 or streams > (len(directory) - 4) // 4:
+        raise ValueError("invalid PDB stream directory")
     sizes = struct.unpack_from("<" + "I" * streams, directory, 4)
-    position, selected = 4 + streams * 4, {}
+    position, selected, layouts = 4 + streams * 4, {}, {}
     for stream, size in enumerate(sizes):
         count = 0 if size == 0xFFFFFFFF else (size + block_size - 1) // block_size
         indices = struct.unpack_from("<" + "I" * count, directory, position)
         if any(i >= blocks for i in indices):
             raise ValueError("invalid PDB stream block")
         position += count * 4
+        layouts[stream] = (size, indices)
         if stream in (1, 3):
             selected[stream] = b"".join(data[i * block_size : (i + 1) * block_size] for i in indices)[:size]
     info, dbi = selected[1], selected[3]
@@ -82,11 +85,37 @@ def pdb_info(data):
     if age != dbi_age:
         raise ValueError("PDB info and DBI ages differ")
     machine = struct.unpack_from("<H", dbi, 58)[0]
+    modules_size = struct.unpack_from("<i", dbi, 24)[0]
+    position, files, lines = 64, 0, 0
+    while position < 64 + modules_size:
+        debug_stream = struct.unpack_from("<H", dbi, position + 34)[0]
+        symbols_size, c11_size, c13_size = struct.unpack_from("<3I", dbi, position + 36)
+        source_files = struct.unpack_from("<H", dbi, position + 48)[0]
+        files += source_files
+        if source_files and c13_size and debug_stream != 0xFFFF:
+            if debug_stream not in layouts:
+                raise ValueError("invalid PDB module stream index")
+            stream_size, indices = layouts[debug_stream]
+            content = b"".join(data[i * block_size : (i + 1) * block_size] for i in indices)[:stream_size]
+            current, end = symbols_size + c11_size, symbols_size + c11_size + c13_size
+            if end > len(content):
+                raise ValueError("PDB module C13 records exceed its stream")
+            while current < end:
+                kind, length = struct.unpack_from("<II", content, current)
+                if current + 8 + length > end:
+                    raise ValueError("invalid PDB C13 subsection length")
+                if kind == 0xF2 and length >= 12:  # DEBUG_S_LINES
+                    lines += 1
+                current = (current + 8 + length + 3) & ~3
+        # Two trailing C strings (module and object names), aligned to four.
+        position = dbi.index(b"\0", dbi.index(b"\0", position + 64) + 1) + 1
+        position = (position + 3) & ~3
     return {
         "format": "pdb", "kind": "debug",
         "architecture": {0x8664: "x86_64", 0xAA64: "aarch64", 0x14C: "x86"}.get(machine, str(machine)),
         "identity": {"kind": "pdb-guid-age", "value": f"{uuid.UUID(bytes_le=info[12:28]).hex}-{age}"},
-        "dwarf": False, "pdb": struct.unpack_from("<i", dbi, 24)[0] > 0, "debuglink": None,
+        "dwarf": False, "pdb": files > 0 and lines > 0, "debuglink": None,
+        "pdbContent": {"sourceFiles": files, "lineSubsections": lines},
     }
 
 

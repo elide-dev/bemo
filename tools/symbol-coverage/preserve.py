@@ -111,7 +111,7 @@ def code_signature(path):
     return result
 
 
-def bind(binary, out):
+def bind(binary, out, strip=False):
     """Bind packaging/signing bytes only when executable addresses/bytes agree."""
     binary, out = Path(binary).resolve(), Path(out).resolve()
     module, code = inventory.native(binary), code_signature(binary)
@@ -122,7 +122,18 @@ def bind(binary, out):
             continue
         if record["code"] != code:
             raise ValueError(f"Executable code changed after debug retention: {binary}")
-        check_pair(binary, path.parent / record["debug"]["path"])
+        peer = path.parent / record["debug"]["path"]
+        check_pair(binary, peer)
+        if strip and module["format"] == "elf":
+            run(tool("llvm-strip"), "--strip-unneeded", binary)
+            run(tool("llvm-objcopy"), "--remove-section=.gnu_debuglink", binary)
+            run(tool("llvm-objcopy"), "--add-gnu-debuglink=" + str(peer), binary)
+        elif strip and module["format"] == "macho":
+            run(tool("strip"), "-x", binary)
+        if code_signature(binary) != code:
+            raise ValueError("Stripping changed executable code or addresses")
+        check_pair(binary, peer)
+        record["binary"].update(inventory.native(binary))
         record["binary"].update(inventory.artifact(binary, binary.name))
         path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         matched = True
@@ -157,6 +168,7 @@ def retain_dwarf(peer, bundle, binary_name):
     companions = []
     if references:
         paths = []
+        identifiers = {}
         for name, directory, identifier in references:
             source = Path(name) if Path(name).is_absolute() else Path(directory) / name
             if not source.is_file():
@@ -165,6 +177,10 @@ def retain_dwarf(peer, bundle, binary_name):
             ids = re.findall(r"(?:DWO_id = |DW_AT_GNU_dwo_id\s+\()(0x[0-9a-f]+)", dump)
             if identifier not in [i.lower() for i in ids]:
                 raise ValueError(f"Split DWARF identifier mismatch: {source}")
+            checksum = inventory.digest(source)
+            if identifier in identifiers and identifiers[identifier] != checksum:
+                raise ValueError(f"Different split DWARF bytes share identifier {identifier}")
+            identifiers[identifier] = checksum
             paths.append(source)
         # A packaged DWP removes dependence on absolute compilation directories.
         dwp = bundle / (binary_name + ".dwp")
@@ -208,6 +224,8 @@ def check_pair(binary, peer):
         raise ValueError(f"Missing debug content: {peer}")
     if module["format"] == "elf":
         original, separate = elf_sections(binary), elf_sections(peer)
+        if any(separate.get(name, (0, 0, b""))[2] for name in (".debug_sup", ".gnu_debugaltlink")):
+            raise ValueError("Supplementary DWARF requires an explicitly retained and verified companion")
         if original[".text"][:2] != separate[".text"][:2]:
             raise ValueError("Debug text address/size differs from final executable")
         for name, section in original.items():
@@ -230,6 +248,8 @@ def preserve(binary, out, debug=None, mapping=None, stage="final-link", strip=Fa
     key = module["identity"]["value"] if isinstance(module["identity"], dict) else str(module["identity"])
     destination = out / (binary.name + "-" + key)
     out.mkdir(parents=True, exist_ok=True)
+    if not destination.resolve().is_relative_to(out):
+        raise ValueError("retention destination escapes its output root")
     # Never accept an old retention directory as proof of a cache hit. Recompute.
     with tempfile.TemporaryDirectory(prefix=".preserve-", dir=out) as temporary:
         bundle = Path(temporary)
@@ -246,11 +266,6 @@ def preserve(binary, out, debug=None, mapping=None, stage="final-link", strip=Fa
                 raise ValueError(f"No embedded DWARF or explicit final debug peer: {binary}")
             check_pair(binary, peer)
             dwarf = retain_dwarf(peer, bundle, binary.name)
-            if strip:
-                run(tool("llvm-strip"), "--strip-unneeded", binary)
-                run(tool("llvm-objcopy"), "--remove-section=.gnu_debuglink", binary)
-                run(tool("llvm-objcopy"), "--add-gnu-debuglink=" + str(peer), binary)
-                check_pair(binary, peer)
         elif module["format"] == "macho":
             dsym = bundle / (binary.name + ".dSYM")
             if debug:
@@ -260,18 +275,25 @@ def preserve(binary, out, debug=None, mapping=None, stage="final-link", strip=Fa
             peer = dsym / "Contents/Resources/DWARF" / binary.name
             check_pair(binary, peer)
             dwarf = retain_dwarf(peer, bundle, binary.name)
-            if strip:
-                run(tool("strip"), "-x", binary)
         elif module["format"] == "pe":
-            source = Path(debug) if debug else binary.with_suffix(".pdb")
+            if debug:
+                source = Path(debug)
+            else:
+                candidates = {}
+                for candidate in binary.parent.glob("*.pdb"):
+                    metadata = inventory.native(candidate)
+                    if metadata and metadata["identity"] == module["identity"] and metadata["architecture"] == module["architecture"]:
+                        candidates[inventory.digest(candidate)] = candidate
+                if len(candidates) != 1:
+                    raise ValueError(f"Expected one identity-matched PDB for {binary}; found {len(candidates)}")
+                source = next(iter(candidates.values()))
             peer = bundle / source.name
             shutil.copyfile(source, peer)
             check_pair(binary, peer)
-            summary = run(tool("llvm-pdbutil"), "dump", "--summary", "--modules", "--files", peer)
-            if "Has Debug Info: true" not in summary or not re.search(r"# files: [1-9]", summary):
-                raise ValueError("PDB has no module/source debug records")
-            (bundle / "pdb-verify.txt").write_text(summary, encoding="utf-8")
-            dwarf = {"status": "pdb-module-records", "references": [], "companions": []}
+            # Parse DBI source counts and actual C13 line subsections, so Windows
+            # builders do not need a second platform SDK just to retain a PDB.
+            content = inventory.native(peer)["pdbContent"]
+            dwarf = {"status": "pdb-module-records", "references": [], "companions": [], "content": content}
         else:
             raise ValueError(f"Preservation for {module['format']} requires a platform debug provider")
         maps = []
@@ -284,19 +306,30 @@ def preserve(binary, out, debug=None, mapping=None, stage="final-link", strip=Fa
             shutil.copyfile(source, target)
             maps.append({**inventory.artifact(target, target.name),
                          "association": "same final build action; binary/debug hashes bound in this record"})
+        module = inventory.native(binary)
         record = {"version": 1, "stage": stage, "binaryBeforeStrip": before,
                   "code": code_signature(binary),
                   "binary": {**inventory.artifact(binary, binary.name), **module},
                   "debug": inventory.artifact(peer, str(peer.relative_to(bundle))),
                   "dwarf": dwarf, "maps": maps}
         # Module metadata must not overwrite the byte hash or relative name.
-        if record["code"] != original_code:
-            raise ValueError("Stripping changed executable code or addresses")
         record["binary"].update(inventory.artifact(binary, binary.name))
         (bundle / "preservation.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         if destination.exists():
             shutil.rmtree(destination)
-        shutil.copytree(bundle, destination)
+        # Promote on the same filesystem before any destructive strip step.
+        # A strip/tool/disk failure must leave a durable, usable debug bundle.
+        os.replace(bundle, destination)
+        peer = destination / record["debug"]["path"]
+        if strip and module["format"] == "elf":
+            run(tool("llvm-strip"), "--strip-unneeded", binary)
+            run(tool("llvm-objcopy"), "--remove-section=.gnu_debuglink", binary)
+            run(tool("llvm-objcopy"), "--add-gnu-debuglink=" + str(peer), binary)
+        elif strip and module["format"] == "macho":
+            run(tool("strip"), "-x", binary)
+        if code_signature(binary) != original_code:
+            raise ValueError("Stripping changed executable code or addresses")
+        bind(binary, destination)
     return destination
 
 
@@ -309,9 +342,14 @@ def main():
     parser.add_argument("--stage", default="final-link")
     parser.add_argument("--strip", action="store_true")
     parser.add_argument("--bind", action="store_true")
+    parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    if args.bind:
-        bind(args.binary, args.out)
+    if args.check:
+        if not args.debug:
+            parser.error("--check requires --debug")
+        check_pair(args.binary, args.debug)
+    elif args.bind:
+        bind(args.binary, args.out, args.strip)
     else:
         print(preserve(args.binary, args.out, args.debug, args.map, args.stage, args.strip))
 
