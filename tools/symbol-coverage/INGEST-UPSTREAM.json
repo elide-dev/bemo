@@ -1,0 +1,8 @@
+{
+  "repository": "elide-dev/debuginfo.dev",
+  "commit": "dd4f3016802e8e55897b5ce9ea07126e8f58a891",
+  "files": {
+    "ingest.py": "fe68253b469932ad4038927ae2cfe53971d8bc1687df003733cac83bfecde348",
+    "ingest-ci.py": "8afbea2d721ae3d74e4436ea76bf580812870367fcde934d5aeef8ec8ea60c95"
+  }
+}

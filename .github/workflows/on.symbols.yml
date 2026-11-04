@@ -1,0 +1,17 @@
+name: Private symbol ingestion
+on:
+  workflow_run:
+    workflows: ["Push", "Symbol coverage qualification"]
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  symbols:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target'
+    uses: ./.github/workflows/job.symbols.yml
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    with:
+      source_run: ${{ github.event.workflow_run.id }}

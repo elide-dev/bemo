@@ -1,0 +1,325 @@
+name: Ingest final private symbols
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful same-repository producer run; blank uses this run
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      source_run:
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  ingest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [all]
+    env:
+      SYMBOL_INGEST_PLATFORM: ${{ matrix.platform }}
+      DEBUGINFO_DEV_ORG_ID: ${{ vars.DEBUGINFO_DEV_ORG_ID }}
+      DEBUGINFO_DEV_PROJECT_ID: ${{ vars.DEBUGINFO_DEV_PROJECT_ID }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Explain private ingestion policy
+        env:
+          TRUSTED_BRANCH: ${{ vars.DEBUGINFO_DEV_BRANCH || 'main' }}
+        run: |
+          echo "Private symbols require configured repository destinations and the linked trusted branch: $TRUSTED_BRANCH."
+          echo "PR builds and unconfigured repositories retain their existing private build artifacts without service upload."
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && github.ref == format('refs/heads/{0}', vars.DEBUGINFO_DEV_BRANCH || 'main') && vars.DEBUGINFO_DEV_PROJECT_ID != ''
+        with:
+          persist-credentials: false
+      - name: Download and validate tested final debug artifacts
+        id: plan
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && github.ref == format('refs/heads/{0}', vars.DEBUGINFO_DEV_BRANCH || 'main') && vars.DEBUGINFO_DEV_PROJECT_ID != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run || github.run_id }}
+        run: |
+          python3 tools/symbol-coverage/ingest-ci.py --config .github/symbol-ingestion.json \
+            --source-run "$SOURCE_RUN" --directory "$RUNNER_TEMP/ingest-input" --out "$RUNNER_TEMP/ingest-plan.json"
+      - name: Ingest and read back final-symbol batch 1
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 0
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '0'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 2
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 1
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '1'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 3
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 2
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '2'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 4
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 3
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '3'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 5
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 4
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '4'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 6
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 5
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '5'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 7
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 6
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '6'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 8
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 7
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '7'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 9
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 8
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '8'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 10
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 9
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '9'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 11
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 10
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '10'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 12
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 11
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '11'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 13
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 12
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '12'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 14
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 13
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '13'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 15
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 14
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '14'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 16
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 15
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '15'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 17
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 16
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '16'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 18
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 17
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '17'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 19
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 18
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '18'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 20
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 19
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '19'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 21
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 20
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '20'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 22
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 21
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '21'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 23
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 22
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '22'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 24
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 23
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '23'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 25
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 24
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '24'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 26
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 25
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '25'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 27
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 26
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '26'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 28
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 27
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '27'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 29
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 28
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '28'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 30
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 29
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '29'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 31
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 30
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '30'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Ingest and read back final-symbol batch 32
+        if: steps.plan.outputs.has_uploads == 'true' && fromJSON(steps.plan.outputs.batch_count) > 31
+        uses: ./.github/actions/ingest-symbol-batch
+        with:
+          batch: '31'
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Require complete server receipts for every selected peer
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && github.ref == format('refs/heads/{0}', vars.DEBUGINFO_DEV_BRANCH || 'main') && vars.DEBUGINFO_DEV_PROJECT_ID != ''
+        run: |
+          mkdir -p "$RUNNER_TEMP/ingest-receipts"
+          python3 tools/symbol-coverage/ingest-ci.py --config .github/symbol-ingestion.json \
+            --directory "$RUNNER_TEMP/ingest-input" --out "$RUNNER_TEMP/ingest-plan.json" \
+            --finalize --receipts "$RUNNER_TEMP/ingest-receipts"
+      - name: Retain ingestion receipts and explicit format/quality gaps
+        if: always() && github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && github.ref == format('refs/heads/{0}', vars.DEBUGINFO_DEV_BRANCH || 'main') && vars.DEBUGINFO_DEV_PROJECT_ID != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: symbol-ingestion-${{ matrix.platform }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ingest-plan.json
+            ${{ runner.temp }}/ingest-receipts/
+            ${{ runner.temp }}/ingest-input/evidence/
+          if-no-files-found: error
+          retention-days: 90
