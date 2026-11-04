@@ -99,7 +99,8 @@ def deps():
 def rust(release=False, debug_info=False):
   env = dict(os.environ)
   if debug_info:
-    env.update(CARGO_PROFILE_RELEASE_DEBUG="1", CARGO_PROFILE_RELEASE_STRIP="none")
+    env.update(CARGO_PROFILE_RELEASE_DEBUG="2", CARGO_PROFILE_RELEASE_STRIP="none",
+               CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO="off")
   if platform.system() == "Darwin":
     env.setdefault("MACOSX_DEPLOYMENT_TARGET", "15.0")
   run("cargo", "build", "--workspace", "--locked", *(["--release"] if release else []), env=env)
@@ -489,7 +490,7 @@ def jar(path, directory):
 
 def package():
   bitcode_archive = bitcode.build()
-  rust(True)
+  rust(True, debug_info=True)
   jvm()
   stage = BUILD / "maven"
   shutil.rmtree(stage, ignore_errors=True)
@@ -546,6 +547,9 @@ def package():
     resource = native / "META-INF/native" / classifier()
     resource.mkdir(parents=True)
     shutil.copy2(binary, resource)
+    if module == "ffm":
+      run(sys.executable, ROOT / "tools/symbol-coverage/preserve.py",
+          "--binary", resource / binary.name, "--out", BUILD / "symbols", "--strip")
     shutil.copy2(ROOT / "include/bemo.h", resource)
     shutil.copy2(ROOT / "include/elide_transport.h", resource)
     for name in ("LICENSE", "NOTICE"):
@@ -580,6 +584,7 @@ def package():
   # Inspect the exact Maven bundle, including nested classifier JARs and ThinLTO members.
   run(sys.executable, ROOT / "tools/symbol-coverage/collect.py",
       "--repository", "elide-dev/bemo", "--distribution", bundle.relative_to(ROOT),
+      "--debug-root", "build/symbols",
       "--metadata", json.dumps({"release": VERSION, "platform": platform.system().lower(),
                                 "architecture": platform.machine(),
                                 "configuration": {"cargoProfile": "release", "classifier": classifier()}}),

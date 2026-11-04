@@ -43,6 +43,13 @@ jobs:
           path: build/reports/symbol-coverage.json
           if-no-files-found: error
           retention-days: 30
+      - name: Retain final native debug artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-debug-${{ matrix.os }}
+          path: build/symbols/
+          if-no-files-found: error
+          retention-days: 90
       - name: Attest tested platform bundle
         id: provenance
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

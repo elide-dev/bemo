@@ -55,6 +55,41 @@ def artifact(path, name):
     }
 
 
+def pdb_info(data):
+    """Read MSF7's PDB info and DBI streams, not the filename or PE path hint."""
+    import uuid
+
+    block_size, _, blocks, directory_size, _, block_map = struct.unpack_from("<6I", data, 32)
+    if block_size not in (512, 1024, 2048, 4096) or blocks * block_size > len(data):
+        raise ValueError("invalid PDB block geometry")
+    count = (directory_size + block_size - 1) // block_size
+    indices = struct.unpack_from("<" + "I" * count, data, block_map * block_size)
+    directory = b"".join(data[i * block_size : (i + 1) * block_size] for i in indices)[:directory_size]
+    streams = struct.unpack_from("<I", directory)[0]
+    sizes = struct.unpack_from("<" + "I" * streams, directory, 4)
+    position, selected = 4 + streams * 4, {}
+    for stream, size in enumerate(sizes):
+        count = 0 if size == 0xFFFFFFFF else (size + block_size - 1) // block_size
+        indices = struct.unpack_from("<" + "I" * count, directory, position)
+        if any(i >= blocks for i in indices):
+            raise ValueError("invalid PDB stream block")
+        position += count * 4
+        if stream in (1, 3):
+            selected[stream] = b"".join(data[i * block_size : (i + 1) * block_size] for i in indices)[:size]
+    info, dbi = selected[1], selected[3]
+    age = struct.unpack_from("<I", info, 8)[0]
+    dbi_age = struct.unpack_from("<I", dbi, 8)[0]
+    if age != dbi_age:
+        raise ValueError("PDB info and DBI ages differ")
+    machine = struct.unpack_from("<H", dbi, 58)[0]
+    return {
+        "format": "pdb", "kind": "debug",
+        "architecture": {0x8664: "x86_64", 0xAA64: "aarch64", 0x14C: "x86"}.get(machine, str(machine)),
+        "identity": {"kind": "pdb-guid-age", "value": f"{uuid.UUID(bytes_le=info[12:28]).hex}-{age}"},
+        "dwarf": False, "pdb": struct.unpack_from("<i", dbi, 24)[0] > 0, "debuglink": None,
+    }
+
+
 def native(path):
     """Return byte-derived metadata. No filename- or host-derived identities."""
     if not Path(path).stat().st_size:
@@ -64,6 +99,8 @@ def native(path):
         mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ) as b,
     ):
         magic = b[:4]
+        if b[:32] == b"Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0":
+            return pdb_info(b)
         if magic == b"\x7fELF":
             endian = {1: "<", 2: ">"}[b[5]]
             wide = b[4] == 2
@@ -782,7 +819,7 @@ class Inventory:
 
 
 def pair(module, candidates):
-    if module["format"] not in ("elf", "macho"):
+    if module["format"] not in ("elf", "macho", "pe"):
         return {
             "status": "unsupported",
             "reason": "platform identity/debug pairing not implemented",
@@ -798,10 +835,10 @@ def pair(module, candidates):
     matches = [
         c
         for c in candidates
-        if c["dwarf"]
+        if (c["dwarf"] or c.get("pdb"))
         and c["identity"] == identity
         and c["architecture"] == module["architecture"]
-        and c["format"] == module["format"]
+        and c["format"] == ("pdb" if module["format"] == "pe" else module["format"])
     ]
     if module["dwarf"]:
         matches.append(module)
@@ -817,11 +854,12 @@ def pair(module, candidates):
             sha: c
             for sha, c in matches.items()
             if c["crc32"] == module["debuglink"]["crc32"]
+            and c["path"].rsplit("/", 1)[-1] == module["debuglink"]["name"]
         }
         if not crc_matches:
             return {
                 "status": "unverified",
-                "reason": "GNU debuglink CRC differs from identity-matched artifact",
+                "reason": "GNU debuglink filename/CRC differs from identity-matched artifact",
                 "artifacts": list(matches.values()),
             }
         matches = crc_matches
@@ -834,7 +872,7 @@ def pair(module, candidates):
         }
     return {
         "status": "identity-matched",
-        "reason": "identity and architecture match; DWARF section present; address/line resolution not tested",
+        "reason": "identity and architecture match; debug content present; address/line resolution not tested",
         "artifacts": list(matches.values()),
     }
 
@@ -933,6 +971,26 @@ def collect(
     modules, inputs = [], []
     shipped_ids = {id(item) for item in shipped.files}
     debug_candidates = debug.files + [f for f in shipped.files if f["kind"] == "debug"]
+    retention = []
+    for name in debug_roots:
+        directory = root / name
+        if not directory.is_dir():
+            continue
+        for record_path in sorted(directory.rglob("preservation.json")):
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            peer = record_path.parent / record["debug"]["path"]
+            if not peer.resolve().is_relative_to(record_path.parent.resolve()):
+                raise ValueError("retained debug artifact escapes its bundle")
+            if not peer.is_file() or digest(peer) != record["debug"]["sha256"]:
+                raise ValueError(f"retained debug artifact hash mismatch: {peer}")
+            for companion in record["dwarf"]["companions"] + record["maps"]:
+                path = record_path.parent / companion["path"]
+                if not path.resolve().is_relative_to(record_path.parent.resolve()):
+                    raise ValueError("retained companion escapes its bundle")
+                if not path.is_file() or digest(path) != companion["sha256"]:
+                    raise ValueError(f"retained companion hash mismatch: {path}")
+            retention.append({"record": record, "evidence": artifact(record_path, str(record_path.relative_to(root))
+                              if record_path.is_relative_to(root) else str(record_path))})
     for item in shipped.files + link_inputs.files:
         if item["kind"] == "debug":
             continue
@@ -960,7 +1018,14 @@ def collect(
                 **item,
                 "debug": {
                     **pair(item, debug_candidates),
-                    "format": "pdb-unverified"
+                    "retention": [
+                        {**r, "association": "exact-distributed-bytes" if item["sha256"] == r["record"]["binary"]["sha256"]
+                         else "identity-only; post-retention byte changes unverified"}
+                        for r in retention
+                        if r["record"]["binary"]["identity"] == item["identity"]
+                        and r["record"]["binary"]["architecture"] == item["architecture"]
+                    ],
+                    "format": "pdb"
                     if item["format"] == "pe"
                     else "dwarf"
                     if item["format"] in ("elf", "macho")
@@ -977,6 +1042,10 @@ def collect(
                 },
             }
         )
+        for retained in modules[-1]["debug"]["retention"]:
+            quality = retained["record"]["dwarf"].get("verification", {})
+            if quality.get("status") == "producer-errors":
+                debug.gap(item["path"], "retained DWARF has producer verifier errors; see retention diagnostics")
     for input_selector, module_selector, proof in links:
         selected = [
             m
@@ -1032,7 +1101,7 @@ def collect(
         "modules": modules,
         "inputs": inputs,
         "containers": shipped.containers,
-        "debugArtifacts": [f for f in shipped.files + debug.files if f["dwarf"]],
+        "debugArtifacts": [f for f in shipped.files + debug.files if f["dwarf"] or f.get("pdb")],
         "aliases": shipped.aliases,
         "evidence": records,
         "dependencies": dependencies,
@@ -1067,8 +1136,8 @@ def validate(manifest):
                 if (
                     not module["identity"]
                     or debug["identity"] != module["identity"]
-                    or not debug["dwarf"]
-                    or debug["format"] != module["format"]
+                    or not (debug["dwarf"] or debug.get("pdb"))
+                    or debug["format"] != ("pdb" if module["format"] == "pe" else module["format"])
                     or debug["architecture"] != module["architecture"]
                 ):
                     raise ValueError("unjustified debug identity pairing")
