@@ -261,6 +261,7 @@ def native(path):
             stride = 32 if wide else 20
             table_end = 8 + count * stride
             valid = count > 0 and table_end <= len(b)
+            archive_slices = []
             if valid:
                 for index in range(count):
                     entry = struct.unpack_from(
@@ -271,10 +272,12 @@ def native(path):
                         offset < table_end
                         or size < 28
                         or offset + size > len(b)
-                        or b[offset : offset + 4] not in MACHO_MAGICS
+                        or (b[offset : offset + 4] not in MACHO_MAGICS
+                            and b[offset : offset + 8] != b"!<arch>\n")
                     ):
                         valid = False
                         break
+                    archive_slices.append(b[offset : offset + 8] == b"!<arch>\n")
             if not valid:
                 if (
                     magic == b"\xca\xfe\xba\xbe"
@@ -283,8 +286,8 @@ def native(path):
                     return None
                 raise ValueError("invalid universal Mach-O slice table")
             return {
-                "format": "macho-fat",
-                "kind": "module",
+                "format": "static-archive" if all(archive_slices) else "macho-fat",
+                "kind": "input" if all(archive_slices) else "module",
                 "architecture": "multiple",
                 "identity": None,
                 "dwarf": False,

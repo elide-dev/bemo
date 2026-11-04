@@ -1,7 +1,8 @@
 # Native debug preservation
 
 `make package` builds release Rust with full debug information and no Cargo
-stripping or split-DWARF files. Linux cdylibs explicitly request a reproducible
+stripping. ELF uses unsplit DWARF; macOS uses Cargo's packed dSYM, emitted while
+the final link's temporary Rust objects still exist. Linux cdylibs explicitly request a reproducible
 GNU build ID. The staged dynamic library is the final linked module: preserve its
 ELF peer or Mach-O dSYM, verify identity/architecture/content, then strip the
 staged copy before assembling classifier JARs and the unsigned Maven ZIP.
