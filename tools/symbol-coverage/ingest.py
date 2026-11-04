@@ -141,7 +141,6 @@ def download(url, org, debug_id, path):
     # configured service, and the credential must not leave that origin.
     config = "\n".join("header = " + json.dumps(value) for value in (
         "Authorization: Bearer " + key, "X-Debuginfo-Tenant: " + org)) + "\n"
-    started = time.monotonic()
     for attempt in range(3):
         Path(path).unlink(missing_ok=True)
         result = subprocess.run(["curl", "--disable", "--fail", "--silent", "--show-error",
@@ -155,7 +154,7 @@ def download(url, org, debug_id, path):
         # reply, send/receive failure or HTTP/2 stream reset. HTTP errors (22),
         # including auth denials, remain terminal. No upload is repeated here.
         delay = 2 ** attempt
-        if result.returncode not in (18, 28, 52, 55, 56, 92) or attempt == 2 or time.monotonic() - started + delay >= 180:
+        if result.returncode not in (18, 28, 52, 55, 56, 92) or attempt == 2:
             break
         print(f"Interrupted debuginfod GET (curl {result.returncode}); retry {attempt + 1}/2", flush=True)
         time.sleep(delay)
