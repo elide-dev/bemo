@@ -53,6 +53,7 @@ def inspect(root, installer, repository, metadata, debug_roots=()):
         temp = Path(temporary)
         payload = temp / "payload"
         mounted = False
+        cabinets = []
         try:
             if suffix == ".rpm":
                 # libarchive converts RPM's compressed cpio to a tar stream. No
@@ -95,11 +96,32 @@ def inspect(root, installer, repository, metadata, debug_roots=()):
                     if is_cabinet:
                         destination = cabinet.with_name(cabinet.name + "-files")
                         run(seven, "x", "-y", "-o" + str(destination), cabinet)
+                        cabinets.append((cabinet, destination))
             else:
                 raise ValueError("installer payload decoder not implemented")
             decoded = collector.collect(
                 root, [str(payload)], debug_roots, repository, metadata
             )
+            for cabinet, destination in cabinets:
+                cabinet_label = (
+                    payload.name + "/" + cabinet.relative_to(payload).as_posix()
+                )
+                destination_label = (
+                    payload.name + "/" + destination.relative_to(payload).as_posix()
+                )
+                relabel(decoded, destination_label, cabinet_label)
+                decoded["containers"].append(
+                    {**collector.artifact(cabinet, cabinet_label), "format": "cab"}
+                )
+                decoded["gaps"] = [
+                    g
+                    for g in decoded["gaps"]
+                    if not (
+                        g["path"] == cabinet_label
+                        and g["reason"]
+                        == "unrecognized or unsupported native/debug/archive format"
+                    )
+                ]
             relabel(decoded, payload.name, label)
             for key in (
                 "modules",

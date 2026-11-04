@@ -23,6 +23,7 @@ import tomllib
 import zipfile
 import zlib
 from pathlib import Path, PurePosixPath
+from urllib.parse import quote
 
 VERSION = 1
 MAX_DEPTH = 8
@@ -276,11 +277,30 @@ def native(path):
                 "dwarf": False,
                 "debuglink": None,
             }
-        if len(b) >= 20 and b[:2] in (b"\x64\x86", b"\x64\xaa", b"\x4c\x01"):
+        coff_cpus = {0x8664: "x86_64", 0xAA64: "aarch64", 0x14C: "x86"}
+        coff_cpu = struct.unpack_from("<H", b)[0] if len(b) >= 20 else None
+        if len(b) >= 20 and magic == b"\0\0\xff\xff":
+            # PE/COFF short import members are linker inputs named after a DLL,
+            # not executable images. Their two strings follow a 20-byte header.
+            version, machine = struct.unpack_from("<HH", b, 4)
+            length = struct.unpack_from("<I", b, 12)[0]
+            flags = struct.unpack_from("<H", b, 18)[0]
+            if (
+                version == 0
+                and length == len(b) - 20
+                and flags >> 5 == 0
+                and flags & 3 <= 2
+                and (flags >> 2) & 7 <= 4
+                and b[-1:] == b"\0"
+            ):
+                first_end = b.find(b"\0", 20)
+                if first_end >= 20 and b.find(b"\0", first_end + 1) >= 0:
+                    coff_cpu = machine
+        if coff_cpu in coff_cpus:
             return {
                 "format": "coff-object",
                 "kind": "input",
-                "architecture": "byte-derived COFF",
+                "architecture": coff_cpus[coff_cpu],
                 "identity": None,
                 "dwarf": False,
                 "debuglink": None,
@@ -457,6 +477,7 @@ class Inventory:
                         start = stream.tell()
                         raw = header[:16].decode().strip()
                         member_size = size
+                        coff_name = False
                         if raw == "//":
                             table = stream.read(size)
                         elif raw not in ("/", "/SYM64/"):
@@ -467,9 +488,31 @@ class Inventory:
                                 if member_size < 0:
                                     raise ValueError("ar name exceeds member size")
                             elif raw.startswith("/") and raw[1:].isdigit():
-                                raw = table[int(raw[1:]) :].split(b"/\n", 1)[0].decode()
+                                offset = int(raw[1:])
+                                if offset >= len(table):
+                                    raise ValueError(
+                                        "ar long name offset exceeds table"
+                                    )
+                                entry = table[offset:]
+                                # GNU terminates names with /\n; Microsoft COFF uses NUL.
+                                ends = [
+                                    i
+                                    for i in (entry.find(b"/\n"), entry.find(b"\0"))
+                                    if i >= 0
+                                ]
+                                if not ends:
+                                    raise ValueError("unterminated ar long name")
+                                end = min(ends)
+                                coff_name = entry[end : end + 1] == b"\0"
+                                raw = entry[:end].decode()
                             else:
                                 raw = raw.rstrip("/")
+                            if coff_name or "\\" in raw:
+                                # COFF archives retain Windows build paths. They are
+                                # opaque object names, never extraction destinations.
+                                raw = quote(raw, safe="")
+                                if raw in (".", ".."):
+                                    raw = raw.replace(".", "%2E")
                             # ar permits duplicate basenames: preserve member offsets in the path.
                             member = self.name(f"{start}/{raw}", seen)
                             self.member(
