@@ -162,14 +162,29 @@ def dwarf_units(path):
     return text, references
 
 
-def retain_dwarf(peer, bundle, binary_name):
+def retain_dwarf(peer, bundle, binary_name, companion_root=None):
     text, references = dwarf_units(peer)
     (bundle / "compilation-units.txt").write_text(text, encoding="utf-8")
     companions = []
+    packed = None
+    if references and companion_root:
+        required = {identifier for _, _, identifier in references}
+        matches = {}
+        for candidate in Path(companion_root).glob("*.dwp"):
+            index = run(tool("llvm-dwarfdump"), "--debug-cu-index", candidate)
+            available = set(re.findall(r"0x[0-9a-f]{16}\b", index.lower()))
+            if required <= available:
+                matches[inventory.digest(candidate)] = (candidate, index)
+        if len(matches) > 1:
+            raise ValueError("Different packed DWARF artifacts cover the same skeleton identifiers")
+        if matches:
+            packed = next(iter(matches.values()))
     if references:
         paths = []
         identifiers = {}
         for name, directory, identifier in references:
+            if packed:
+                continue
             source = Path(name) if Path(name).is_absolute() else Path(directory) / name
             if not source.is_file():
                 raise ValueError(f"Unresolved split DWARF {name} ({identifier}); rebuild or restore its companions")
@@ -184,11 +199,16 @@ def retain_dwarf(peer, bundle, binary_name):
             paths.append(source)
         # A packaged DWP removes dependence on absolute compilation directories.
         dwp = bundle / (binary_name + ".dwp")
-        response = bundle / "dwp-inputs.rsp"
-        response.write_text("\n".join(json.dumps(str(p)) for p in dict.fromkeys(paths)), encoding="utf-8")
-        run(tool("llvm-dwp"), "@" + str(response), "-o", dwp)
-        response.unlink()
-        index = run(tool("llvm-dwarfdump"), "--debug-cu-index", dwp)
+        if packed:
+            shutil.copyfile(packed[0], dwp)
+            index = packed[1]
+            dwarf_units(dwp)
+        else:
+            response = bundle / "dwp-inputs.rsp"
+            response.write_text("\n".join(json.dumps(str(p)) for p in dict.fromkeys(paths)), encoding="utf-8")
+            run(tool("llvm-dwp"), "@" + str(response), "-o", dwp)
+            response.unlink()
+            index = run(tool("llvm-dwarfdump"), "--debug-cu-index", dwp)
         for _, _, identifier in references:
             if identifier not in index.lower():
                 raise ValueError(f"Packed DWARF lacks compilation unit {identifier}")
@@ -259,13 +279,15 @@ def preserve(binary, out, debug=None, mapping=None, stage="final-link", strip=Fa
             peer = bundle / (link["name"] if link else binary.name + ".debug")
             if module["dwarf"]:
                 # GNU objcopy handles BOLT's PHDR layout without losing build IDs.
-                run(tool("objcopy"), "--only-keep-debug", binary, peer)
+                script_flags = (["--set-section-flags", ".debug_gdb_scripts=contents,readonly,debug"]
+                                if ".debug_gdb_scripts" in elf_sections(binary) else [])
+                run(tool("objcopy"), *script_flags, "--only-keep-debug", binary, peer)
             elif debug:
                 shutil.copyfile(debug, peer)
             else:
                 raise ValueError(f"No embedded DWARF or explicit final debug peer: {binary}")
             check_pair(binary, peer)
-            dwarf = retain_dwarf(peer, bundle, binary.name)
+            dwarf = retain_dwarf(peer, bundle, binary.name, Path(debug).parent if debug else None)
         elif module["format"] == "macho":
             dsym = bundle / (binary.name + ".dSYM")
             if debug:

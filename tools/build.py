@@ -100,7 +100,7 @@ def rust(release=False, debug_info=False):
   env = dict(os.environ)
   if debug_info:
     env.update(CARGO_PROFILE_RELEASE_DEBUG="2", CARGO_PROFILE_RELEASE_STRIP="none",
-               CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO="off")
+               CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO="packed" if platform.system() == "Darwin" else "off")
   if platform.system() == "Darwin":
     env.setdefault("MACOSX_DEPLOYMENT_TARGET", "15.0")
   run("cargo", "build", "--workspace", "--locked", *(["--release"] if release else []), env=env)
@@ -548,8 +548,15 @@ def package():
     resource.mkdir(parents=True)
     shutil.copy2(binary, resource)
     if module == "ffm":
+      peer_args = []
+      if platform.system() == "Darwin":
+        candidates = [Path(f"{binary}.dSYM"), binary.parent / "deps" / f"{binary.name}.dSYM"]
+        dsym = next((path for path in candidates if path.is_dir()), None)
+        if dsym is None:
+          raise RuntimeError("Cargo did not retain the final linked dylib dSYM")
+        peer_args = ["--debug", dsym]
       run(sys.executable, ROOT / "tools/symbol-coverage/preserve.py",
-          "--binary", resource / binary.name, "--out", BUILD / "symbols", "--strip")
+          "--binary", resource / binary.name, "--out", BUILD / "symbols", *peer_args, "--strip")
     shutil.copy2(ROOT / "include/bemo.h", resource)
     shutil.copy2(ROOT / "include/elide_transport.h", resource)
     for name in ("LICENSE", "NOTICE"):
