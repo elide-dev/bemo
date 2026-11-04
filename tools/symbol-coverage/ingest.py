@@ -142,6 +142,7 @@ def download(url, org, debug_id, path):
         "Authorization: Bearer " + key, "X-Debuginfo-Tenant: " + org)) + "\n"
     result = subprocess.run(["curl", "--disable", "--fail", "--silent", "--show-error",
         "--proto", "=https", "--connect-timeout", "30", "--speed-limit", "1", "--speed-time", "30",
+        "--retry", "2", "--retry-max-time", "180",
         "--config", "-", "--output", str(path), f"{url.rstrip('/')}/buildid/{debug_id}/debuginfo"],
         input=config, capture_output=True, text=True)
     if result.returncode:
