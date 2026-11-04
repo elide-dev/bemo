@@ -23,7 +23,7 @@ The canonical helper copies are pinned in `tools/symbol-coverage/INGEST-UPSTREAM
 
 Receipts bind the original source commit/configuration, final binary/debug hashes,
 producer run/artifact records and manifest hashes to server artifact/debug IDs and
-fresh SHA-256 readback. The signed server Build records the upload workflow driver;
+fresh SHA-256 readback over the debuginfod GET route. The signed server Build records the upload workflow driver;
 the actual producer commit is separately retained in receipt and display-archive
 metadata, including builds checked out from a tag. Neither field should be confused
 with an independently attested original build.
@@ -40,3 +40,8 @@ See the [shared contract](https://github.com/elide-dev/debuginfo.dev/blob/main/t
 Credential batches are bounded to 1 GiB; a larger individual peer occupies its own
 batch. The workflow refreshes access before every batch. Live controls independently
 exercise idempotency, collision rejection and private-project isolation.
+
+Readback uses curl to stream the complete file to disk with connection/idle
+deadlines, avoiding the old CLI whole-download timeout. The existing shared
+action still provides short-lived credentials; they are passed over stdin,
+kept out of command-line arguments, and never forwarded through redirects.

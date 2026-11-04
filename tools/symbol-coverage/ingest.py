@@ -105,20 +105,47 @@ def plan(repository, manifests, roots):
     return {"version": 1, "repository": repository, "builds": builds, "uploads": list(uploads.values()), "gaps": gaps}
 
 
+def safe_detail(detail):
+    if "<html" in detail.lower():
+        detail = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", detail)
+        detail = html.unescape(re.sub(r"<[^>]+>", " ", detail))
+        detail = " ".join(detail.split())
+    detail = re.sub(r"https?://\S+", "[service URL]", detail)
+    for name in ("DEBUGINFO_DEV_APIKEY", "GH_TOKEN", "GITHUB_TOKEN"):
+        if os.environ.get(name):
+            detail = detail.replace(os.environ[name], "[REDACTED]")
+    return detail[:1600]
+
+
 def cli(*args):
     result = subprocess.run(["dbginfo", "--no-telemetry", "--json", *args], capture_output=True, text=True)
     if result.returncode:
-        detail = result.stderr
-        if "<html" in detail.lower():
-            detail = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", detail)
-            detail = html.unescape(re.sub(r"<[^>]+>", " ", detail))
-            detail = " ".join(detail.split())
-        detail = re.sub(r"https?://\S+", "[service URL]", detail)
-        for name in ("DEBUGINFO_DEV_APIKEY", "GH_TOKEN", "GITHUB_TOKEN"):
-            if os.environ.get(name):
-                detail = detail.replace(os.environ[name], "[REDACTED]")
-        raise RuntimeError(f"dbginfo failed (exit {result.returncode}); ingestion incomplete: {detail[:1600]}")
+        raise RuntimeError(f"dbginfo failed (exit {result.returncode}); ingestion incomplete: {safe_detail(result.stderr)}")
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+
+
+def download(url, org, debug_id, path):
+    """Independent debuginfod GET using the shared action's existing credential.
+
+    curl streams to disk with a connection/idle deadline rather than a deadline
+    for the entire file. No credential exchange or signing is implemented here.
+    """
+    key = os.environ.get("DEBUGINFO_DEV_APIKEY", "")
+    if not url.startswith("https://") or not re.fullmatch(r"[0-9a-f]{8,128}", debug_id):
+        raise ValueError("Expected an HTTPS debuginfod URL and canonical debug identity")
+    if not key or any(c in key + org for c in "\r\n"):
+        raise ValueError("Expected the shared action's credential and a single-line tenant")
+    # stdin keeps the bearer credential out of argv and process listings. Do
+    # not follow redirects or load ~/.curlrc: these bytes must come from the
+    # configured service, and the credential must not leave that origin.
+    config = "\n".join("header = " + json.dumps(value) for value in (
+        "Authorization: Bearer " + key, "X-Debuginfo-Tenant: " + org)) + "\n"
+    result = subprocess.run(["curl", "--disable", "--fail", "--silent", "--show-error",
+        "--proto", "=https", "--connect-timeout", "30", "--speed-limit", "1", "--speed-time", "30",
+        "--config", "-", "--output", str(path), f"{url.rstrip('/')}/buildid/{debug_id}/debuginfo"],
+        input=config, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(f"debuginfod readback failed (curl exit {result.returncode}); ingestion incomplete: {safe_detail(result.stderr)}")
 
 
 def private_project(url, org, org_id, project, project_id):
@@ -170,10 +197,10 @@ def upload(result, destination, ref, receipt_path):
         save()
         with tempfile.TemporaryDirectory(prefix="symbol-readback-") as temporary:
             path = Path(temporary) / "debug"
-            cli("--url", url, "--org", org, "get", item["debugId"], "-o", str(path))
+            download(url, org, item["debugId"], path)
             if digest(path) != item["debugSha256"]:
                 raise ValueError("Server readback SHA-256 mismatch")
-        item["readback"] = {"sha256": item["debugSha256"], "status": "exact-bytes"}
+        item["readback"] = {"sha256": item["debugSha256"], "status": "exact-bytes", "client": "curl", "protocol": "debuginfod"}
         save()
     result["status"] = "ingested-and-read-back" if result["uploads"] else "unsupported-format-gaps-only"
     save()
