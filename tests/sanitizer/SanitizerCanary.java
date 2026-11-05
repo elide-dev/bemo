@@ -5,6 +5,7 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
 
 /** Calls a deliberately defective native library through FFM; the sanitizer must abort it. */
 public final class SanitizerCanary {
@@ -26,18 +27,24 @@ public final class SanitizerCanary {
                 symbols.find("bemo_canary_race").orElseThrow(),
                 FunctionDescriptor.ofVoid(ValueLayout.JAVA_INT));
         Thread[] threads = new Thread[4];
+        CountDownLatch ready = new CountDownLatch(threads.length);
+        CountDownLatch start = new CountDownLatch(1);
         for (int index = 0; index < threads.length; index++) {
           threads[index] =
               Thread.ofPlatform()
                   .start(
                       () -> {
                         try {
+                          ready.countDown();
+                          start.await();
                           race.invokeExact(100_000);
                         } catch (Throwable failure) {
                           throw new AssertionError(failure);
                         }
                       });
         }
+        ready.await();
+        start.countDown();
         for (Thread thread : threads) {
           thread.join();
         }
