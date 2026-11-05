@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/elide-dev/bemo/compare/v0.4.0...v0.5.0) (2026-11-05)
+
+
+### Features
+
+* **native:** adopt Myna binding ABI 2 and refresh toolchains ([#93](https://github.com/elide-dev/bemo/issues/93)) ([34158ac](https://github.com/elide-dev/bemo/commit/34158ac77bab25523344c5129419f021670e2414))
+
+
+### Bug Fixes
+
+* **release:** publish framework modules from immutable releases ([#89](https://github.com/elide-dev/bemo/issues/89)) ([4cd42fe](https://github.com/elide-dev/bemo/commit/4cd42fe9e8f93f64f1f4126df1830b600998dcfa))
+
 ## [0.4.0](https://github.com/elide-dev/bemo/compare/v0.3.0...v0.4.0) (2026-10-12)
 
 
