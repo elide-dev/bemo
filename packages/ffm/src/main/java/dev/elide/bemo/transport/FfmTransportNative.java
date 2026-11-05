@@ -833,10 +833,26 @@ public final class FfmTransportNative implements TransportNative {
 
   private static MethodHandle bind(
       SymbolLookup symbols, String name, ValueLayout result, ValueLayout... args) {
+    // Match the bounded, nonblocking imports audited in seams/bemo.seam.
+    boolean leaf =
+        switch (name) {
+          case "abi_version",
+              "last_error",
+              "serving_helper_prepare",
+              "http_method",
+              "http_version",
+              "http_header_count",
+              "http_keep_alive",
+              "http_view",
+              "http_spans" ->
+              true;
+          default -> false;
+        };
     return Linker.nativeLinker()
         .downcallHandle(
             symbols.find("elide_transport_" + name).orElseThrow(),
-            FunctionDescriptor.of(result, args));
+            FunctionDescriptor.of(result, args),
+            leaf ? new Linker.Option[] {Linker.Option.critical(false)} : new Linker.Option[0]);
   }
 
   @Override

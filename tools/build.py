@@ -17,6 +17,9 @@ import zipfile
 from reports import Reports
 import seam
 import bitcode
+import native_tools
+
+native_tools.configure()
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
@@ -46,6 +49,16 @@ def jar_dependency(group, artifact, version, classifier=""):
 def sdk():
   return [jar_dependency("org.graalvm.sdk", name, VERSIONS["graalvm_sdk"])
           for name in ("nativeimage", "word")]
+
+
+def native_binding_sdk():
+  """Myna binding ABI 2 implementation APIs, for compilation only."""
+  import setup_graalvm
+  directory = setup_graalvm.home() / "lib/svm"
+  jars = [directory / name for name in ("svm-shared.jar", "svm-guest-staging.jar", "svm-guest.jar")]
+  if not all(path.is_file() for path in jars):
+    raise RuntimeError("Pinned GraalVM lacks Myna binding ABI 2 compile-only jars")
+  return jars
 
 
 def netty():
@@ -173,7 +186,7 @@ def jvm():
   for module in MODULES:
     cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
     if module == "native-image":
-      cp += sdk()
+      cp += sdk() + native_binding_sdk()
     if module == "netty":
       cp += netty()
     if module == "bali":
@@ -184,6 +197,9 @@ def jvm():
       compile_kotlin(classes(module), sorted((ROOT / "packages/ktor/src/main/kotlin").rglob("*.kt")))
     else:
       compile_java(classes(module), sources(module), cp)
+    if module == "native-image":
+      shutil.copytree(seam.output(seam.CANONICAL_TARGET) / "META-INF",
+                      classes(module) / "META-INF", dirs_exist_ok=True)
     resources = ROOT / "packages" / module / "src/main/resources"
     if resources.is_dir():
       shutil.copytree(resources, classes(module), dirs_exist_ok=True)
@@ -409,6 +425,7 @@ def check():
   run(sys.executable, ROOT / "tools/test_native_baseline.py")
   run(sys.executable, ROOT / "tools/test_bench.py")
   run(sys.executable, ROOT / "tools/test_seam.py")
+  run(sys.executable, ROOT / "tools/test_native_tools.py")
   run(sys.executable, ROOT / "tools/test_bitcode.py")
   run(sys.executable, ROOT / "tools/test_setup_llvm.py")
   run(sys.executable, ROOT / "tools/generate_exports.py", "--check")
@@ -508,7 +525,7 @@ def package():
     shutil.rmtree(docs, ignore_errors=True)
     cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
     if module == "native-image":
-      cp += sdk()
+      cp += sdk() + native_binding_sdk()
     if module == "netty":
       cp += netty()
     if module == "bali":

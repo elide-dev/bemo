@@ -7,6 +7,9 @@ import os
 import subprocess
 import tempfile
 import tomllib
+import native_tools
+
+native_tools.configure()
 
 ROOT = Path(__file__).resolve().parents[1]
 

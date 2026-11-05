@@ -80,6 +80,10 @@ def verify_signatures(headers, descriptors):
 
 def validate_descriptor(descriptor=None):
   descriptor = descriptor if descriptor is not None else DESCRIPTOR.read_text()
+  # Myna 0.8 defaults missing policies to leaf. Require an explicit audit for every import.
+  for declaration in re.findall(r'^import .*$', descriptor, re.M):
+    if not re.search(r' native_leaf=(?:true|false)@explicit_contract(?: |$)', declaration):
+      raise RuntimeError('Every import requires an explicit native_leaf policy: ' + declaration)
   headers = {}
   for name in ('bemo.h', 'elide_transport.h'):
     headers.update(header_functions((ROOT / 'include' / name).read_text()))
@@ -215,6 +219,8 @@ def generator():
 
 
 def generate(check=False, target=None):
+  import native_tools
+  native_tools.configure()
   validate_descriptor()
   validate_rust_signatures()
   cli = generator()

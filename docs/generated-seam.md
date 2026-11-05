@@ -20,10 +20,10 @@ make test
 make test-native-image
 ```
 
-The build pins Myna 0.6.0 and Elide 1.6.1 in `tools/versions.json`.
+The build pins Myna 0.8.0 and Elide 1.6.2 in `tools/versions.json`.
 `make test-native-image` provisions the checksummed GraalVM
-`25.5.5-elide.21` distribution matching the SDK dependencies. The SDK artifacts
-come from `https://maven.elide.dev/gvm-elide/25.5.5-elide.21`; Native Image
+`25.5.5-elide.24` distribution matching the SDK dependencies. The SDK artifacts
+come from `https://maven.elide.dev/gvm-elide/25.5.5-elide.24`; Native Image
 consumers must configure this Maven repository. API and FFM artifacts remain
 independent of GraalVM.
 It compiles only the dependency-free generator CLI’s tracked sources through
@@ -44,6 +44,34 @@ it is not the target fingerprint of an extracted library. All currently
 supported seam targets have the same scalar widths and record layouts.
 Native classifiers carry the actual target's `seam.json`, `seam.abi`, and
 `seam.ll`. This keeps common Java JARs identical across platform builds.
+
+## Binding ABI 2 call audit
+
+Myna's binding ABI is 2; Bemo's public transport protocol stays at ABI 3.
+Every import declares its call policy explicitly, so new imports cannot silently
+inherit Myna's leaf default. Twelve imports use generated typed function pointers
+and relocated symbols:
+
+- ABI versions and capabilities return constants; allocation accounting reads one atomic.
+- Last-error access reads and clears a constant-initialized thread-local cell.
+- HTTP method, version, header count, keep-alive, and view read a live exchange
+  lease without registry locks or allocation. Spans copies at most 404 integers,
+  bounded by the HTTP/1 and HTTP/2 parsers' 100-header limit.
+- Helper-token capture reads thread-local state and retains one atomic reference.
+
+Helper-token release uses a normal transition because its retirement CAS loop can
+retry under contention. Allocation, cleanup, registry operations, I/O, TLS,
+callbacks, and other unreviewed operations also retain normal transitions. No new
+LLVM memory-effect promises are made. FFM uses critical downcalls without heap
+access for the corresponding bounded metadata operations; its existing TLS heap
+adapters retain their separate contracts.
+
+The Native Image module compiles against three distribution jars (`svm-shared`,
+`svm-guest-staging`, and `svm-guest`) without packaging them or adding them to the
+application runtime classpath. Generated `META-INF/native-image` metadata travels
+with the classes and JAR; it exports the compiler API and separates build-time
+symbol metadata from runtime pointer-holder initialization. Native Image consumers
+must use the matching Elide Graal distribution. API and FFM need none of these jars.
 
 ## Bitcode archive variant
 
@@ -76,8 +104,8 @@ Use compatible LLVM tools for building, application, and final linkage.
 on `PATH` (for example, Homebrew's separately installed LLD).
 The build requires matching LLVM majors between Rust and the native toolchain,
 and exact pinned versions for Clang, LLD, and LLVM helper libraries. Package CI
-uses the commit-pinned `elide-dev/toolchain/action` with release `2026.10.0`
-(LLVM 23.1.2). The action verifies bundle checksums and supplies target compiler,
+uses the commit-pinned `elide-dev/toolchain/action` with release `2026.11.1`
+(LLVM 23.1.4). The action verifies bundle checksums and supplies target compiler,
 linker, and SDK settings. Its native library archives also carry ThinLTO
 bitcode. `tools/setup_llvm.py` can provision the same release locally using
 the SHA-256 digests in `tools/versions.json`. Activate the bundle’s target

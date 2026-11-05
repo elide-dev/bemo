@@ -1,8 +1,8 @@
 {
-  "elide": "1.6.1",
+  "elide": "1.6.2",
   "java": 25,
   "jvm_release": 22,
-  "graalvm_sdk": "25.5.5-elide.21",
+  "graalvm_sdk": "25.5.5-elide.24",
   "java_format": "1.28.0",
   "netty": "4.2.19.Final",
   "jacoco": "0.8.15",
@@ -17,34 +17,35 @@
   "nullaway_dataflow": "4.2.3",
   "dataflow": "3.49.5-eisop1",
   "llvm": {
-    "version": "23.1.2",
-    "toolchain_version": "2026.10.0",
+    "version": "23.1.4",
+    "toolchain_version": "2026.11.1",
     "archives": {
       "x86_64-unknown-linux-gnu": {
-        "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-linux-amd64.tar.xz",
-        "sha256": "e966f3a9e8fa210e5018ae6e4a834874577e2288b27a6c9edfe5e264de0fd035"
+        "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.11.1/elide-toolchain-2026.11.1-linux-amd64.tar.xz",
+        "sha256": "4610627acc96f647776fd4256b3c1fce04c14b2757df692d8923ec299aed0e58"
       },
       "aarch64-apple-darwin": {
-        "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-darwin-arm64.tar.xz",
-        "sha256": "e39b6430f36b3d3d20439a42e9047b6edb64d0c2a9277e69afd35e290dc93064"
+        "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.11.1/elide-toolchain-2026.11.1-darwin-arm64.tar.xz",
+        "sha256": "37e56bad391f8397c99951a529ef84bdc99c9d19bdf91edbc153b5bdecb69e88"
       }
     },
     "sanitizers": {
       "x86_64-unknown-linux-gnu": {
         "asan": {
-          "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-linux-amd64-sanitizer-asan.tar.xz",
-          "sha256": "8309af8c55f0e009a898e2cb304c2629ed650272e0d510cc93266d81c8db20d7"
+          "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.11.1/elide-toolchain-2026.11.1-linux-amd64-sanitizer-asan.tar.xz",
+          "sha256": "b7e5a9cf4ba282b782763075009b5bda1fa626819748423b366f049ef16eddde"
         },
         "tsan": {
-          "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.10.0/elide-toolchain-2026.10.0-linux-amd64-sanitizer-tsan.tar.xz",
-          "sha256": "707abcdf926f00e1bffa66c42f80bd85c39f84af438788beda6aea3435d3f8df"
+          "url": "https://github.com/elide-dev/toolchain/releases/download/v2026.11.1/elide-toolchain-2026.11.1-linux-amd64-sanitizer-tsan.tar.xz",
+          "sha256": "6afc7161b3d7bd9f6f05e40aa790415c3801540351b0b187003282fadcbf32a1"
         }
       }
     }
   },
   "myna": {
     "repository": "https://github.com/elide-dev/myna.git",
-    "revision": "66ee758fa3073cfac1dc386510105e41f219bad3"
+    "revision": "42d7ab484bef7a944b374a4683922c0a10c4ec1c",
+    "version": "0.8.0"
   },
   "ktor": "3.6.1",
   "kotlin": "2.4.21",
@@ -53,15 +54,15 @@
   "reactor": "3.8.8",
   "spring_boot": "4.1.2",
   "graalvm": {
-    "version": "25.5.5-elide.21",
+    "version": "25.5.5-elide.24",
     "archives": {
       "aarch64-apple-darwin": {
-        "url": "https://maven.elide.dev/gvm-elide/25.5.5-elide.21/dist/graalvm-ee-25.5.5-elide.21-macos-aarch64.tar.gz",
-        "sha256": "7ec06b440e5365255371cfcb73e0fbfed5519d475c6fc9e49d06f4512633bf0e"
+        "url": "https://maven.elide.dev/gvm-elide/25.5.5-elide.24/dist/graalvm-ce-25.5.5-elide.24-macos-aarch64.tar.gz",
+        "sha256": "8b03207cb35ab5b9bec6422b4266178315f7a056ae88e90f57cc22b2362c44a6"
       },
       "x86_64-unknown-linux-gnu": {
-        "url": "https://maven.elide.dev/gvm-elide/25.5.5-elide.21/dist/graalvm-ee-25.5.5-elide.21-linux-amd64.tar.gz",
-        "sha256": "1100390d588667a288d7d2e51db56ab88c8858874d0f2f602387166370d19ea3"
+        "url": "https://maven.elide.dev/gvm-elide/25.5.5-elide.24/dist/graalvm-ce-25.5.5-elide.24-linux-amd64.tar.gz",
+        "sha256": "83bd7b3b78e76de00bb3879eeae79a8b439f9356fefd3bf3b84d2818af8961e7"
       }
     }
   }
