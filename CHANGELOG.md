@@ -8,6 +8,14 @@
 * **native:** adopt Myna binding ABI 2 and refresh toolchains ([#93](https://github.com/elide-dev/bemo/issues/93)) ([34158ac](https://github.com/elide-dev/bemo/commit/34158ac77bab25523344c5129419f021670e2414))
 
 
+### Migration
+
+Native Image consumers must regenerate bindings with Myna 0.8.0 and use Elide
+Graal 25.5.5-elide.24. Generated bindings now use binding ABI 2; Bemo's C transport
+ABI remains 3. See [the binding and leaf-call audit](docs/generated-seam.md).
+This release also updates Elide to 1.6.2, the native toolchain to 2026.11.1,
+Rust to nightly-2026-10-09, and AWS-LC to 1.19.0.
+
 ### Bug Fixes
 
 * **release:** publish framework modules from immutable releases ([#89](https://github.com/elide-dev/bemo/issues/89)) ([4cd42fe](https://github.com/elide-dev/bemo/commit/4cd42fe9e8f93f64f1f4126df1830b600998dcfa))
