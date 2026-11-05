@@ -219,6 +219,8 @@ def generator():
 
 
 def generate(check=False, target=None):
+  import native_tools
+  native_tools.configure()
   validate_descriptor()
   validate_rust_signatures()
   cli = generator()

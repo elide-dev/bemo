@@ -17,6 +17,9 @@ import zipfile
 from reports import Reports
 import seam
 import bitcode
+import native_tools
+
+native_tools.configure()
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
@@ -422,6 +425,7 @@ def check():
   run(sys.executable, ROOT / "tools/test_native_baseline.py")
   run(sys.executable, ROOT / "tools/test_bench.py")
   run(sys.executable, ROOT / "tools/test_seam.py")
+  run(sys.executable, ROOT / "tools/test_native_tools.py")
   run(sys.executable, ROOT / "tools/test_bitcode.py")
   run(sys.executable, ROOT / "tools/test_setup_llvm.py")
   run(sys.executable, ROOT / "tools/generate_exports.py", "--check")
