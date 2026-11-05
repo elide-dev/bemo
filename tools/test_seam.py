@@ -55,6 +55,26 @@ class SeamTest(unittest.TestCase):
       self.assertTrue(pointers)
       self.assertTrue(all('nullable=true' in line for line in pointers), name)
 
+  def test_missing_call_policy_is_rejected(self):
+    descriptor = seam.DESCRIPTOR.read_text().replace(' native_leaf=false@explicit_contract', '', 1)
+    with self.assertRaisesRegex(RuntimeError, 'explicit native_leaf'):
+      seam.validate_descriptor(descriptor)
+
+  def test_audited_leaf_inventory(self):
+    leaves = set(re.findall(r'^import (\w+).* native_leaf=true@explicit_contract$',
+                            seam.DESCRIPTOR.read_text(), re.M))
+    expected = {'bemo_abi_version', 'bemo_capabilities', 'bemo_alloc_live',
+                'elide_transport_abi_version', 'elide_transport_last_error',
+                'elide_transport_serving_helper_prepare'}
+    expected.update('elide_transport_http_' + name for name in
+                    ('method', 'version', 'header_count', 'keep_alive', 'view', 'spans'))
+    self.assertEqual(leaves, expected)
+    java = seam.JAVA.read_text()
+    self.assertIn('BINDING_ABI_VERSION = 2', java)
+    self.assertEqual(set(re.findall(r'public interface (\w+)_Leaf ', java)), expected)
+    # Leaf calls must use typed pointers, never resurrect ordinary CFunction leaf adapters.
+    self.assertNotRegex(java, r'@CFunction\([^)]*NO_TRANSITION')
+
   def test_real_inventory(self):
     seam.validate_descriptor()
     seam.validate_rust_signatures()

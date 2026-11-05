@@ -48,6 +48,16 @@ def sdk():
           for name in ("nativeimage", "word")]
 
 
+def native_binding_sdk():
+  """Myna binding ABI 2 implementation APIs, for compilation only."""
+  import setup_graalvm
+  directory = setup_graalvm.home() / "lib/svm"
+  jars = [directory / name for name in ("svm-shared.jar", "svm-guest-staging.jar", "svm-guest.jar")]
+  if not all(path.is_file() for path in jars):
+    raise RuntimeError("Pinned GraalVM lacks Myna binding ABI 2 compile-only jars")
+  return jars
+
+
 def netty():
   return [jar_dependency("io.netty", name, VERSIONS["netty"]) for name in (
       "netty-common", "netty-buffer", "netty-transport", "netty-resolver", "netty-handler",
@@ -173,7 +183,7 @@ def jvm():
   for module in MODULES:
     cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
     if module == "native-image":
-      cp += sdk()
+      cp += sdk() + native_binding_sdk()
     if module == "netty":
       cp += netty()
     if module == "bali":
@@ -184,6 +194,9 @@ def jvm():
       compile_kotlin(classes(module), sorted((ROOT / "packages/ktor/src/main/kotlin").rglob("*.kt")))
     else:
       compile_java(classes(module), sources(module), cp)
+    if module == "native-image":
+      shutil.copytree(seam.output(seam.CANONICAL_TARGET) / "META-INF",
+                      classes(module) / "META-INF", dirs_exist_ok=True)
     resources = ROOT / "packages" / module / "src/main/resources"
     if resources.is_dir():
       shutil.copytree(resources, classes(module), dirs_exist_ok=True)
@@ -508,7 +521,7 @@ def package():
     shutil.rmtree(docs, ignore_errors=True)
     cp = [jspecify()] if module == "api" else [classes("api"), jspecify()]
     if module == "native-image":
-      cp += sdk()
+      cp += sdk() + native_binding_sdk()
     if module == "netty":
       cp += netty()
     if module == "bali":

@@ -50,6 +50,12 @@ def verify():
           assert entry.startswith("dev/elide/bemo/") or entry == "io/netty/handler/ssl/ApplicationProtocolSslEngine.class", \
               f"Unexpected published Java namespace: {entry}"
           assert int.from_bytes(jar.read(entry)[6:8], "big") <= 66, "JDK 22 baseline exceeded"
+      if module == "native-image":
+        metadata = "META-INF/native-image/dev.elide.myna/dev.elide.bemo.svm.generated.BemoNatives/native-image.properties"
+        assert metadata in names, "Missing Myna binding ABI 2 initialization metadata"
+        properties = jar.read(metadata).decode()
+        assert "--initialize-at-run-time=" in properties
+        assert "--add-exports=org.graalvm.nativeimage.guest.staging/" in properties
       if module == "netty":
         metadata = "META-INF/native-image/dev.elide.bemo/bemo-netty/"
         assert metadata + "reflect-config.json" in names
@@ -158,7 +164,10 @@ def verify():
     assert manifest["sha256"] == hashlib.sha256(binary.read_bytes()).hexdigest()
     assert manifest["members"] == bitcode.inventory(binary.read_bytes())
     assert manifest["seamFingerprint"] == (variant_dir / "seam.abi").read_text().strip()
-    assert json.loads((variant_dir / "seam.json").read_text())["targetTriple"] == manifest["target"]
+    descriptor = json.loads((variant_dir / "seam.json").read_text())
+    assert descriptor["targetTriple"] == manifest["target"]
+    assert descriptor["schemaVersion"] == descriptor["bindingAbiVersion"] == 2
+    assert descriptor["abiVersion"] == 3
     bitcode.verify(binary, variant_dir / "verify")
   print("Maven package contracts passed (resource loading, static linkage, and ThinLTO)")
 

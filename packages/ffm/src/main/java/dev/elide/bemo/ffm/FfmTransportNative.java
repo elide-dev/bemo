@@ -38,12 +38,14 @@ public final class FfmTransportNative implements TransportNative, AutoCloseable 
       version =
           linker.downcallHandle(
               symbols.find("bemo_abi_version").orElseThrow(),
-              FunctionDescriptor.of(ValueLayout.JAVA_INT));
+              FunctionDescriptor.of(ValueLayout.JAVA_INT),
+              Linker.Option.critical(false));
       requireCompatible();
       capabilities =
           linker.downcallHandle(
               symbols.find("bemo_capabilities").orElseThrow(),
-              FunctionDescriptor.of(ValueLayout.JAVA_LONG));
+              FunctionDescriptor.of(ValueLayout.JAVA_LONG),
+              Linker.Option.critical(false));
     } catch (Throwable failure) {
       arena.close();
       throw failure;

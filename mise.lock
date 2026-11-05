@@ -43,39 +43,45 @@ url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/carg
 url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471599057"
 
 [[tools."github:elide-dev/elide"]]
-version = "1.6.1"
+version = "1.6.2"
 backend = "github:elide-dev/elide"
-specifiers = ["1.6.1"]
+specifiers = ["1.6.2"]
 
 [tools."github:elide-dev/elide"."platforms.linux-arm64"]
-checksum = "sha256:257caaffad4b784926dd30b093f6fa94b54d71fa27077d95f1db7ec310f8cc1f"
-url = "https://github.com/elide-dev/elide/releases/download/v1.6.1/elide.linux-arm64.txz"
-url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/686387161"
+checksum = "sha256:4f973920fffca735407420f2c5ec0523cedb76ba369f3a20660ddbe2fd224a17"
+checksum_source = "mise-versions"
+url = "https://github.com/elide-dev/elide/releases/download/v1.6.2/elide.linux-arm64.txz"
+url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/698677467"
 
 [tools."github:elide-dev/elide"."platforms.linux-arm64-musl"]
-checksum = "sha256:257caaffad4b784926dd30b093f6fa94b54d71fa27077d95f1db7ec310f8cc1f"
-url = "https://github.com/elide-dev/elide/releases/download/v1.6.1/elide.linux-arm64.txz"
-url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/686387161"
+checksum = "sha256:4f973920fffca735407420f2c5ec0523cedb76ba369f3a20660ddbe2fd224a17"
+checksum_source = "mise-versions"
+url = "https://github.com/elide-dev/elide/releases/download/v1.6.2/elide.linux-arm64.txz"
+url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/698677467"
 
 [tools."github:elide-dev/elide"."platforms.linux-x64"]
-checksum = "sha256:754895c49d13e42e6961b3399ed732acd70e9a116b7c165812f6246a11246635"
-url = "https://github.com/elide-dev/elide/releases/download/v1.6.1/elide.linux-amd64.txz"
-url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/686386845"
+checksum = "sha256:736cb9a7573a122a50a670c3d7d1542c0b8d0016db5a0512e6e3c9fc65871c6b"
+checksum_source = "mise-versions"
+url = "https://github.com/elide-dev/elide/releases/download/v1.6.2/elide.linux-amd64.txz"
+url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/698677151"
 
 [tools."github:elide-dev/elide"."platforms.linux-x64-musl"]
-checksum = "sha256:f47dacb7f3365e9f3926a2b0202c384dd0c32d5e0749cac2617572fed20e66fe"
-url = "https://github.com/elide-dev/elide/releases/download/v1.6.1/elide.linux-amd64-musl.txz"
-url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/686384887"
+checksum = "sha256:5fb4a4e5b1cf38dea918f67464cf5f60b753ab302139dbb2ee115a9fd2134feb"
+checksum_source = "mise-versions"
+url = "https://github.com/elide-dev/elide/releases/download/v1.6.2/elide.linux-amd64-musl.txz"
+url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/698676551"
 
 [tools."github:elide-dev/elide"."platforms.macos-arm64"]
-checksum = "sha256:87a5baa56238f68744e541bd510261a919d561b2fc20d066264bfeb428083c23"
-url = "https://github.com/elide-dev/elide/releases/download/v1.6.1/elide.macos-arm64.txz"
-url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/686388993"
+checksum = "sha256:f88344b9ba6acef216f095e0355886bffee96c11e801397ec27d37ae8e1b81ac"
+checksum_source = "mise-versions"
+url = "https://github.com/elide-dev/elide/releases/download/v1.6.2/elide.macos-arm64.txz"
+url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/698678364"
 
 [tools."github:elide-dev/elide"."platforms.windows-x64"]
-checksum = "sha256:33f136d539e51b5771326223c739249fba7cb99fe52debd259fa6296e3ed9349"
-url = "https://github.com/elide-dev/elide/releases/download/v1.6.1/elide.windows-amd64.zip"
-url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/686393494"
+checksum = "sha256:1fa37d5315e7c123df49ef820af8238652ac97b73ad3d9fab74bd90fad27e772"
+checksum_source = "mise-versions"
+url = "https://github.com/elide-dev/elide/releases/download/v1.6.2/elide.windows-amd64.zip"
+url_api = "https://api.github.com/repos/elide-dev/elide/releases/assets/698680021"
 
 [[tools."github:nextest-rs/nextest"]]
 version = "0.9.135"
