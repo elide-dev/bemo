@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "receiptPlatform": "all",
+  "ingestion": {
+    "artifacts": [
+      "native-debug-*",
+      "symbol-coverage-*"
+    ],
+    "manifests": [
+      "**/symbol-coverage.json"
+    ],
+    "trustedBranches": [
+      "main",
+      "codex/symbol-coverage"
+    ],
+    "trustedTags": [
+      "v*"
+    ],
+    "fallbackArtifacts": []
+  },
+  "distributionArtifacts": [
+    "maven-ubuntu-24.04"
+  ],
+  "probes": [
+    {
+      "module": "/libbemo_ffi\\.so$",
+      "pcSymbol": "bemo_abi_version",
+      "distribution": "**/bemo-ffm-*-linux-x86_64-gnu.jar",
+      "chain": [
+        {
+          "function": "bemo_abi_version",
+          "sourceFile": "crates/bemo-ffi/src/lib.rs",
+          "sourceAnchor": "pub extern \"C\" fn bemo_abi_version()",
+          "debugFile": "crates/bemo-ffi/src/lib.rs",
+          "lineOffset": 2
+        }
+      ],
+      "memberSuffix": "META-INF/native/linux-x86_64-gnu/libbemo_ffi.so"
+    },
+    {
+      "module": "/libbemo_ffi\\.so$",
+      "pcSymbol": "elide_transport_abi_version",
+      "distribution": "**/bemo-ffm-*-linux-x86_64-gnu.jar",
+      "chain": [
+        {
+          "function": "<bemo_ffi::guard::Boundary>::call::<u32,\\ bemo::abi::elide_transport_abi_version>",
+          "sourceFile": "crates/bemo-ffi/src/guard.rs",
+          "sourceAnchor": "if self.poisoned.load(Ordering::Acquire)",
+          "debugFile": "crates/bemo-ffi/src/guard.rs"
+        },
+        {
+          "function": "elide_transport_abi_version",
+          "sourceFile": "crates/bemo-ffi/src/transport.rs",
+          "sourceAnchor": "BOUNDARY.call(bemo::abi::elide_transport_abi_version)",
+          "debugFile": "crates/bemo-ffi/src/transport.rs"
+        }
+      ],
+      "memberSuffix": "META-INF/native/linux-x86_64-gnu/libbemo_ffi.so",
+      "pcOffset": 14
+    }
+  ],
+  "limits": [
+    "CI samples Linux x86_64 only; no native macOS/Windows client qualification",
+    "Remote manual debuginfod GET plus GDB/LLVM attribution; automatic developer setup requires separate QUERY consent",
+    "Unsampled modules, Java inlines, variables, guest/JIT code and source text remain unqualified",
+    "PDB/DWO/map interpretation and known producer defects are not waived"
+  ]
+}

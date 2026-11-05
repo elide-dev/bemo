@@ -1,0 +1,138 @@
+name: Remote symbolication gates
+on:
+  workflow_run:
+    workflows: ["Private symbol ingestion"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ingestion_run:
+        description: Successful main-branch ingestion run containing exact readback receipts
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  symbolicate:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      INGESTION_RUN: ${{ inputs.ingestion_run || github.event.workflow_run.id }}
+      DEBUGINFO_DEV_URL: ${{ vars.DEBUGINFO_DEV_URL }}
+      DEBUGINFO_DEV_ORG: ${{ vars.DEBUGINFO_DEV_ORG }}
+      DEBUGINFO_DEV_ORG_ID: ${{ vars.DEBUGINFO_DEV_ORG_ID }}
+      DEBUGINFO_DEV_PROJECT: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      DEBUGINFO_DEV_PROJECT_ID: ${{ vars.DEBUGINFO_DEV_PROJECT_ID }}
+      SYMBOL_INGEST_PLATFORM: all
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install GDB and matching DWARF readers
+        run: sudo apt-get update && sudo apt-get install -y gdb tcl
+      - name: Install the existing qualified symbol reader toolchain
+        id: tools
+        uses: elide-dev/toolchain/action@171eb7cde379e17822e042cfbda26c9740c10b03
+        with:
+          version: 2026.10.0
+          target: x86_64-unknown-linux-gnu
+      - name: Select symbol reader
+        run: echo "SYMBOLIZER=${{ steps.tools.outputs.home }}/bin/llvm-symbolizer" >> "$GITHUB_ENV"
+      - name: Require successful main ingestion and its current-attempt receipts
+        run: |
+          python3 - <<'PY'
+          import os,json,subprocess,shutil
+          from pathlib import Path
+          repository=os.environ['GITHUB_REPOSITORY'];run_id=os.environ['INGESTION_RUN']
+          if not run_id.isdecimal(): raise ValueError('Expected numeric ingestion run')
+          run=json.loads(subprocess.check_output(['gh','api',f'repos/{repository}/actions/runs/{run_id}'],text=True))
+          if not (run['repository']['full_name']==repository and run['head_repository']['full_name']==repository
+                  and run['head_branch']=='main' and run['conclusion']=='success'
+                  and run['event'] not in ('pull_request','pull_request_target')):
+              raise ValueError('Only successful same-repository main ingestion is accepted')
+          config=json.loads(Path('.github/symbolication.json').read_text())
+          name=f"symbol-ingestion-{config['receiptPlatform']}-{run['run_attempt']}"
+          target=Path(os.environ['RUNNER_TEMP'])/'symbolication-receipts'
+          subprocess.run(['gh','run','download',run_id,'-R',repository,'-n',name,'-D',str(target)],check=True)
+          summaries=list(target.rglob('summary.json'))
+          if len(summaries)!=1: raise ValueError('Expected one complete ingestion summary')
+          shutil.copyfile(summaries[0],Path(os.environ['RUNNER_TEMP'])/'symbolication-ingestion.json')
+          PY
+      - name: Bind reviewed source probes to exact shipped modules
+        id: prepare
+        run: |
+          python3 tools/symbol-coverage/symbolicate-ci.py --config .github/symbolication.json \
+            --summary "$RUNNER_TEMP/symbolication-ingestion.json" --directory "$RUNNER_TEMP/symbolication-input" \
+            --source-root "$GITHUB_WORKSPACE" --dependency-source-root "$RUNNER_TEMP/symbolication-dependency" \
+            --source-snapshot-root "$RUNNER_TEMP/symbolication-source-snapshot" \
+            --nm "${{ steps.tools.outputs.home }}/bin/llvm-nm" --foreign-debug-id "147cbd2be2a5ba184afa27bfe4b9d0e5cb11bd35" \
+            --fetch-source --out "$RUNNER_TEMP/symbolication-prepared"
+      - name: Refresh existing project CI access for case 0
+        id: auth_0
+        if: always() && steps.prepare.outcome == 'success' && fromJSON(steps.prepare.outputs.case_count) > 0
+        uses: elide-dev/debuginfo-client@47894d0764ff0c7f4763b3e8289e94376c36aa1b
+        with:
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Check remote addresses for case 0
+        if: always() && steps.prepare.outcome == 'success' && fromJSON(steps.prepare.outputs.case_count) > 0 && steps.auth_0.outcome == 'success'
+        continue-on-error: true
+        run: >-
+          python3 tools/symbol-coverage/run-symbolication-case.py
+          --prepared "$RUNNER_TEMP/symbolication-prepared/prepared.json" --index 0
+          --out "$RUNNER_TEMP/symbolication-results"
+      - name: Refresh existing project CI access for case 1
+        id: auth_1
+        if: always() && steps.prepare.outcome == 'success' && fromJSON(steps.prepare.outputs.case_count) > 1
+        uses: elide-dev/debuginfo-client@47894d0764ff0c7f4763b3e8289e94376c36aa1b
+        with:
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Check remote addresses for case 1
+        if: always() && steps.prepare.outcome == 'success' && fromJSON(steps.prepare.outputs.case_count) > 1 && steps.auth_1.outcome == 'success'
+        continue-on-error: true
+        run: >-
+          python3 tools/symbol-coverage/run-symbolication-case.py
+          --prepared "$RUNNER_TEMP/symbolication-prepared/prepared.json" --index 1
+          --out "$RUNNER_TEMP/symbolication-results"
+      - name: Refresh existing project CI access for case 2
+        id: auth_2
+        if: always() && steps.prepare.outcome == 'success' && fromJSON(steps.prepare.outputs.case_count) > 2
+        uses: elide-dev/debuginfo-client@47894d0764ff0c7f4763b3e8289e94376c36aa1b
+        with:
+          url: ${{ vars.DEBUGINFO_DEV_URL }}
+          org: ${{ vars.DEBUGINFO_DEV_ORG }}
+          project: ${{ vars.DEBUGINFO_DEV_PROJECT }}
+      - name: Check remote addresses for case 2
+        if: always() && steps.prepare.outcome == 'success' && fromJSON(steps.prepare.outputs.case_count) > 2 && steps.auth_2.outcome == 'success'
+        continue-on-error: true
+        run: >-
+          python3 tools/symbol-coverage/run-symbolication-case.py
+          --prepared "$RUNNER_TEMP/symbolication-prepared/prepared.json" --index 2
+          --out "$RUNNER_TEMP/symbolication-results"
+      - name: Require all cases and retain separate integration and quality results
+        if: always() && steps.prepare.outcome == 'success'
+        run: >-
+          python3 tools/symbol-coverage/run-symbolication-case.py
+          --prepared "$RUNNER_TEMP/symbolication-prepared/prepared.json" --finalize
+          --out "$RUNNER_TEMP/symbolication-results"
+      - name: Retain exact build cases and results, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: remote-symbolication-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/symbolication-prepared/*.json
+            ${{ runner.temp }}/symbolication-results/*.json
+            ${{ runner.temp }}/symbolication-source-snapshot/provenance.json
+            ${{ runner.temp }}/symbolication-source-snapshot/configure.log
+            ${{ runner.temp }}/symbolication-source-snapshot/generate.log
+          if-no-files-found: error
+          retention-days: 90
