@@ -26,6 +26,19 @@ runs:
       with:
         version: ${{ steps.versions.outputs.elide }}
         channel: release
+    - name: Preserve the native compiler for direct Cargo commands
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import os, sys
+        sys.path.insert(0, "tools")
+        import native_tools
+        previous = os.environ["PATH"]
+        native_tools.configure()
+        if os.environ["PATH"] != previous:
+          with open(os.environ["GITHUB_PATH"], "a") as output:
+            output.write(os.environ["PATH"].split(os.pathsep)[0] + "\n")
+        PY
     - name: Bootstrap Rust from the repository toolchain pin
       shell: bash
       run: |
