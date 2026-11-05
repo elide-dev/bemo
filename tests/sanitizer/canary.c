@@ -14,7 +14,9 @@ int32_t bemo_canary_overflow(void) {
 }
 
 /* Unsynchronized counter written from several Java threads: TSAN must report it. */
-static uint64_t counter;
+/* Keep repeated loads/stores; an optimized counter += iterations can finish
+ * before the other callers enter. Volatile does not make these accesses atomic. */
+static volatile uint64_t counter;
 
 void bemo_canary_race(int32_t iterations) {
   for (int32_t index = 0; index < iterations; index++) {
