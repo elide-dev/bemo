@@ -1,0 +1,33 @@
+name: Ingest a bounded final-symbol batch
+description: Authenticate using the shared action, then ingest and verify one bounded batch
+inputs:
+  batch:
+    required: true
+    description: Validated batch index
+  url:
+    required: true
+    description: Repository-specific service URL
+  org:
+    required: true
+    description: Repository-specific organization slug
+  project:
+    required: true
+    description: Repository-specific private project slug
+runs:
+  using: composite
+  steps:
+    - uses: elide-dev/debuginfo-client@47894d0764ff0c7f4763b3e8289e94376c36aa1b
+      with:
+        repository: elide-dev/debuginfo-client
+        version: 0.7.1
+        url: ${{ inputs.url }}
+        org: ${{ inputs.org }}
+        project: ${{ inputs.project }}
+    - shell: bash
+      env:
+        BATCH: ${{ inputs.batch }}
+        DEBUGINFO_DEV_PROJECT: ${{ inputs.project }}
+      run: |
+        python3 tools/symbol-coverage/ingest-ci.py --config .github/symbol-ingestion.json \
+          --directory "$RUNNER_TEMP/ingest-input" --out "$RUNNER_TEMP/ingest-plan.json" \
+          --execute-plan --upload --batch "$BATCH" --receipts "$RUNNER_TEMP/ingest-receipts"

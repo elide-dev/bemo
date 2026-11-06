@@ -1,0 +1,16 @@
+{
+  "artifacts": [
+    "native-debug-*",
+    "symbol-coverage-*"
+  ],
+  "manifests": [
+    "**/symbol-coverage.json"
+  ],
+  "trustedBranches": [
+    "main",
+    "codex/symbol-coverage"
+  ],
+  "trustedTags": [
+    "v*"
+  ]
+}

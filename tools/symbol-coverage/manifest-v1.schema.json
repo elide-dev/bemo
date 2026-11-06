@@ -1,0 +1,457 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://debuginfo.dev/contracts/symbol-coverage/v1",
+  "title": "Distribution symbol coverage evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "producer",
+    "build",
+    "scope",
+    "modules",
+    "inputs",
+    "containers",
+    "aliases",
+    "evidence",
+    "dependencies",
+    "gaps",
+    "debugArtifacts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "producer": {
+      "type": "string"
+    },
+    "build": {
+      "type": "object",
+      "required": [
+        "repository",
+        "commit",
+        "trackedWorktreeDirty",
+        "release",
+        "platform",
+        "architecture",
+        "configuration",
+        "revisionSource"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "trackedWorktreeDirty": {
+          "type": ["boolean", "null"]
+        },
+        "release": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configuration": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "revisionSource": {
+          "enum": ["git", "build-declared"]
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distributions",
+        "debugRoots",
+        "completeness",
+        "jit",
+        "sourceContent",
+        "inputRoots"
+      ],
+      "properties": {
+        "distributions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "debugRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "completeness": {
+          "const": "unverified"
+        },
+        "jit": {
+          "const": "not-collected"
+        },
+        "sourceContent": {
+          "const": "not-collected"
+        },
+        "inputRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/input"
+      }
+    },
+    "containers": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/artifact"
+          }
+        ],
+        "required": ["format"],
+        "properties": {
+          "format": {
+            "enum": ["zip", "tar", "ar", "oci", "gzip", "xz", "bzip2", "zstd", "cab"]
+          }
+        }
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "target"],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "version", "source", "evidence", "relationship"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "relationship": {
+            "const": "locked-input; final-module inclusion unverified"
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "status", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "const": "unverified"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "artifact": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      }
+    },
+    "debugArtifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/native"
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "required": ["path", "sha256", "size"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "identity": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": ["gnu-build-id", "macho-uuid", "pdb-guid-age"]
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "native": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifact"
+        }
+      ],
+      "required": ["format", "kind", "architecture", "identity", "dwarf", "debuglink"],
+      "properties": {
+        "format": {
+          "enum": [
+            "elf",
+            "macho",
+            "macho-fat",
+            "pe",
+            "pdb",
+            "llvm-bitcode",
+            "static-archive",
+            "coff-object"
+          ]
+        },
+        "kind": {
+          "enum": ["module", "input", "debug"]
+        },
+        "architecture": {
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "dwarf": {
+          "type": "boolean"
+        },
+        "debuglink": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": ["name", "crc32"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "crc32": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "debug": {
+      "type": "object",
+      "required": ["status", "reason", "artifacts", "format"],
+      "additionalProperties": false,
+      "properties": {
+        "retention": {
+          "type": "array",
+          "items": { "type": "object", "required": ["record", "evidence", "association"] }
+        },
+        "status": {
+          "enum": ["identity-matched", "missing", "unsupported", "unverified"]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/native"
+          }
+        },
+        "format": {
+          "enum": ["dwarf", "pdb", "pdb-unverified", "unverified"]
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "identity-matched"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "artifacts": {
+            "minItems": 1,
+            "maxItems": 1
+          }
+        }
+      }
+    },
+    "unverified": {
+      "type": "object",
+      "required": ["status", "reason"],
+      "properties": {
+        "status": {
+          "const": "unverified"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "module": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/native"
+        }
+      ],
+      "required": ["debug", "sources", "provenance", "obfuscationMaps"],
+      "properties": {
+        "kind": {
+          "const": "module"
+        },
+        "debug": {
+          "$ref": "#/$defs/debug"
+        },
+        "sources": {
+          "$ref": "#/$defs/unverified"
+        },
+        "provenance": {
+          "$ref": "#/$defs/unverified"
+        },
+        "obfuscationMaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "input": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/native"
+        }
+      ],
+      "required": ["finalModules", "relationshipStatus", "distributed"],
+      "properties": {
+        "kind": {
+          "const": "input"
+        },
+        "finalModules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "sha256", "evidence", "relationship"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              },
+              "relationship": {
+                "const": "build-declared; address contribution unverified"
+              }
+            }
+          }
+        },
+        "relationshipStatus": {
+          "enum": ["unverified", "build-declared"]
+        },
+        "distributed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["path", "status"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "enum": ["collected", "missing"]
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "collected"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/artifact"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "repository": "elide-dev/debuginfo.dev",
+  "commit": "0d0392a48e7c805ee3f5041792abaf0f42c39702",
+  "files": {
+    "symbolicate.py": "26c9cd800bac6d606b6929a9411065074ec6c4061454417aa12e6b4d4b9eeae5",
+    "make-symbolication-case.py": "b302eeb04147e6fca119efeb1aab002da49dae7fd94612c007561654f01941c1",
+    "symbolicate-ci.py": "8564526be737941690a87ec3aa4d72bf017c7b78d1270ed7976686e526c610cc",
+    "run-symbolication-case.py": "52ea45847ba575903e0792c98dbed6142cec11d4607a31001006e89fea24479a",
+    "source-snapshot.py": "29a950193d85de21381a3da98916cdb127482b02eceeff6e08873ee697b2cdc8",
+    "regenerate-sqlite-source.py": "a31d30a2688f1710ed5bbd69fc235605dedd64ecafd4b968b082a2af5e5fc95b",
+    "SYMBOLICATION.md": "04b9bfe32e24d96b22268240ef43e2b78fd682f999b7f3874b09a9cdca3a0392"
+  }
+}

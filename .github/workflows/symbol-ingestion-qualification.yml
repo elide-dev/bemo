@@ -1,0 +1,22 @@
+name: Qualify private final-symbol ingestion
+on:
+  push:
+    branches: [codex/symbol-ingestion]
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful qualified producer run to ingest without rebuilding
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  symbols:
+    if: inputs.source_run != '' || vars.DEBUGINFO_DEV_SOURCE_RUN != ''
+    uses: ./.github/workflows/job.symbols.yml
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    with:
+      source_run: ${{ inputs.source_run || vars.DEBUGINFO_DEV_SOURCE_RUN }}

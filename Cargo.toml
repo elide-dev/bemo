@@ -67,3 +67,5 @@ strip = "debuginfo"
 inherits = "release"
 lto = false
 strip = "none"
+debug = 2
+split-debuginfo = "off"
