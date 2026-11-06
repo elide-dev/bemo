@@ -1,15 +1,51 @@
-name: Debug quality qualification
+name: Bounded symbolication qualification
 on:
-  push:
-    branches: [codex/debug-quality]
-    paths: [.github/workflows/debug-quality-qualification.yml]
   workflow_dispatch:
+    inputs:
+      check:
+        description: One normal check to qualify
+        type: choice
+        default: rust
+        options: [rust, native-image, package]
+      platform:
+        description: One runner configuration (native-image requires Ubuntu)
+        type: choice
+        default: ubuntu-24.04
+        options: [ubuntu-24.04, macos-15, windows-2025]
+concurrency:
+  group: symbolication-qualification-${{ github.repository }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
+  selection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate the single configuration
+        env:
+          CHECK: ${{ inputs.check }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          case "$CHECK:$PLATFORM" in
+            rust:ubuntu-24.04|rust:macos-15|rust:windows-2025|native-image:ubuntu-24.04|package:ubuntu-24.04|package:macos-15) ;;
+            *) echo "::error::Unsupported check/platform combination"; exit 1 ;;
+          esac
   rust:
+    if: inputs.check == 'rust'
+    needs: selection
     uses: ./.github/workflows/check.rust.yml
+    with:
+      qualification-platform: ${{ inputs.platform }}
   native-image:
+    if: inputs.check == 'native-image'
+    needs: selection
     uses: ./.github/workflows/check.native-image.yml
+    with:
+      qualification: true
   package:
+    if: inputs.check == 'package'
+    needs: selection
     uses: ./.github/workflows/job.build.yml
+    with:
+      qualification-platform: ${{ inputs.platform }}
