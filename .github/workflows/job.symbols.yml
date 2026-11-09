@@ -568,14 +568,17 @@ jobs:
           python3 tools/symbol-coverage/ingest-ci.py --config .github/symbol-ingestion.json \
             --directory "$RUNNER_TEMP/ingest-input" --out "$RUNNER_TEMP/ingest-plan.json" \
             --finalize --receipts "$RUNNER_TEMP/ingest-receipts"
+      - name: Prepare bounded ingestion receipt artifact
+        if: always() && github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && github.ref == format('refs/heads/{0}', vars.DEBUGINFO_DEV_BRANCH || 'main') && vars.DEBUGINFO_DEV_PROJECT_ID != ''
+        run: |
+          python3 .github/scripts/prepare-ingest-records.py \
+            --runner-temp "${{ runner.temp }}" \
+            --output "${{ runner.temp }}/ingest-artifact"
       - name: Retain ingestion receipts and explicit format/quality gaps
         if: always() && github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && github.ref == format('refs/heads/{0}', vars.DEBUGINFO_DEV_BRANCH || 'main') && vars.DEBUGINFO_DEV_PROJECT_ID != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: symbol-ingestion-${{ matrix.platform }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/ingest-plan.json
-            ${{ runner.temp }}/ingest-receipts/
-            ${{ runner.temp }}/ingest-input/evidence/
+          path: ${{ runner.temp }}/ingest-artifact/
           if-no-files-found: error
           retention-days: 90
