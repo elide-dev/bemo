@@ -1,6 +1,10 @@
 name: Check Native Image
 on:
   workflow_call:
+    inputs:
+      qualification:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -26,6 +30,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
+          retention-days: ${{ inputs.qualification && 7 || 0 }}
           name: tests-native-image
           path: build/reports/tests/
           if-no-files-found: warn

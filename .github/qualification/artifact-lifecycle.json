@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "entrypoint": "debug-quality-qualification.yml",
+  "execution": "Explicit manual dispatch only, one configuration at a time; task qualification never dispatches another workflow. Permanent product symbol integration remains unchanged.",
+  "disposableDiagnosticRetentionDays": 7,
+  "recoveryRetentionDays": 90,
+  "recoveryArtifactNames": [
+    "native-debug-*",
+    "bali-native-debug-*",
+    "elide-native-debug-*",
+    "recovery-*",
+    "maven-*",
+    "native-compatibility-*"
+  ],
+  "recoveryLifecycle": {
+    "record": [
+      "repository",
+      "run ID",
+      "artifact ID",
+      "source SHA",
+      "artifact digest",
+      "selected member SHA256",
+      "expiry",
+      "reason",
+      "owner"
+    ],
+    "review": "Before expiry; accepted evidence and active failure controls must have a verified usable copy before retirement",
+    "retire": "After verified replacement or when unfinished work no longer requires it",
+    "migration": "Plan bounded storage and verify exact identities/hashes; do not dispatch builds or duplicate full producer bundles to refresh retention"
+  },
+  "existingArtifacts": "Retention changes apply only to future uploads. Existing protected artifact expiry is unchanged.",
+  "scope": "Task qualification only. Normal CI/release and permanent product symbol ingestion/gates are preserved."
+}
