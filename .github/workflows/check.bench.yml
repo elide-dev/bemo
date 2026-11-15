@@ -22,7 +22,7 @@ jobs:
       - name: Build deterministic CPU benchmarks
         run: cargo codspeed build -p bemo --bench buffers --bench handles --bench http --locked -m simulation
       - name: Track CPU performance
-        uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062 # v5.6.0
+        uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3
         with:
           mode: simulation
           runner-version: '5.2.1'
@@ -111,7 +111,7 @@ jobs:
       - run: cargo codspeed build -p bemo --bench tls --locked -m walltime
       - run: make bench-prepare
       - name: Track TLS and end-to-end wall time
-        uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062 # v5.6.0
+        uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3
         with:
           mode: walltime
           runner-version: '5.2.1'
